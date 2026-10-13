@@ -38,6 +38,16 @@ return [
     'security_feed_url' => env('MDM_SECURITY_FEED_URL'),
     'security_feed_ref' => env('MDM_SECURITY_FEED_REF', 'main'),
 
+    // AI for writing remediation scripts from a description (the AI button in the script form):
+    // anthropic (Claude) or openai, with its API key; without a key the button is off. The model
+    // defaults to claude-opus-5-5 / gpt-5. MDM_AI_URL is another endpoint: for openai any server
+    // with the Chat Completions API (Ollama, LM Studio, vLLM, OpenRouter; a key is optional
+    // there). Only the description and the script being edited are sent, nothing about the devices.
+    'ai_provider' => env('MDM_AI_PROVIDER', 'anthropic'),
+    'ai_api_key' => env('MDM_AI_API_KEY'),
+    'ai_model' => env('MDM_AI_MODEL'),
+    'ai_url' => env('MDM_AI_URL'),
+
     // Seconds a signed message may differ from the server clock.
     'signature_max_skew' => 300,
 

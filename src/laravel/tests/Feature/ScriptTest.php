@@ -14,6 +14,8 @@ use App\Models\ScriptRun;
 use App\Models\User;
 use App\Support\Signing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use SteelAnts\LaravelBoilerplate\Models\Activity;
 use Tests\Concerns\SignsDeviceRequests;
@@ -313,5 +315,55 @@ class ScriptTest extends TestCase
 
         Livewire::test(Form::class)->set('name', 'Empty')->call('save')->assertHasErrors(['detection']);
         Livewire::test(Form::class)->set('name', 'Slow')->set('detection', 'exit 0')->set('timeout', 7200)->call('save')->assertHasErrors(['timeout']);
+    }
+
+    public function test_ai_writes_the_script_into_the_form(): void
+    {
+        $this->actingAs($this->admin());
+        $script = fn (array $fields) => json_encode($fields + ['description' => '', 'platform' => 'all', 'timeout' => 60, 'remediation' => '', 'manual_remediation' => false]);
+        Http::fake([
+            'api.anthropic.com/*' => Http::sequence()
+                ->push(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => $script([
+                    'name' => 'Firewall on', 'description' => 'Turns the firewall on.', 'platform' => 'windows', 'timeout' => 99999,
+                    'detection' => "if ((Get-NetFirewallProfile).Enabled -contains \$false) { exit 1 }\nexit 0", 'remediation' => 'Set-NetFirewallProfile -Enabled True',
+                ])]]])
+                ->push(['stop_reason' => 'refusal', 'content' => []]),
+            'ollama:11434/*' => Http::response(['choices' => [['finish_reason' => 'stop', 'message' => ['role' => 'assistant', 'content' => $script([
+                'name' => 'Disk check', 'platform' => 'linux', 'detection' => "if ((Get-PSDrive /).Free -lt 1GB) { exit 1 }\nexit 0",
+            ])]]]]),
+        ]);
+
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => null, 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Firewall on')->call('generate')
+            ->assertHasErrors(['aiPrompt'])->assertSet('detection', '');
+        Http::assertNothingSent();
+
+        config(['mdm.ai_api_key' => 'test-key']);
+        Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Turn the firewall on')->call('generate')
+            ->assertHasNoErrors()->assertSet('aiMode', false)
+            ->assertSet('name', 'Firewall on')->assertSet('platform', 'windows')->assertSet('timeout', Script::MAX_TIMEOUT)
+            ->assertSet('remediation', 'Set-NetFirewallProfile -Enabled True')
+            ->call('save')->assertHasNoErrors();
+        $this->assertSame('windows', Script::query()->where('name', 'Firewall on')->sole()->platform);
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://api.anthropic.com/v1/messages' && $request['model'] === 'claude-opus-5-5'
+            && $request->hasHeader('x-api-key', 'test-key') && str_contains($request['messages'][0]['content'], 'Turn the firewall on'));
+
+        // Changing a script sends it along; a refusal leaves the form as it is.
+        Livewire::test(Form::class)->set('detection', 'exit 0')->set('aiMode', true)->set('aiPrompt', 'Add logging')->call('generate')
+            ->assertHasErrors(['aiPrompt'])->assertSet('detection', 'exit 0')->assertSet('aiMode', true);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Current script'));
+
+        // OpenAI, or a server of your own with its API (no key needed then).
+        config(['mdm.ai_provider' => 'openai', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions', 'mdm.ai_model' => 'qwen3']);
+        Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Free space')->call('generate')
+            ->assertHasNoErrors()->assertSet('name', 'Disk check')->assertSet('platform', 'linux')->assertSet('remediation', '');
+        Http::assertSent(fn (Request $request) => $request->url() === 'http://ollama:11434/v1/chat/completions' && $request['model'] === 'qwen3'
+            && ! $request->hasHeader('Authorization') && $request['messages'][0]['role'] === 'system' && $request['response_format']['type'] === 'json_schema');
+
+        // Without the address OpenAI needs a key; an unknown provider is off.
+        config(['mdm.ai_url' => null]);
+        $this->assertFalse(\App\Support\ScriptGenerator::available());
+        config(['mdm.ai_provider' => 'gemini', 'mdm.ai_api_key' => 'key']);
+        $this->assertFalse(\App\Support\ScriptGenerator::available());
     }
 }

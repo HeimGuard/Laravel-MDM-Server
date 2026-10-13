@@ -4,9 +4,11 @@ namespace App\Livewire\Script;
 
 use App\Models\Script;
 use App\Support\PowerShellCheck;
+use App\Support\ScriptGenerator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
+use RuntimeException;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
 #[AllowInModal(ability: 'is-system-admin')]
@@ -28,6 +30,11 @@ class Form extends Component
 
     /** Runs only detect; the remediation is started per device (an alert with Remediate). */
     public bool $manualRemediation = false;
+
+    /** The AI view: one text describing the script instead of the fields. */
+    public bool $aiMode = false;
+
+    public string $aiPrompt = '';
 
     public function mount(?int $scriptId = null): void
     {
@@ -104,10 +111,39 @@ class Form extends Component
         $this->dispatch('closeModal');
     }
 
+    /** Writes the script from the description into the fields; it is checked when saved, as typed ones. */
+    public function generate(): void
+    {
+        Gate::authorize('is-system-admin');
+        $this->validate(['aiPrompt' => 'required|string|max:4000']);
+        try {
+            $script = ScriptGenerator::generate($this->aiPrompt, [
+                'name' => $this->name, 'description' => $this->description, 'platform' => $this->platform, 'timeout' => $this->timeout,
+                'detection' => $this->detection, 'remediation' => $this->remediation, 'manual_remediation' => $this->manualRemediation,
+            ]);
+        } catch (RuntimeException $e) {
+            $this->addError('aiPrompt', $e->getMessage());
+
+            return;
+        }
+        $this->fill([
+            'name' => $script['name'] ?: $this->name,
+            'description' => $script['description'],
+            'platform' => $script['platform'],
+            'timeout' => $script['timeout'],
+            'detection' => $script['detection'],
+            'remediation' => $script['remediation'],
+            'manualRemediation' => $script['manual_remediation'],
+        ]);
+        $this->resetValidation();
+        $this->aiMode = false;
+    }
+
     public function render()
     {
         return view('livewire.script.form', [
             'script' => Script::find($this->scriptId),
+            'aiAvailable' => ScriptGenerator::available(),
         ]);
     }
 }
