@@ -739,7 +739,7 @@
     "Test": "Test",
     "Test notification from :app.": "Testovací upozornění z :app.",
     "Texts ignore case; matches is a regular expression.": "Texty ignorují velikost písmen; matches je regulární výraz.",
-    "The AI could not be reached.": "AI se nepodařilo kontaktovat.",
+    "The AI could not be reached: :error": "AI se nepodařilo kontaktovat: :error",
     "The AI declined this request.": "AI tento požadavek odmítla.",
     "The AI did not return a script, try again.": "AI nevrátila skript, zkuste to znovu.",
     "The AI writes the detection and remediation scripts and fills in the form; check them before saving. Only this text and the script in the form are sent.": "AI napíše detekční a nápravný skript a vyplní formulář; před uložením je zkontrolujte. Odesílá se jen tento text a skript ve formuláři.",

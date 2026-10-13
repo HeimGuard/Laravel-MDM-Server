@@ -739,7 +739,7 @@
     "Test": "Tester",
     "Test notification from :app.": "Notification de test de :app.",
     "Texts ignore case; matches is a regular expression.": "Les textes ignorent la casse ; matches est une expression régulière.",
-    "The AI could not be reached.": "L'IA n'a pas pu être contactée.",
+    "The AI could not be reached: :error": "L'IA n'a pas pu être contactée : :error",
     "The AI declined this request.": "L'IA a refusé cette demande.",
     "The AI did not return a script, try again.": "L'IA n'a pas renvoyé de script, réessayez.",
     "The AI writes the detection and remediation scripts and fills in the form; check them before saving. Only this text and the script in the form are sent.": "L'IA écrit les scripts de détection et de remédiation et remplit le formulaire ; vérifiez-les avant d'enregistrer. Seuls ce texte et le script du formulaire sont envoyés.",

@@ -52,6 +52,9 @@ class ScriptGenerator
         'openai' => ['url' => 'https://api.openai.com/v1/chat/completions', 'model' => 'gpt-5'],
     ];
 
+    /** Anthropic models that take the server side fallback on a refusal (others answer it with HTTP 400). */
+    private const FALLBACK_MODELS = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5'];
+
     public static function provider(): ?string
     {
         $provider = strtolower((string) config('mdm.ai_provider'));
@@ -90,20 +93,16 @@ class ScriptGenerator
         try {
             $response = $provider === 'anthropic'
                 ? Http::timeout(240)
-                    ->withHeaders([
-                        'x-api-key' => config('mdm.ai_api_key'),
-                        'anthropic-version' => '2023-06-01',
-                        // On a refusal the API answers with the model it picks instead.
-                        'anthropic-beta' => 'server-side-fallback-2026-07-01',
-                    ])
+                    ->withHeaders(['x-api-key' => config('mdm.ai_api_key'), 'anthropic-version' => '2023-06-01'])
+                    // On a refusal the API answers with the model it picks instead (only these models take it).
+                    ->when(in_array($model, self::FALLBACK_MODELS, true), fn ($http) => $http->withHeaders(['anthropic-beta' => 'server-side-fallback-2026-07-01']))
                     ->post($url, [
                         'model' => $model,
                         'max_tokens' => 16000,
                         'system' => self::SYSTEM,
                         'messages' => [['role' => 'user', 'content' => $content]],
                         'output_config' => ['effort' => 'medium', 'format' => ['type' => 'json_schema', 'schema' => self::SCHEMA]],
-                        'fallbacks' => 'default',
-                    ])
+                    ] + (in_array($model, self::FALLBACK_MODELS, true) ? ['fallbacks' => 'default'] : []))
                 : Http::timeout(240)
                     ->when(filled(config('mdm.ai_api_key')), fn ($http) => $http->withToken(config('mdm.ai_api_key')))
                     ->post($url, [
@@ -113,11 +112,13 @@ class ScriptGenerator
                     ]);
         } catch (ConnectionException $e) {
             Log::warning("Script generation: {$e->getMessage()}");
-            throw new RuntimeException(__('The AI could not be reached.'));
+            throw new RuntimeException(__('The AI could not be reached: :error', ['error' => mb_strimwidth($e->getMessage(), 0, 300, '…')]));
         }
         if ($response->failed()) {
             Log::warning("Script generation ($provider) failed: HTTP ".$response->status().' '.mb_strimwidth($response->body(), 0, 500));
-            throw new RuntimeException(__('The AI could not be reached.'));
+            // Both APIs say what is wrong in error.message (a wrong key, no credit, an unknown model).
+            $error = $response->json('error.message') ?? $response->json('message') ?? mb_strimwidth(trim(strip_tags($response->body())), 0, 200, '…');
+            throw new RuntimeException(__('The AI could not be reached: :error', ['error' => 'HTTP '.$response->status().', '.mb_strimwidth((string) $error, 0, 300, '…')]));
         }
         if ($provider === 'anthropic') {
             $refused = $response->json('stop_reason') === 'refusal';

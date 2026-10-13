@@ -327,7 +327,8 @@ class ScriptTest extends TestCase
                     'name' => 'Firewall on', 'description' => 'Turns the firewall on.', 'platform' => 'windows', 'timeout' => 99999,
                     'detection' => "if ((Get-NetFirewallProfile).Enabled -contains \$false) { exit 1 }\nexit 0", 'remediation' => 'Set-NetFirewallProfile -Enabled True',
                 ])]]])
-                ->push(['stop_reason' => 'refusal', 'content' => []]),
+                ->push(['stop_reason' => 'refusal', 'content' => []])
+                ->push(['type' => 'error', 'error' => ['type' => 'authentication_error', 'message' => 'invalid x-api-key']], 401),
             'ollama:11434/*' => Http::response(['choices' => [['finish_reason' => 'stop', 'message' => ['role' => 'assistant', 'content' => $script([
                 'name' => 'Disk check', 'platform' => 'linux', 'detection' => "if ((Get-PSDrive /).Free -lt 1GB) { exit 1 }\nexit 0",
             ])]]]]),
@@ -352,6 +353,8 @@ class ScriptTest extends TestCase
         Livewire::test(Form::class)->set('detection', 'exit 0')->set('aiMode', true)->set('aiPrompt', 'Add logging')->call('generate')
             ->assertHasErrors(['aiPrompt'])->assertSet('detection', 'exit 0')->assertSet('aiMode', true);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Current script'));
+        // What the API says is wrong is shown.
+        $this->assertSame('The AI could not be reached: HTTP 401, invalid x-api-key', Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Firewall on')->call('generate')->errors()->first('aiPrompt'));
 
         // OpenAI, or a server of your own with its API (no key needed then).
         config(['mdm.ai_provider' => 'openai', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions', 'mdm.ai_model' => 'qwen3']);

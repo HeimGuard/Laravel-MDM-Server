@@ -739,7 +739,7 @@
     "Test": "Test",
     "Test notification from :app.": "Testbenachrichtigung von :app.",
     "Texts ignore case; matches is a regular expression.": "Texte ignorieren Groß-/Kleinschreibung; matches ist ein regulärer Ausdruck.",
-    "The AI could not be reached.": "Die KI war nicht erreichbar.",
+    "The AI could not be reached: :error": "Die KI war nicht erreichbar: :error",
     "The AI declined this request.": "Die KI hat diese Anfrage abgelehnt.",
     "The AI did not return a script, try again.": "Die KI hat kein Skript geliefert, versuchen Sie es erneut.",
     "The AI writes the detection and remediation scripts and fills in the form; check them before saving. Only this text and the script in the form are sent.": "Die KI schreibt das Erkennungs- und das Remediation-Skript und füllt das Formular aus; prüfen Sie sie vor dem Speichern. Gesendet werden nur dieser Text und das Skript im Formular.",
