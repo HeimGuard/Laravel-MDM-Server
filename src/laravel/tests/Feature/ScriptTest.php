@@ -14,6 +14,8 @@ use App\Models\ScriptRun;
 use App\Models\User;
 use App\Support\Signing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use SteelAnts\LaravelBoilerplate\Models\Activity;
 use Tests\Concerns\SignsDeviceRequests;
@@ -313,5 +315,36 @@ class ScriptTest extends TestCase
 
         Livewire::test(Form::class)->set('name', 'Empty')->call('save')->assertHasErrors(['detection']);
         Livewire::test(Form::class)->set('name', 'Slow')->set('detection', 'exit 0')->set('timeout', 7200)->call('save')->assertHasErrors(['timeout']);
+    }
+
+    public function test_ai_writes_the_script_into_the_form(): void
+    {
+        $this->actingAs($this->admin());
+        config(['mdm.ai_api_key' => null]);
+        Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Firewall on')->call('generate')
+            ->assertHasErrors(['aiPrompt'])->assertSet('detection', '');
+
+        config(['mdm.ai_api_key' => 'test-key']);
+        Http::fake(['api.anthropic.com/*' => Http::response([
+            'stop_reason' => 'end_turn',
+            'content' => [['type' => 'text', 'text' => json_encode([
+                'name' => 'Firewall on', 'description' => 'Turns the firewall on.', 'platform' => 'windows', 'timeout' => 99999,
+                'detection' => "if ((Get-NetFirewallProfile).Enabled -contains \$false) { exit 1 }\nexit 0", 'remediation' => 'Set-NetFirewallProfile -Enabled True',
+                'manual_remediation' => false,
+            ])]],
+        ])]);
+        Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Turn the firewall on')->call('generate')
+            ->assertHasNoErrors()->assertSet('aiMode', false)
+            ->assertSet('name', 'Firewall on')->assertSet('platform', 'windows')->assertSet('timeout', Script::MAX_TIMEOUT)
+            ->assertSet('remediation', 'Set-NetFirewallProfile -Enabled True')
+            ->call('save')->assertHasNoErrors();
+        $this->assertSame('windows', Script::query()->where('name', 'Firewall on')->sole()->platform);
+        Http::assertSent(fn (Request $request) => $request->hasHeader('x-api-key', 'test-key') && str_contains($request['messages'][0]['content'], 'Turn the firewall on'));
+
+        // Changing a script sends it along; a refusal leaves the form as it is.
+        Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'refusal', 'content' => []])]);
+        Livewire::test(Form::class)->set('detection', 'exit 0')->set('aiMode', true)->set('aiPrompt', 'Add logging')->call('generate')
+            ->assertHasErrors(['aiPrompt'])->assertSet('detection', 'exit 0')->assertSet('aiMode', true);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Current script'));
     }
 }

@@ -38,6 +38,12 @@ return [
     'security_feed_url' => env('MDM_SECURITY_FEED_URL'),
     'security_feed_ref' => env('MDM_SECURITY_FEED_REF', 'main'),
 
+    // An Anthropic API key for writing remediation scripts from a description (the AI button in the
+    // script form); without it the button is off. Only the description and the script being edited
+    // are sent, nothing about the devices.
+    'ai_api_key' => env('MDM_AI_API_KEY'),
+    'ai_model' => env('MDM_AI_MODEL', 'claude-opus-5-5'),
+
     // Seconds a signed message may differ from the server clock.
     'signature_max_skew' => 300,
 
