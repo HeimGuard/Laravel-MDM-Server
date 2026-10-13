@@ -929,6 +929,7 @@
     "port_scan is \":level\" in its config.json (as of its last report :time), port scans need \"on\"": "port_scan est \":level\" dans son config.json (d’après son dernier rapport :time), les analyses de ports nécessitent \"on\"",
     "private, made up by the device": "privée, inventée par l’appareil",
     "public": "publique",
+    "public · last seen :time": "publique · vue :time",
     "public · this server": "publique · ce serveur",
     "random MAC": "MAC aléatoire",
     "resolved": "résolu",

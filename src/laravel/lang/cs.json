@@ -929,6 +929,7 @@
     "port_scan is \":level\" in its config.json (as of its last report :time), port scans need \"on\"": "port_scan je \":level\" v jeho config.json (podle poslední zprávy :time), skenování portů vyžaduje \"on\"",
     "private, made up by the device": "privátní, vytvořená zařízením",
     "public": "veřejná",
+    "public · last seen :time": "veřejná · naposledy :time",
     "public · this server": "veřejná · tento server",
     "random MAC": "náhodná MAC",
     "resolved": "vyřešeno",

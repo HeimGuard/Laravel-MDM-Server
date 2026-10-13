@@ -27,8 +27,10 @@ return [
 
     // Without it (and when the name does not resolve to a public address, no device reaches the
     // server through the router's) the server asks this address for its own public address,
-    // once an hour (only its address leaves the server). MDM_DETECT_PUBLIC_ADDRESS=false for a
-    // server without internet access.
+    // once an hour (only its address leaves the server). The agents (1.21.0+) ask it too, for
+    // each interface, so a device on a VPN to the server or with two connections is drawn behind
+    // the address it reaches the internet from. MDM_DETECT_PUBLIC_ADDRESS=false for a server
+    // without internet access (and agents that ask nothing).
     'detect_public_address' => (bool) env('MDM_DETECT_PUBLIC_ADDRESS', true),
     'public_address_url' => env('MDM_PUBLIC_ADDRESS_URL', 'https://ifconfig.me/ip'),
 

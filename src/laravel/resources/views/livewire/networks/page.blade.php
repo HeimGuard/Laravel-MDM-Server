@@ -1,6 +1,6 @@
 {{-- The networks of the fleet: the map (App\Support\NetworkMap, drawn by resources/js/network-map.js) and the list. --}}
 @php
-    $counts = collect($map['nodes'])->countBy('kind');
+    $counts = collect($map['nodes'])->reject(fn ($node) => $node['kind'] === 'site' && $node['state'] === 'down')->countBy('kind');
     $kinds = [
         'lan' => ['icon' => 'fas fa-ethernet', 'label' => __('LAN'), 'tone' => 'primary'],
         'mixed' => ['icon' => 'fas fa-ethernet', 'label' => __('LAN + Wi-Fi'), 'tone' => 'primary'],

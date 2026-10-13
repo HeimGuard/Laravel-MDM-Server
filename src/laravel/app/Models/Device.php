@@ -1024,8 +1024,24 @@ class Device extends Model
     }
 
     /**
+     * Whether the device reaches the server over a VPN of its own: from a private address that is
+     * none of its other interfaces' while a VPN is connected (the server in the home network, the
+     * internet not through the tunnel). Its networks are not the server's then.
+     */
+    public function getReachesOverVpnAttribute(): bool
+    {
+        if ($this->isPingOnly || $this->public_ip === null || self::isPublicIp($this->public_ip)) {
+            return false;
+        }
+        $connected = collect($this->networks)->where('Connected', true);
+
+        return $connected->where('Type', 'vpn')->isNotEmpty()
+            && ! $connected->where('Type', '!=', 'vpn')->pluck('IPAddresses')->flatten()->map(fn ($ip) => explode('%', (string) $ip)[0])->contains($this->public_ip);
+    }
+
+    /**
      * Network interfaces, connected first: Name, Description, Type (see NETWORK_TYPES, guessed
-     * from the name for older agents), Connected, Status, Mac, IPAddresses.
+     * from the name for older agents), Connected, Status, Mac, IPAddresses, Addresses, Gateway, GatewayMac, PublicAddress.
      */
     public function getNetworksAttribute(): array
     {
@@ -1066,6 +1082,9 @@ class Device extends Model
                 'Gateway' => filter_var($network['Gateway'] ?? null, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ?: null,
                 'GatewayMac' => is_string($network['GatewayMac'] ?? null) && preg_match(DeviceCommand::MAC_PATTERN, $network['GatewayMac'])
                     ? strtoupper(str_replace('-', ':', $network['GatewayMac'])) : null,
+                // Agents 1.21.0+: the public address the internet sees from this interface (each
+                // can have its own: a second card, a mobile network, a VPN to the server only).
+                'PublicAddress' => is_string($network['PublicAddress'] ?? null) && self::isPublicIp($network['PublicAddress']) ? $network['PublicAddress'] : null,
             ];
         }
         usort($networks, fn ($a, $b) => [! $a['Connected'], strtolower($a['Name'])] <=> [! $b['Connected'], strtolower($b['Name'])]);

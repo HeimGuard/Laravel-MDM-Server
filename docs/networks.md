@@ -5,10 +5,18 @@
 **Networks** in the main menu draws the fleet as a map, built from what the agents report. Top down:
 
 1. **Internet**.
-2. **Public addresses** (sites): of each network, the most common address its agents reach the
-   server from. An agent that reaches it over a private address is inside the network of this
-   server (split DNS), so one device of a LAN going over the router's public address (hairpin NAT)
-   and another from inside are still one site.
+2. **Public addresses** (sites): of each network, the most common address its agents see the
+   internet from, else reach the server from. Agents 1.21.0+ ask for it once an hour for each
+   connected interface with a gateway (a request bound to that interface, to
+   `MDM_PUBLIC_ADDRESS_URL`, `https://ifconfig.me/ip` by default), so each connection of a device
+   is behind its own router's address: a laptop on a VPN to the server only (the server sees the
+   tunnel's address) or with LAN and a mobile network at once. An agent that reaches the server
+   over a private address is inside the network of this server (split DNS), so one device of a
+   LAN going over the router's public address (hairpin NAT) and another from inside are still one
+   site; one that reaches it over a VPN of its own (a private address none of its other interfaces
+   has) is not, and without a reported address its networks are at **Unknown address**. A public
+   address devices were seen behind stays on the map when nobody is there anymore, faint, with
+   when it was seen last. `MDM_DETECT_PUBLIC_ADDRESS=false` stops the agents asking too.
 3. **Gateways**: the default gateway of the interfaces (agents 1.15.0+, with its MAC from the
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
 4. **Networks**: the IPv4 subnets of the interfaces, LAN, Wi-Fi, LAN + Wi-Fi or mobile. A network
