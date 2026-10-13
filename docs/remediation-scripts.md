@@ -20,11 +20,17 @@ parser when `pwsh` is on the server, `MDM_PWSH` or `PATH`; otherwise unterminate
 here-strings and comments and unbalanced brackets are found), and the detection has an `exit 0` and
 an `exit 1` outside comments and strings.
 
-**AI** in the form (with `MDM_AI_API_KEY`, an Anthropic API key; `MDM_AI_MODEL`, `claude-opus-5-5` by
-default) replaces the fields with one text: describe the remediation you need (or, with code in the form,
-what to change) and **Generate** writes the name, description, platform, timeout, both scripts and
-Remediate manually into the form, to be checked and saved as usual. Only the text and the script in the
-form are sent, nothing about the devices. Without the key the button is off.
+**AI** in the form replaces the fields with one text: describe the remediation you need (or, with code
+in the form, what to change) and **Generate** writes the name, description, platform, timeout, both
+scripts and Remediate manually into the form, to be checked and saved as usual. Only the text and the
+script in the form are sent, nothing about the devices. Without the AI set up the button is off:
+
+| Variable | |
+| --- | --- |
+| `MDM_AI_PROVIDER` | `anthropic` (Claude, default) or `openai` |
+| `MDM_AI_API_KEY` | the API key of the provider |
+| `MDM_AI_MODEL` | default `claude-opus-5-5` / `gpt-5` |
+| `MDM_AI_URL` | another endpoint; with `openai` any server with the Chat Completions API and structured outputs (Ollama, LM Studio, vLLM, OpenRouter), e.g. `http://ollama:11434/v1/chat/completions`, where the key is optional |
 
 The code is entered as text and stored byte for byte. Its **fingerprint** (SHA-256 over the
 platform, the timeout and the hashes of both scripts) changes with every code change, and a new
