@@ -653,6 +653,23 @@ class Device extends Model
         return $neighbour === null ? null : ['mac' => $neighbour->mac, 'vendor' => \App\Support\MacVendor::lookup($neighbour->mac)];
     }
 
+    /**
+     * Where network discovery sees the MAC of this ping-only device now, when that is another
+     * address of its network (seen in the last day): ['ip', 'seen' => Carbon]. The portal does not
+     * move the device by itself, a smart alert asks first (a stale ARP entry, a swap of addresses).
+     */
+    public function movedAddress(): ?array
+    {
+        if (! $this->isPingOnly || ! $this->ping_mac || ! $this->ping_address) {
+            return null;
+        }
+        $neighbour = NetworkNeighbour::query()->where('mac', NetworkNeighbour::normalizeMac($this->ping_mac))->where('ip', '!=', $this->ping_address)
+            ->where('last_seen_at', '>=', now()->subHours(NetworkNeighbour::SHOWN_HOURS))->orderByDesc('last_seen_at')->get()
+            ->first(fn (NetworkNeighbour $neighbour) => \App\Support\NetworkMap::contains($neighbour->network, $this->ping_address));
+
+        return $neighbour === null ? null : ['ip' => $neighbour->ip, 'seen' => $neighbour->last_seen_at];
+    }
+
     /** The IPv4 address whose ports are scanned: a ping-only device's address, or its first LAN IPv4. */
     public function portScanAddress(): ?string
     {

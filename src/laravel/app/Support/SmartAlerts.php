@@ -70,6 +70,23 @@ class SmartAlerts
             ];
         }
 
+        // Its MAC is at another address now: the portal asks before it pings that one instead.
+        if ($moved = $device->movedAddress()) {
+            $alerts[] = [
+                'key' => 'address',
+                'severity' => 'warning',
+                'icon' => 'fas fa-random',
+                'title' => __('The device has another address'),
+                'message' => __('Network discovery sees :mac at :to (:time), the portal pings :from.', [
+                    'mac' => $device->ping_mac, 'to' => $moved['ip'], 'from' => $device->ping_address, 'time' => $moved['seen']->diffForHumans(),
+                ]).' '.__('Reserve the address in the router (static DHCP lease) so it does not change again.'),
+                'action' => ['command' => 'moveAddress', 'params' => ['ip' => $moved['ip']], 'label' => __('Use :ip', ['ip' => $moved['ip']]), 'icon' => 'fas fa-check',
+                    'confirm' => __('Ping :device at :ip from now on?', ['device' => $device->displayName, 'ip' => $moved['ip']])],
+                // A dismissal is for this address: another one asks again.
+                'revision' => $moved['ip'],
+            ];
+        }
+
         if (empty($device->data)) {
             return self::finish($device, $alerts, $active);
         }
@@ -267,7 +284,7 @@ class SmartAlerts
         foreach ($alerts as &$alert) {
             $alert += ['message' => null, 'details' => [], 'action' => null, 'tab' => null, 'copy' => null, 'failure' => null, 'refusal' => null];
             $alert['active'] = null;
-            if (in_array($alert['action']['command'] ?? null, ['clearAgentErrors', 'adoptMac'], true)) {
+            if (in_array($alert['action']['command'] ?? null, ['clearAgentErrors', 'adoptMac', 'moveAddress'], true)) {
                 // Not a command for the device: done on the server right away.
                 $alert['action'] += ['params' => [], 'confirm' => null];
             } elseif (($alert['action']['command'] ?? null) === 'remediate') {
@@ -399,6 +416,12 @@ class SmartAlerts
             }
             $device->forceFill(['ping_mac' => $found['mac']])->save();
             \App\Support\LiveUpdates::device($device->id, 'settings');
+
+            return null;
+        }
+        if ($alert['action']['command'] === 'moveAddress') {
+            $device->forceFill(['ping_address' => $alert['action']['params']['ip']])->save();
+            \App\Support\LiveUpdates::device($device->id, 'ping');
 
             return null;
         }

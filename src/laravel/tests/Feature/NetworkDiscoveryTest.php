@@ -9,6 +9,7 @@ use App\Models\NetworkNeighbour;
 use App\Models\User;
 use App\Support\AlertEvaluator;
 use App\Support\NetworkMap;
+use App\Support\SmartAlerts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
@@ -93,7 +94,7 @@ class NetworkDiscoveryTest extends TestCase
         $this->assertSame(1, NetworkNeighbour::count());
     }
 
-    public function test_a_ping_only_device_follows_its_mac_to_a_new_address(): void
+    public function test_a_new_address_of_a_ping_only_device_is_confirmed_in_a_smart_alert(): void
     {
         $user = User::factory()->create();
         $rule = AlertRule::query()->create(['user_id' => $user->id, 'type' => 'address_changed', 'target' => [], 'channels' => [], 'enabled' => true]);
@@ -103,15 +104,54 @@ class NetworkDiscoveryTest extends TestCase
 
         $this->report('neighbours', [['Ip' => '192.168.1.31', 'Mac' => 'aa-bb-cc-00-00-30']]);
 
-        $this->assertSame('192.168.1.31', $printer->fresh()->ping_address);
-        // The alert says it moved and to reserve the address.
+        // Not moved by itself: the rule is told, the device asks.
+        $this->assertSame('192.168.1.30', $printer->fresh()->ping_address);
         $this->assertSame(1, $rule->events()->where('device_id', $printer->id)->count());
-        $this->assertStringContainsString('moved from 192.168.1.30 to 192.168.1.31', $rule->events()->first()->message);
-        // The same address again is no change.
+        $this->assertStringContainsString('is at 192.168.1.31 now, the portal pings 192.168.1.30', $rule->events()->first()->message);
+        $alert = collect(SmartAlerts::for($printer->fresh()))->firstWhere('key', 'address');
+        $this->assertSame('moveAddress', $alert['action']['command']);
+        $this->assertSame(['ip' => '192.168.1.31'], $alert['action']['params']);
+        $this->assertNotNull($alert['action']['confirm']);
+        // The same address again: told once.
         $this->report('neighbours', [['Ip' => '192.168.1.31', 'Mac' => 'aa-bb-cc-00-00-30']]);
         $this->assertSame(1, $rule->events()->count());
+
+        // Confirmed: pinged there, the alert is gone.
+        $this->assertNull(SmartAlerts::run($printer->fresh(), 'address', $user));
+        $this->assertSame('192.168.1.31', $printer->fresh()->ping_address);
+        $this->assertNull(collect(SmartAlerts::for($printer->fresh()))->firstWhere('key', 'address'));
         // Known: not shown as unknown.
         $this->assertCount(0, NetworkNeighbour::unknown());
+    }
+
+    public function test_an_old_entry_of_the_arp_table_does_not_flip_the_address(): void
+    {
+        $user = User::factory()->create();
+        $rule = AlertRule::query()->create(['user_id' => $user->id, 'type' => 'address_changed', 'target' => [], 'channels' => [], 'enabled' => true]);
+        $this->agent();
+        $switch = new Device;
+        $switch->forceFill(['kind' => 'ping', 'name' => 'SW3', 'os' => '', 'token' => hash('sha256', 's'), 'ping_address' => '192.168.1.192', 'ping_prefix' => 24, 'ping_mac' => 'CC:BA:BD:68:2E:91'])->save();
+        $seenAt = fn () => NetworkNeighbour::query()->where('mac', 'CC:BA:BD:68:2E:91')->sole()->ip;
+
+        // Readdressed: the new address answered lately, the old one is still in the table.
+        $this->report('neighbours', [
+            ['Ip' => '192.168.1.192', 'Mac' => 'cc-ba-bd-68-2e-91', 'State' => 'stale'],
+            ['Ip' => '192.168.1.9', 'Mac' => 'cc-ba-bd-68-2e-91', 'State' => 'fresh'],
+        ]);
+        $this->assertSame('192.168.1.9', $seenAt());
+        $this->assertSame(1, $rule->events()->count());
+        $this->assertSame('192.168.1.192', $switch->fresh()->ping_address);
+        // An agent that has only the old entry left: it stays at the new one, nobody is told.
+        $this->report('neighbours', [['Ip' => '192.168.1.192', 'Mac' => 'cc-ba-bd-68-2e-91', 'State' => 'stale']]);
+        $this->assertSame('192.168.1.9', $seenAt());
+        // An older agent (no state) with both addresses: it stays where it was seen.
+        $this->report('neighbours', [
+            ['Ip' => '192.168.1.192', 'Mac' => 'cc-ba-bd-68-2e-91'],
+            ['Ip' => '192.168.1.9', 'Mac' => 'cc-ba-bd-68-2e-91'],
+        ]);
+        $this->assertSame('192.168.1.9', $seenAt());
+        $this->assertSame(1, $rule->events()->count());
+        $this->assertSame('192.168.1.9', collect(SmartAlerts::for($switch->fresh()))->firstWhere('key', 'address')['action']['params']['ip']);
     }
 
     public function test_unknown_devices_are_on_the_map_and_can_be_added_or_ignored(): void

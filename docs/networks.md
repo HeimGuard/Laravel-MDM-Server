@@ -73,8 +73,12 @@ know show up. What an agent may do is set on the device, in `network_discovery` 
   the last 24 hours are shown; ones not seen for 30 days are forgotten (ignored ones after 180).
 - **Add** makes it a ping-only device with its address, prefix and MAC. **Ignore** hides it (and
   its alerts); ignored ones are listed under the networks and can be shown again.
-- **Dynamic addresses:** a ping-only device with a MAC address follows it: when an agent sees that
-  MAC at another address of the same network (DHCP), the device moves there.
+- **Dynamic addresses:** when an agent sees the MAC of a ping-only device at another address of
+  the same network (DHCP, a readdressed device), the portal does not move it: the device gets a
+  smart alert **The device has another address** with **Use 192.168.1.9** (asks first), and the
+  *address changed* alert rules are told once per new address. Only an address the report has
+  that MAC at alone counts; agents 1.21.0+ mark ARP entries confirmed lately, so an old entry the
+  table still keeps after a change (Windows keeps them for hours) does not send it back.
 - **Scan** (in the network's card, or **Scan 192.168.1.0/24** in the menu of an agent for each of
   its networks, up to a /22): an online agent in the network with
   `network_discovery` `scan` pings every address of it (128 at once, a few seconds for a /24),

@@ -4224,8 +4224,10 @@ function Test-UnicastMac {
 }
 
 function Get-Neighbours {
-    # The IPv4 neighbours of the interfaces (the ARP table): @{ Ip; Mac; Hostname }, the names from
-    # the last scan (reverse DNS). Entries that did not answer (failed, incomplete) are left out.
+    # The IPv4 neighbours of the interfaces (the ARP table): @{ Ip; Mac; State; Hostname }, the names
+    # from the last scan (reverse DNS). Entries that did not answer (failed, incomplete) are left
+    # out; State is fresh (confirmed lately) or stale (kept from before: after a change of address
+    # the old one can stay for hours, the server does not move a device back to it).
     $entries = @()
     if ($OnLinux) {
         $raw = try { (& ip -j -4 neigh show 2>$null) -join "`n" } catch { '' }
@@ -4233,7 +4235,7 @@ function Get-Neighbours {
             foreach ($entry in @($raw | ConvertFrom-Json | ForEach-Object { $_ })) {
                 $state = @($entry.state)
                 if (-not $entry.lladdr -or $state -contains 'FAILED' -or $state -contains 'INCOMPLETE') { continue }
-                $entries += @{ Ip = "$($entry.dst)"; Mac = "$($entry.lladdr)" }
+                $entries += @{ Ip = "$($entry.dst)"; Mac = "$($entry.lladdr)"; State = if ($state -contains 'STALE' -or $state -contains 'NOARP') { 'stale' } else { 'fresh' } }
             }
         } elseif (Test-Path -Path /proc/net/arp) {
             # Without iproute2's JSON (BusyBox): IP, type, flags (0x2 complete), MAC, mask, device.
@@ -4245,7 +4247,7 @@ function Get-Neighbours {
     } else {
         foreach ($entry in @(Get-NetNeighbor -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
             if ($entry.LinkLayerAddress -and @('Reachable', 'Stale', 'Delay', 'Probe') -contains "$($entry.State)") {
-                $entries += @{ Ip = "$($entry.IPAddress)"; Mac = "$($entry.LinkLayerAddress)" }
+                $entries += @{ Ip = "$($entry.IPAddress)"; Mac = "$($entry.LinkLayerAddress)"; State = if ("$($entry.State)" -eq 'Stale') { 'stale' } else { 'fresh' } }
             }
         }
     }

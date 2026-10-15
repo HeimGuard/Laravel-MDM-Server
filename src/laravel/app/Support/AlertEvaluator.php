@@ -387,7 +387,7 @@ class AlertEvaluator
 
     private static function announceAddressChange(Device $device, string $from, string $to): void
     {
-        $message = __(':device (:mac) moved from :from to :to: its address is dynamic. Reserve :to for the MAC address in the router (static DHCP lease) or set it on the device; the portal follows it meanwhile.', [
+        $message = __(':device (:mac) is at :to now, the portal pings :from: its address is dynamic. Confirm the new address on the device (smart alert), and reserve it for the MAC address in the router (static DHCP lease) or set it on the device.', [
             'device' => $device->displayName, 'mac' => $device->ping_mac, 'from' => $from, 'to' => $to,
         ]);
         foreach (AlertRule::query()->with('user')->where('type', 'address_changed')->where('enabled', true)->get() as $rule) {

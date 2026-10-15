@@ -143,7 +143,7 @@ class LocaleTest extends TestCase
         App::setLocale('de');
         AlertEvaluator::addressChanged($printer, '192.168.1.30', '192.168.1.31');
 
-        $this->assertStringContainsString('moved from 192.168.1.30 to 192.168.1.31', $rule->events()->sole()->message);
+        $this->assertStringContainsString('is at 192.168.1.31 now, the portal pings 192.168.1.30', $rule->events()->sole()->message);
         // The language of the request is back afterwards.
         $this->assertSame('de', App::getLocale());
     }
