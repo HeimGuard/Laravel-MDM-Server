@@ -59,6 +59,12 @@ address, the prefix of its network (`/24`) and optionally the MAC address for Wa
   from the interface in the device's network (the system `ping` with `-I` on Linux, `-S` with its
   address on Windows), not over the default route (Docker, VPN, a second card); **Sync** says which
   interface answered.
+- **Another subnet** (a device behind a router, e.g. 192.168.2.1 while the agents are in
+  192.168.1.0/24): ICMP goes over the gateway. Automatic (the default): without an agent in its
+  network the stationary agents of one site ping it, each site in turn for 5 minutes (this
+  server's first) until one gets an answer; it then stays with that agent (the same private
+  address can be another device at another site). **Ping through** in its ping settings picks the
+  agent instead; nobody else pings it while that one is offline.
 - The ping-only devices of a network are spread over all agents that can ping them: each goes to
   the one with the fewest so far, and stays with its agent while that is as good. When an agent goes
   offline, the others take its devices with their next ping (32 per agent at most).

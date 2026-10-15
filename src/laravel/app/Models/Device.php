@@ -52,6 +52,9 @@ class Device extends Model
     /** At most this many ping-only devices per agent. */
     public const MAX_PING_TARGETS = 32;
 
+    /** Seconds each site's agents try a ping-only device in another subnet before the next site does. */
+    public const ROUTED_PING_SECONDS = 300;
+
     /** Interfaces that can wake a machine (a magic packet goes to the network card). */
     public const WAKE_INTERFACE_TYPES = ['lan', 'wifi'];
 
@@ -1328,9 +1331,10 @@ class Device extends Model
         }
         $load = [];
         $assignments = [];
+        $routed = self::routedPingAgents($agents);
         foreach (static::query()->where('kind', 'ping')->whereNotNull('ping_address')->orderBy('id')->get() as $device) {
             $best = null;
-            foreach ($device->relayCandidates(['lan'], fn () => true, false, null, $agents) as [$relay]) {
+            foreach ($device->pingCandidates($agents, $routed) as $relay) {
                 $count = $load[$relay->id] ?? 0;
                 if ($count >= self::MAX_PING_TARGETS) {
                     continue;
@@ -1347,6 +1351,50 @@ class Device extends Model
         }
 
         return $assignments;
+    }
+
+    /**
+     * The agents that may ping this ping-only device: the one chosen for it (ping_via_id), else
+     * the ones in its network, else (another subnet: ICMP goes over the router) the stationary
+     * agents of one site ($routed, by site): the site of the agent it answered last (an hour),
+     * else each site in turn for ROUTED_PING_SECONDS, this server's first, until one gets an
+     * answer: the same private address can be a device at another site too.
+     *
+     * @param  Collection<int, Device>  $agents
+     * @param  Collection<string, Collection<int, Device>>  $routed
+     * @return list<Device>
+     */
+    private function pingCandidates(Collection $agents, Collection $routed): array
+    {
+        if ($this->ping_via_id) {
+            $via = $agents->firstWhere('id', $this->ping_via_id);
+
+            return $via !== null && ! $via->offline && $via->signsRequests && $via->connectedViaApi ? [$via] : [];
+        }
+        $inNetwork = array_column($this->relayCandidates(['lan'], fn () => true, false, null, $agents), 0);
+        if ($inNetwork !== [] || $routed->isEmpty()) {
+            return $inNetwork;
+        }
+        $answered = $this->ping_relay_id && $this->last_seen_at?->gt(now()->subHour())
+            ? $routed->search(fn (Collection $site) => $site->contains('id', $this->ping_relay_id)) : false;
+        $site = $answered !== false ? $answered : $routed->keys()[intdiv(now()->getTimestamp(), self::ROUTED_PING_SECONDS) % $routed->count()];
+
+        return $routed[$site]->all();
+    }
+
+    /**
+     * Agents that can ping over the router, by site (their public address; the ones reaching the
+     * server over private addresses are this server's, first): online, signing, reporting, not on
+     * a battery.
+     *
+     * @param  Collection<int, Device>  $agents
+     * @return Collection<string, Collection<int, Device>>
+     */
+    private static function routedPingAgents(Collection $agents): Collection
+    {
+        return $agents->filter(fn (Device $agent) => ! $agent->offline && $agent->signsRequests && $agent->connectedViaApi && ! $agent->isMobile && ! $agent->reachesOverVpn)
+            ->groupBy(fn (Device $agent) => self::isPublicIp($agent->public_ip) ? $agent->public_ip : '')
+            ->sortKeys()->map->values();
     }
 
     /**

@@ -879,6 +879,52 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame([4, 0], [$count($a), $count($b->fresh())]);
     }
 
+    public function test_a_ping_only_device_in_another_subnet_is_pinged_over_the_router(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $archer = new Device;
+        $archer->forceFill(['kind' => 'ping', 'name' => 'Archer NX500', 'os' => '', 'token' => hash('sha256', 'a'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24])->save();
+        $nas = $this->device('nas', ['Networks' => [$this->network('192.168.1.5')]]);
+        $this->device('laptop', ['Battery' => 80, 'Networks' => [$this->network('192.168.1.7')]]);
+
+        // No agent in 192.168.2.0/24: the stationary ones (all at one site) ping it over their gateway.
+        $this->assertSame($nas->id, $archer->fresh()->pingRelay()->id);
+        $this->assertSame([['id' => $archer->id, 'address' => '192.168.2.1']], Device::pingTargetsFor($nas));
+
+        // Agents at two sites: the same private address could be at either, each site tries in
+        // turn (this server's first) until it answers, then it stays with that agent.
+        $office = $this->device('office', ['Networks' => [$this->network('10.0.0.5')]]);
+        Device::query()->whereKey($office->id)->update(['public_ip' => '89.24.10.5']);
+        // Agents that keep reporting while the time goes on.
+        $alive = function () use ($nas, $office) {
+            Device::recordHeartbeat($nas->id, channel: 'http');
+            Device::recordHeartbeat($office->id, channel: 'http');
+        };
+        $slot = intdiv(now()->getTimestamp(), Device::ROUTED_PING_SECONDS);
+        $this->travelTo(\Illuminate\Support\Carbon::createFromTimestamp(($slot + 2 - $slot % 2) * Device::ROUTED_PING_SECONDS + 10));
+        $alive();
+        $this->assertSame($nas->id, $archer->fresh()->pingRelay()->id);
+        $this->travel(Device::ROUTED_PING_SECONDS)->seconds();
+        $alive();
+        $this->assertSame($office->id, $archer->fresh()->pingRelay()->id);
+        $this->signedJson('POST', '/api/device/pings', ['results' => [['id' => $archer->id, 'up' => true, 'rtt' => 3]]], 'office')->assertJson(['taken' => 1]);
+        $this->travel(Device::ROUTED_PING_SECONDS)->seconds();
+        $alive();
+        $this->assertSame($office->id, $archer->fresh()->pingRelay()->id);
+
+        // One can be chosen for it.
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $archer->id])
+            ->assertSee('pc-office')
+            ->set('via', (string) $nas->id)->call('save')->assertHasNoErrors();
+        $this->assertSame($nas->id, $archer->fresh()->ping_via_id);
+        $this->assertSame($nas->id, $archer->fresh()->pingRelay()->id);
+        $this->assertSame([], Device::pingTargetsFor($office->fresh()));
+        // The chosen agent offline: nobody else takes it.
+        $nas->forceFill(['last_seen_at' => now()->subHour()])->saveQuietly();
+        $this->assertNull($archer->fresh()->pingRelay());
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $archer->id])->set('via', '999999')->call('save')->assertHasErrors('via');
+    }
+
     public function test_sync_of_a_ping_only_device_pings_it_now(): void
     {
         $this->actingAs(User::factory()->create());
