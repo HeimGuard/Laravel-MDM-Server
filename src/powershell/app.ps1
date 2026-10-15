@@ -1363,7 +1363,9 @@ function Get-SecurityLogs {
         $Cursors = @{},
         # What to send: the values of the identifier / event id per log, null for all, none for none.
         $Policy,
-        [int]$MaxRecords = 20000
+        [int]$MaxRecords = 20000,
+        # About this many bytes of one Windows log per collection.
+        [int]$LogBytes = 3MB
     )
 
     $logs = New-Object System.Collections.Generic.List[object]
@@ -1467,7 +1469,12 @@ function Get-SecurityLogs {
         $events = @(try { Get-WinEvent -LogName $channel.Log -FilterXPath "*[System[$($conditions -join ' and ')]]" -MaxEvents $MaxRecords -Oldest -ErrorAction Stop } catch { })
         if ($events.Count -eq 0) { continue }
         $rows = New-Object System.Collections.Generic.List[object]
+        # At most about LogBytes of a log per collection (the server takes 16 MB unpacked): the
+        # position moves to the last record sent, the rest comes with the next collection.
+        $size = 0
+        $last = $null
         foreach ($record in $events) {
+            if ($size -ge $LogBytes) { break }
             $data = @{}
             try {
                 $xml = [xml]$record.ToXml()
@@ -1483,8 +1490,11 @@ function Get-SecurityLogs {
             }
             catch { }
             $rows.Add([object[]]@($record.TimeCreated.ToUniversalTime().ToString('o'), [int]$record.Id, $record.ProviderName, [int]$record.Level, $data))
+            $size += 100 + "$($record.ProviderName)".Length
+            foreach ($entry in $data.GetEnumerator()) { $size += 6 + $entry.Key.Length + "$($entry.Value)".Length }
+            $last = $record.RecordId
         }
-        $moved[$channel.Source] = [int64]($events | Measure-Object -Property RecordId -Maximum).Maximum
+        $moved[$channel.Source] = [int64]$last
         $logs.Add(@{ source = $channel.Source; fields = @('Time', 'Id', 'Provider', 'Level', 'Data'); rows = $rows.ToArray() })
     }
 
@@ -1506,7 +1516,8 @@ function Get-SecurityInventory {
 
     $inventory = @{}
     try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux | Select-Object -First 5000) } catch { }
-    try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid) } catch { }
+    # As many as the server takes of each list (more and it refuses the whole collection).
+    try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
     try { $inventory['startup'] = @(Get-SecurityStartup -OnLinux $OnLinux | Select-Object -First 500) } catch { }
     try { $inventory['admins'] = @(Get-SecurityAdmins -OnLinux $OnLinux | Select-Object -First 200) } catch { }
