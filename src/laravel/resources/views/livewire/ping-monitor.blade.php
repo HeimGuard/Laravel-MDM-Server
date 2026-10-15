@@ -8,7 +8,7 @@
     $peak = max(1, (float) $max * 1.15);
     $step = 10 ** floor(log10($peak));
     $top = collect([1, 2, 5, 10])->map(fn ($m) => $m * $step)->first(fn ($v) => $v >= $peak);
-    $subtitle = ($relay ? e(__('Every 30 s by :relay', ['relay' => $relay->displayName])) : '<span title="'.e(__('It needs an online agent 1.10.0+ in the same network that does not run on a battery.')).'">'.e(__('No agents available to send ping')).'</span>')
+    $subtitle = ($relay ? e(__('Every 30 s by :relay', ['relay' => $relay->displayName])) : '<span title="'.e(__('It needs an online agent 1.10.0+ in its network that does not run on a battery, or one chosen in its ping settings (another subnet).')).'">'.e(__('No agents available to send ping')).'</span>')
         .($device->ping_mac ? ' · MAC <span class="font-monospace">'.e($device->ping_mac).'</span>'.(($vendor = \App\Support\MacVendor::lookup($device->ping_mac)) ? ' <span class="text-body-secondary">· '.e($vendor).'</span>' : '') : '');
 @endphp
 {{-- Uptime Kuma style monitor of a ping-only device, laid out like the performance of an agent. --}}

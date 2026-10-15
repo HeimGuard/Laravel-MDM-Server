@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Livewire\Networks\Page;
 use App\Models\Device;
+use App\Models\NetworkSite;
 use App\Models\User;
 use App\Support\NetworkMap;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,6 +120,57 @@ class NetworkMapTest extends TestCase
         $edges = collect($map['edges'])->keyBy('id');
         $this->assertTrue($edges->has('net:gw:50:C7:BF:AA:BB:CC|192.168.1.0/24>server'));
         $this->assertSame('public · this server', collect($map['nodes'])->firstWhere('id', 'site:62.141.23.141')['sub']);
+    }
+
+    public function test_a_device_on_a_vpn_to_the_server_is_behind_the_addresses_its_interfaces_reach_the_internet_from(): void
+    {
+        config(['mdm.public_address' => '62.141.23.141']);
+        $nas = $this->agent('NAS', '192.168.1.5', [$this->nic('eth0', 'lan', '192.168.1.5', 24, true, '192.168.1.1', '50-C7-BF-AA-BB-CC')]);
+        // At home (split VPN to the server): the server sees the tunnel's address; each connection
+        // goes to the internet through its own router (agents 1.21.0+ report what the internet sees).
+        $laptop = $this->agent('ELITEBOOK', '10.8.0.4', [
+            $this->nic('Ethernet', 'lan', '192.168.1.52', 24, true, '192.168.1.1', 'AA-BB-CC-00-00-01') + ['PublicAddress' => '90.176.236.141'],
+            $this->nic('Wi-Fi', 'wifi', '10.3.80.5', 21, true, '10.3.80.1', 'AA-BB-CC-00-00-02') + ['PublicAddress' => '78.80.1.2'],
+            $this->nic('wg0', 'vpn', '10.8.0.4', 24),
+        ]);
+        // An older agent on the VPN: where it is is not known, it is not in the server's network.
+        $old = $this->agent('OLD', '10.8.0.9', [$this->nic('eth0', 'lan', '192.168.50.9', 24, true, '192.168.50.1', 'AA-BB-CC-00-00-03'), $this->nic('wg0', 'vpn', '10.8.0.9', 24)]);
+
+        $this->assertTrue($laptop->reachesOverVpn);
+        $this->assertFalse($nas->reachesOverVpn);
+        $this->assertSame(['90.176.236.141', '78.80.1.2'], NetworkSite::of($laptop));
+
+        $map = NetworkMap::build();
+        $networks = collect($map['networks'])->keyBy('id');
+        $this->assertSame('90.176.236.141', $networks['net:gw:AA:BB:CC:00:00:01|192.168.1.0/24']['site']);
+        $this->assertSame('78.80.1.2', $networks['net:gw:AA:BB:CC:00:00:02|10.3.80.0/21']['site']);
+        $this->assertSame('?', $networks['net:gw:AA:BB:CC:00:00:03|192.168.50.0/24']['site']);
+        $this->assertSame('62.141.23.141', $networks['net:gw:50:C7:BF:AA:BB:CC|192.168.1.0/24']['site']);
+        $nodes = collect($map['nodes'])->keyBy('id');
+        $this->assertSame('public · this server', $nodes['site:62.141.23.141']['sub']);
+        $this->assertSame('public', $nodes['site:90.176.236.141']['sub']);
+        // This server stays in its own network, not in the laptop's home LAN.
+        $this->assertTrue(collect($map['edges'])->keyBy('id')->has('net:gw:50:C7:BF:AA:BB:CC|192.168.1.0/24>server'));
+        $this->assertSame($old->id, collect($networks['net:gw:AA:BB:CC:00:00:03|192.168.50.0/24']['devices'])->pluck('id')->sole());
+    }
+
+    public function test_public_addresses_devices_were_behind_stay_faint(): void
+    {
+        config(['mdm.public_address' => '89.24.10.5']);
+        $this->travelTo(now()->subDays(3));
+        NetworkSite::record(['31.30.4.122', '89.24.10.5']);
+        $this->travelBack();
+        NetworkSite::record(['89.24.10.5']);
+        $this->agent('OFFICE', '89.24.10.5', [$this->nic('eth0', 'lan', '10.0.0.2')]);
+
+        $map = NetworkMap::build();
+        $nodes = collect($map['nodes'])->keyBy('id');
+        $this->assertSame('up', $nodes['site:89.24.10.5']['state']);
+        $this->assertSame('down', $nodes['site:31.30.4.122']['state']);
+        $this->assertSame(['0 devices'], $nodes['site:31.30.4.122']['badges']);
+        $this->assertStringStartsWith('public · last seen 3 days ago', $nodes['site:31.30.4.122']['sub']);
+        $this->assertFalse(collect($map['edges'])->keyBy('id')['internet>site:31.30.4.122']['up']);
+        $this->assertSame(2, NetworkSite::query()->count());
     }
 
     public function test_a_device_without_the_gateway_mac_going_over_the_public_address_joins_its_lan(): void

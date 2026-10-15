@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
 
@@ -136,7 +137,7 @@ class NetworkNeighbour extends Model
             return 0;
         }
 
-        $seen = [];
+        $candidates = [];
         foreach (array_slice(array_values($neighbours), 0, self::MAX_PER_REPORT) as $neighbour) {
             $ip = is_array($neighbour) ? ($neighbour['Ip'] ?? null) : null;
             $mac = self::normalizeMac(is_array($neighbour) ? ($neighbour['Mac'] ?? null) : null);
@@ -148,14 +149,37 @@ class NetworkNeighbour extends Model
                 continue;
             }
             $hostname = is_string($neighbour['Hostname'] ?? null) ? trim(preg_replace('/[^\w.\-]/u', '', $neighbour['Hostname'])) : '';
-            $seen[$mac] = ['ip' => $ip, 'network' => $network, 'site' => $networks[$network], 'hostname' => $hostname !== '' && $hostname !== $ip ? mb_substr($hostname, 0, 255) : null];
+            // Agents 1.21.0+: whether the entry was confirmed lately (fresh) or is an old one the
+            // table still keeps (stale: the device may have another address by now).
+            $state = in_array($neighbour['State'] ?? null, ['fresh', 'stale'], true) ? $neighbour['State'] : null;
+            $candidates[$mac][] = ['ip' => $ip, 'network' => $network, 'site' => $networks[$network], 'state' => $state,
+                'hostname' => $hostname !== '' && $hostname !== $ip ? mb_substr($hostname, 0, 255) : null];
         }
-        if ($seen === []) {
+        if ($candidates === []) {
             return 0;
         }
 
-        $existing = static::query()->whereIn('site', array_unique(array_column($seen, 'site')))->whereIn('mac', array_keys($seen))->get()
+        $existing = static::query()->whereIn('site', array_unique(array_merge(...array_map(fn ($entries) => array_column($entries, 'site'), array_values($candidates)))))
+            ->whereIn('mac', array_keys($candidates))->get()
             ->keyBy(fn (self $row) => $row->site.'|'.$row->mac);
+        // One MAC at several addresses (the old one still in the table after a change): the fresh
+        // ones count; it stays where it was while that is one of them, and only one address that
+        // is surely its own now moves a ping-only device (followMacs).
+        $seen = [];
+        foreach ($candidates as $mac => $entries) {
+            $fresh = array_values(array_filter($entries, fn ($entry) => $entry['state'] === 'fresh'));
+            $pool = $fresh !== [] ? $fresh : $entries;
+            $ips = array_values(array_unique(array_column($pool, 'ip')));
+            $kept = collect($pool)->first(fn ($entry) => ($existing[$entry['site'].'|'.$mac] ?? null)?->ip === $entry['ip']);
+            // Only old entries of another address: it is still where it was seen last.
+            $row = $existing[$pool[0]['site'].'|'.$mac] ?? null;
+            if ($kept === null && $fresh === [] && $row !== null && collect($entries)->contains(fn ($entry) => $entry['state'] === 'stale')) {
+                $kept = ['ip' => $row->ip, 'network' => $row->network, 'site' => $row->site, 'hostname' => null];
+            }
+            $seen[$mac] = ($kept ?? $pool[0]) + [
+                'move' => count($ips) === 1 && ($fresh !== [] || collect($entries)->every(fn ($entry) => $entry['state'] === null)),
+            ];
+        }
         foreach ($seen as $mac => $values) {
             $row = $existing[$values['site'].'|'.$mac] ?? new static(['site' => $values['site'], 'mac' => $mac, 'first_seen_at' => now()]);
             $row->fill([
@@ -200,20 +224,25 @@ class NetworkNeighbour extends Model
         return $networks;
     }
 
-    /** Ping-only devices whose MAC is now at another address of the same network go there. */
+    /**
+     * Ping-only devices whose MAC is now at another address of the same network: the portal does
+     * not move them, the device gets a smart alert to confirm it (SmartAlerts, movedAddress) and
+     * the address_changed rules are told once per new address. Only when the report has the MAC at
+     * that one address, confirmed lately (agents 1.21.0+; a stale ARP entry of an old address
+     * would send it back and forth).
+     */
     private static function followMacs(array $seen): void
     {
         $devices = Device::query()->where('kind', 'ping')->whereIn('ping_mac', array_keys($seen))->get();
         foreach ($devices as $device) {
             $now = $seen[$device->ping_mac];
-            if ($device->ping_address === $now['ip'] || ! $device->ping_address || ! NetworkMap::contains($now['network'], $device->ping_address)) {
+            if (! $now['move'] || $device->ping_address === $now['ip'] || ! $device->ping_address || ! NetworkMap::contains($now['network'], $device->ping_address)) {
                 continue;
             }
-            $from = $device->ping_address;
-            $device->ping_address = $now['ip'];
-            $device->save();
-            AlertEvaluator::addressChanged($device, $from, $now['ip']);
-            LiveUpdates::device($device->id, 'ping');
+            if (Cache::add('address-moved:'.$device->id.':'.$now['ip'], true, now()->addDay())) {
+                AlertEvaluator::addressChanged($device, $device->ping_address, $now['ip']);
+                LiveUpdates::device($device->id, 'alert');
+            }
         }
     }
 

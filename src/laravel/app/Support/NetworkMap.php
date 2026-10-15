@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\NetworkNeighbour;
+use App\Models\NetworkSite;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -153,6 +154,7 @@ class NetworkMap
             $this->networks[$target]['types'] += $network['types'];
             $this->networks[$target]['members'] += $network['members'];
             $this->networks[$target]['reach'] += $network['reach'];
+            $this->networks[$target]['egress'] += $network['egress'];
             $this->networks[$target]['gateways'] = [...$this->networks[$target]['gateways'], ...$network['gateways']];
             $this->aliases[$key] = $target;
             unset($this->networks[$key]);
@@ -164,7 +166,7 @@ class NetworkMap
     {
         return match (true) {
             Device::isPublicIp($device->public_ip) => $device->public_ip,
-            $device->public_ip !== null && $serverSite !== null => $serverSite,
+            $device->public_ip !== null && $serverSite !== null && ! $device->reachesOverVpn => $serverSite,
             default => '?',
         };
     }
@@ -182,6 +184,8 @@ class NetworkMap
         // reaches the server from (over the internet, from inside the server's LAN, through a
         // proxy): it is keyed by the MAC of its gateway, without one by that address (segmentOf).
         foreach ($agents as $device) {
+            // Over its own VPN the address it reaches the server from tells nothing of its networks.
+            $reach = $device->reachesOverVpn ? null : $device->public_ip;
             foreach ($device->networks as $interface) {
                 if (in_array($interface['Type'], self::SKIPPED_TYPES, true)) {
                     continue;
@@ -195,14 +199,18 @@ class NetworkMap
                     }
                     $vpn = $interface['Type'] === 'vpn';
                     $key = 'net:'.($vpn ? 'vpn' : self::segmentOf($interface, $device, $serverSite)).'|'.$cidr;
-                    $this->networks[$key] ??= ['cidr' => $cidr, 'site' => null, 'vpn' => $vpn, 'types' => [], 'members' => [], 'gateways' => [], 'reach' => []];
+                    $this->networks[$key] ??= ['cidr' => $cidr, 'site' => null, 'vpn' => $vpn, 'types' => [], 'members' => [], 'gateways' => [], 'reach' => [], 'egress' => []];
                     $this->networks[$key]['types'][$interface['Type']] = true;
                     $this->networks[$key]['members'][$device->id] ??= [
                         'type' => $interface['Type'], 'connected' => $interface['Connected'], 'name' => $interface['Name'], 'address' => $address['Address'],
                     ];
                     if (! $vpn) {
-                        // The address the device reaches the server from (its site).
-                        $this->networks[$key]['reach'][$device->id] = $device->public_ip;
+                        // The address the device reaches the server from (its site), and the one the
+                        // internet sees from this interface (agents 1.21.0+).
+                        $this->networks[$key]['reach'][$device->id] = $reach;
+                        if ($interface['Connected'] && $interface['PublicAddress'] !== null) {
+                            $this->networks[$key]['egress'][$device->id] = $interface['PublicAddress'];
+                        }
                     }
                     if ($interface['Gateway'] ?? null) {
                         $this->networks[$key]['gateways'][] = ['ip' => $interface['Gateway'], 'mac' => $interface['GatewayMac'] ?? null];
@@ -212,11 +220,12 @@ class NetworkMap
         }
         $this->mergeWithoutGatewayMac($serverSite);
 
-        // Sites: the public address of each network, the most common one its devices reach the
-        // server from. The network the agents reach the server from over private addresses is
+        // Sites: the public address of each network, the most common one its devices see the
+        // internet from (agents 1.21.0+), else reach the server from. The network the agents reach the server from over private addresses is
         // the server's: its public address is MDM_PUBLIC_ADDRESS, else what a device of it reaches
         // the server through (the router's address), else the server's name resolved.
-        $publicOf = fn (array $network) => collect($network['reach'])->filter(fn ($ip) => Device::isPublicIp($ip))->countBy()->sortDesc()->keys()->first();
+        $mostCommon = fn (array $addresses) => collect($addresses)->filter(fn ($ip) => Device::isPublicIp($ip))->countBy()->sortDesc()->keys()->first();
+        $publicOf = fn (array $network) => $mostCommon($network['egress']) ?? $mostCommon($network['reach']);
         $insideCount = fn (array $network) => collect($network['reach'])->filter(fn ($ip) => $ip !== null && ! Device::isPublicIp($ip))->count();
         $inside = collect($this->networks)->reject(fn ($network) => $network['vpn'])->filter(fn ($network) => $insideCount($network) > 0)
             ->sortByDesc(fn ($network) => $insideCount($network))->keys()->first();
@@ -251,7 +260,7 @@ class NetworkMap
                 $cidr = self::cidr($device->ping_address, (int) ($device->ping_prefix ?? 24));
                 $site = $relaySite ?? '?';
                 $key = 'net:'.$site.'|'.$cidr;
-                $this->networks[$key] ??= ['cidr' => $cidr, 'site' => $site, 'vpn' => false, 'types' => ['lan' => true], 'members' => [], 'gateways' => [], 'reach' => []];
+                $this->networks[$key] ??= ['cidr' => $cidr, 'site' => $site, 'vpn' => false, 'types' => ['lan' => true], 'members' => [], 'gateways' => [], 'reach' => [], 'egress' => []];
             }
             $this->networks[$key]['members'][$device->id] = ['type' => 'lan', 'connected' => true, 'name' => 'ping', 'address' => $device->ping_address];
             $siteOf[$device->id] = $this->networks[$key]['site'];
@@ -269,6 +278,12 @@ class NetworkMap
                 $site === $serverSite ? 'fas fa-home' : 'fas fa-building', $site === '?' ? 'secondary' : 'success',
                 badges: [trans_choice(':count device|:count devices', $count)], extra: ['group' => $site]);
             $this->edge('internet', 'site:'.$site, 'wan', true);
+        }
+        // The public addresses devices were behind before, nobody there now: faint, with when.
+        foreach (NetworkSite::query()->whereNotIn('address', $sites)->orderBy('address')->get() as $known) {
+            $this->node('site:'.$known->address, 'site', $known->address, __('public · last seen :time', ['time' => $known->last_seen_at->diffForHumans()]),
+                'fas fa-building', 'secondary', state: 'down', badges: [trans_choice(':count device|:count devices', 0)], extra: ['group' => $known->address]);
+            $this->edge('internet', 'site:'.$known->address, 'wan', false);
         }
 
         $byId = $devices->keyBy('id');
@@ -395,7 +410,7 @@ class NetworkMap
 
         // This server: in the network the agents reach it from over private addresses, else at its site.
         if ($serverSite !== null) {
-            $local = $agents->filter(fn (Device $device) => $device->public_ip !== null && ! Device::isPublicIp($device->public_ip))->pluck('public_ip')->all();
+            $local = $agents->filter(fn (Device $device) => $device->public_ip !== null && ! Device::isPublicIp($device->public_ip) && ! $device->reachesOverVpn)->pluck('public_ip')->all();
             $network = collect($this->networks)->filter(fn ($network) => $network['site'] === $serverSite)
                 ->sortByDesc(fn ($network) => collect($local)->filter(fn ($ip) => self::contains($network['cidr'], $ip))->count())
                 ->filter(fn ($network) => collect($local)->contains(fn ($ip) => self::contains($network['cidr'], $ip)))->keys()->first();

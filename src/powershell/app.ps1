@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.20.0'
+$AgentVersion = '1.21.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -3716,6 +3716,7 @@ function Get-Report {
             port_scan         = $portScan
             security_logs     = (Get-SecurityLogsLevel -Config $config)
         }) -Force
+    try { Add-PublicAddresses -Networks $data.machine.Networks } catch { Write-AgentLog "Public addresses failed: $($_.Exception.Message)" }
     if ($discovery -ne 'off') {
         try { $data['neighbours'] = @(Get-Neighbours) } catch { Write-AgentLog "Neighbours failed: $($_.Exception.Message)" -ErrorRecord $_ }
     }
@@ -3756,6 +3757,81 @@ function Send-Report {
     }
     if ($response.PSObject.Properties['ping_targets']) {
         Set-PingTargets -Targets $response.ping_targets
+    }
+    if ($response.PSObject.Properties['public_address_url']) {
+        $script:PublicAddressUrl = "$($response.public_address_url)"
+    }
+}
+
+function Add-PublicAddresses {
+    # The public address the internet sees from each connected interface with a gateway (each can
+    # have its own: a second card, a mobile network, a VPN to the server only), as PublicAddress of
+    # the interface, for the network map. Asked of the address the server names (ifconfig.me), at
+    # most once an hour per interface; nothing when it names none (MDM_DETECT_PUBLIC_ADDRESS=false).
+    param ($Networks)
+
+    $url = "$script:PublicAddressUrl"
+    if ($url -notmatch '^https?://') { return }
+    if ($script:PublicAddressFrom -ne $url) {
+        $script:PublicAddressFrom = $url
+        $script:PublicAddresses = @{}
+    }
+    foreach ($network in @($Networks)) {
+        if (-not $network.Connected -or -not $network.Gateway -or $network.Type -in @('vpn', 'virtual', 'docker', 'bluetooth')) { continue }
+        $address = $null
+        $ipv4 = @($network.IPAddresses) | Where-Object { [System.Net.IPAddress]::TryParse("$_", [ref]$address) -and $address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and "$_" -notlike '169.254.*' } | Select-Object -First 1
+        if (-not $ipv4) { continue }
+        $key = "$($network.Name)|$ipv4"
+        $known = $script:PublicAddresses[$key]
+        if (-not $known -or ((Get-Date) - $known.At).TotalMinutes -ge 60) {
+            $known = @{ At = Get-Date; Address = (Get-PublicAddressVia -Url $url -Interface "$($network.Name)" -Address ([System.Net.IPAddress]::Parse($ipv4))) }
+            $script:PublicAddresses[$key] = $known
+        }
+        if ($known.Address) {
+            $network | Add-Member -NotePropertyName PublicAddress -NotePropertyValue $known.Address -Force
+        }
+    }
+}
+
+function Get-PublicAddressVia {
+    # The address an HTTP(S) GET of the URL answers, sent from one interface: a socket bound to its
+    # address (Windows sends from the interface that has it), on Linux also to the interface itself
+    # (SO_BINDTODEVICE, as root), whatever the default route says. $null when it does not answer.
+    param ([string]$Url, [string]$Interface, [System.Net.IPAddress]$Address)
+
+    $uri = [Uri]$Url
+    $socket = [System.Net.Sockets.Socket]::new([System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Tcp)
+    try {
+        $socket.ReceiveTimeout = 5000
+        $socket.SendTimeout = 5000
+        if ($OnLinux) {
+            # SOL_SOCKET (1), SO_BINDTODEVICE (25): the name of the interface, ended by a zero byte.
+            $socket.SetRawSocketOption(1, 25, [System.Text.Encoding]::ASCII.GetBytes("$Interface`0"))
+        }
+        $socket.Bind([System.Net.IPEndPoint]::new($Address, 0))
+        $target = [System.Net.Dns]::GetHostAddresses($uri.DnsSafeHost) | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | Select-Object -First 1
+        if (-not $target -or -not $socket.ConnectAsync($target, $uri.Port).Wait(5000)) { return $null }
+        $stream = [System.Net.Sockets.NetworkStream]::new($socket, $false)
+        if ($uri.Scheme -eq 'https') {
+            $tls = [System.Net.Security.SslStream]::new($stream, $false)
+            $tls.AuthenticateAsClient($uri.DnsSafeHost)
+            $stream = $tls
+        }
+        $request = [System.Text.Encoding]::ASCII.GetBytes("GET $($uri.PathAndQuery) HTTP/1.0`r`nHost: $($uri.Authority)`r`nUser-Agent: curl/8.0`r`nAccept: text/plain`r`nConnection: close`r`n`r`n")
+        $stream.Write($request, 0, $request.Length)
+        $response = [System.IO.StreamReader]::new($stream).ReadToEnd()
+        $parts = $response -split "`r?`n`r?`n", 2
+        $parsed = $null
+        if ($parts.Count -eq 2 -and $parts[0] -match '^HTTP/1\.[01] 200' -and [System.Net.IPAddress]::TryParse($parts[1].Trim(), [ref]$parsed)) {
+            return $parsed.ToString()
+        }
+        return $null
+    }
+    catch {
+        return $null
+    }
+    finally {
+        $socket.Dispose()
     }
 }
 
@@ -4148,8 +4224,10 @@ function Test-UnicastMac {
 }
 
 function Get-Neighbours {
-    # The IPv4 neighbours of the interfaces (the ARP table): @{ Ip; Mac; Hostname }, the names from
-    # the last scan (reverse DNS). Entries that did not answer (failed, incomplete) are left out.
+    # The IPv4 neighbours of the interfaces (the ARP table): @{ Ip; Mac; State; Hostname }, the names
+    # from the last scan (reverse DNS). Entries that did not answer (failed, incomplete) are left
+    # out; State is fresh (confirmed lately) or stale (kept from before: after a change of address
+    # the old one can stay for hours, the server does not move a device back to it).
     $entries = @()
     if ($OnLinux) {
         $raw = try { (& ip -j -4 neigh show 2>$null) -join "`n" } catch { '' }
@@ -4157,7 +4235,7 @@ function Get-Neighbours {
             foreach ($entry in @($raw | ConvertFrom-Json | ForEach-Object { $_ })) {
                 $state = @($entry.state)
                 if (-not $entry.lladdr -or $state -contains 'FAILED' -or $state -contains 'INCOMPLETE') { continue }
-                $entries += @{ Ip = "$($entry.dst)"; Mac = "$($entry.lladdr)" }
+                $entries += @{ Ip = "$($entry.dst)"; Mac = "$($entry.lladdr)"; State = if ($state -contains 'STALE' -or $state -contains 'NOARP') { 'stale' } else { 'fresh' } }
             }
         } elseif (Test-Path -Path /proc/net/arp) {
             # Without iproute2's JSON (BusyBox): IP, type, flags (0x2 complete), MAC, mask, device.
@@ -4169,7 +4247,7 @@ function Get-Neighbours {
     } else {
         foreach ($entry in @(Get-NetNeighbor -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
             if ($entry.LinkLayerAddress -and @('Reachable', 'Stale', 'Delay', 'Probe') -contains "$($entry.State)") {
-                $entries += @{ Ip = "$($entry.IPAddress)"; Mac = "$($entry.LinkLayerAddress)" }
+                $entries += @{ Ip = "$($entry.IPAddress)"; Mac = "$($entry.LinkLayerAddress)"; State = if ("$($entry.State)" -eq 'Stale') { 'stale' } else { 'fresh' } }
             }
         }
     }

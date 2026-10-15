@@ -18,6 +18,9 @@ class PingSettings extends Component
 
     public string $mac = '';
 
+    /** The agent that pings it ('' for one in its network): for a device in another subnet. */
+    public string $via = '';
+
     public function mount(int $deviceId): void
     {
         $device = Device::query()->where('kind', 'ping')->findOrFail($deviceId);
@@ -25,6 +28,7 @@ class PingSettings extends Component
         $this->address = (string) $device->ping_address;
         $this->prefix = $device->ping_prefix ?? 24;
         $this->mac = (string) $device->ping_mac;
+        $this->via = (string) ($device->ping_via_id ?? '');
     }
 
     public function save(): void
@@ -37,6 +41,13 @@ class PingSettings extends Component
 
             return;
         }
+        $via = $this->via === '' ? null : Device::query()->where('kind', 'agent')->find((int) $this->via);
+        if ($this->via !== '' && $via === null) {
+            $this->addError('via', __('The agent does not exist anymore.'));
+
+            return;
+        }
+        $settings['ping_via_id'] = $via?->id;
         // Another address: the old answers say nothing about it.
         if ($settings['ping_address'] !== $device->ping_address) {
             $settings += ['last_seen_at' => null, 'ping_rtt' => null];
@@ -50,6 +61,11 @@ class PingSettings extends Component
 
     public function render()
     {
-        return view('livewire.ping-settings');
+        return view('livewire.ping-settings', [
+            // Agents that can ping (1.10.0+, signing).
+            'agents' => Device::query()->where('kind', 'agent')->whereNotNull('public_key')->get()
+                ->filter(fn (Device $agent) => version_compare((string) $agent->agent_version, Device::PING_VERSION, '>='))
+                ->sortBy(fn (Device $agent) => mb_strtolower($agent->displayName))->values(),
+        ]);
     }
 }

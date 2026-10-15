@@ -45,6 +45,8 @@ Route::middleware(['device.signature', 'auth:api'])->post('/device', function (R
     App\Models\DeviceCommand::completeWakes($device->id);
     // What the agent sees in its networks (agents 1.16.0+, unless network_discovery is off).
     rescue(fn () => App\Models\NetworkNeighbour::record($device, $data['neighbours'] ?? null));
+    // The public addresses it is behind, kept for the network map.
+    rescue(fn () => App\Models\NetworkSite::record(App\Models\NetworkSite::of($device)));
     App\Support\LiveUpdates::device($device->id, 'report');
 
     return response()->json([
@@ -54,6 +56,9 @@ Route::middleware(['device.signature', 'auth:api'])->post('/device', function (R
         'scripts_pending' => $device->signsRequests && ScriptRun::query()->where('device_id', $device->id)->where('status', 'pending')->exists(),
         // Ping-only devices in its network this agent pings with every heartbeat (agents 1.10.0+).
         'ping_targets' => $device->signsRequests ? Device::pingTargetsFor($device) : [],
+        // Where the agent asks for the public address of each interface, once an hour (agents
+        // 1.21.0+, network map); none with MDM_DETECT_PUBLIC_ADDRESS=false.
+        'public_address_url' => config('mdm.detect_public_address') ? (config('mdm.public_address_url') ?: null) : null,
     ]);
 });
 

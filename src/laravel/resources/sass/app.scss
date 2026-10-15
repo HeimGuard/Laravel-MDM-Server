@@ -288,6 +288,8 @@ label.mdm-tag {
     &.is-network.tone-purple { border-color: #8a6cff; }
     &.is-network.tone-info { border-color: var(--bs-info); }
     &.is-network.state-down { opacity: .5; border-style: dashed; }
+    // A public address devices were behind before, nobody there now.
+    &.is-site.state-down { opacity: .45; border-style: dashed; box-shadow: none; }
     &.state-offline, &.state-warning { opacity: .6; box-shadow: none; }
     &.is-isolated { border: 2px dashed rgba(255, 159, 67, .85); }
     // Seen by an agent, not in the portal.
