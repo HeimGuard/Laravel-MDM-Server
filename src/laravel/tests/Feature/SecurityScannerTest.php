@@ -242,6 +242,37 @@ class SecurityScannerTest extends TestCase
         $this->assertNotEmpty(SecurityParsers::errors(['kind' => 'parser', 'key' => 'x.y', 'name' => 'X', 'source' => 'linux.auth', 'pattern' => 'x', 'event' => ['type' => 'X Y', 'extra' => '']]));
     }
 
+    public function test_an_events_rule_can_take_only_combinations_not_seen_for_days(): void
+    {
+        $definition = ['key' => 'custom.logon-new', 'name' => 'New sign-in', 'severity' => 'low', 'platform' => 'any', 'source' => 'events',
+            'when' => ['field' => 'Type', 'op' => 'eq', 'value' => 'logon'], 'unseen_days' => 10, 'message' => '{User} signed in from {Source}'];
+        $this->assertSame([], SecurityRules::errors($definition));
+        $this->assertSame([], SecurityRules::errors($definition + ['unseen_by' => ['Source']]));
+        $this->assertNotEmpty(SecurityRules::errors(['source' => 'software'] + $definition));
+        $this->assertNotEmpty(SecurityRules::errors(['unseen_days' => 31] + $definition));
+        $this->assertNotEmpty(SecurityRules::errors($definition + ['unseen_by' => ['Message']]));
+        $this->assertNotEmpty(SecurityRules::errors(array_diff_key($definition, ['unseen_days' => 1]) + ['unseen_by' => ['User']]));
+
+        $rule = new SecurityRule(['origin' => SecurityRule::CUSTOM, 'enabled' => true]);
+        $rule->fill(SecurityRule::attributesFor($definition))->save();
+        $device = $this->device('a', 'linux');
+        $other = $this->device('b', 'linux');
+        SecurityInventory::query()->create(['device_id' => $device->id, 'states' => [], 'scanned' => [], 'collected_at' => now()]);
+        // Seen 5 days ago on another device (the whole fleet counts), and 20 days ago.
+        SecurityEvent::query()->create(['device_id' => $other->id, 'type' => 'logon', 'user' => 'alice', 'source' => '192.0.2.1', 'occurred_at' => now()->subDays(5)]);
+        SecurityEvent::query()->create(['device_id' => $device->id, 'type' => 'logon', 'user' => 'bob', 'source' => '198.51.100.1', 'occurred_at' => now()->subDays(20)]);
+        $logon = fn (string $user, string $source) => ['Type' => 'logon', 'Count' => 1, 'User' => $user, 'Source' => $source, 'Message' => 'ssh', 'Last' => now()->toIso8601String()];
+        $findings = fn () => SecurityFinding::query()->where('security_rule_id', $rule->id)->orderBy('message')->pluck('message')->all();
+
+        SecurityScanner::ingest($device, [], [$logon('alice', '192.0.2.1'), $logon('bob', '198.51.100.1'), $logon('carol', '203.0.113.9'), $logon('alice', '203.0.113.9')]);
+        $this->assertSame(['alice signed in from 203.0.113.9', 'bob signed in from 198.51.100.1', 'carol signed in from 203.0.113.9'], $findings());
+        // Again a day later: seen now, nothing new.
+        $this->travel(1)->days();
+        SecurityScanner::ingest($device, [], [$logon('carol', '203.0.113.9')]);
+        $this->assertCount(3, $findings());
+        $this->assertSame(1, SecurityFinding::query()->where('security_rule_id', $rule->id)->where('message', 'carol signed in from 203.0.113.9')->value('occurrences'), 'Not seen again by this rule');
+    }
+
     public function test_collections_are_taken_into_the_cache_and_processed_by_a_job(): void
     {
         $device = $this->device();

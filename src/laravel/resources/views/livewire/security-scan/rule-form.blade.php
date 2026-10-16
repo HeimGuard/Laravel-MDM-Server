@@ -102,6 +102,7 @@
                 <li><code>when</code>: <code>{"field": "Name", "op": "contains", "value": "…"}</code>, {{ __('grouped with') }} <code>{"all": […]}</code>, <code>{"any": […]}</code>, <code>{"not": {…}}</code></li>
                 <li><code>message</code>: {{ __('with {Field} placeholders') }}</li>
                 <li><code>threshold</code>: {{ __('one finding when at least N items match ({count}, {items})') }}</li>
+                <li><code>unseen_days</code>, <code>unseen_by</code>: {{ __('events: only a type with a User / Source no device had in the last N days') }}</li>
             </ul>
             <div class="fw-medium mb-1">{{ __('Operators') }}</div>
             <div class="text-muted mb-3"><code>{{ implode(' ', SecurityRules::OPERATORS) }}</code><br>{{ __('Texts ignore case; matches is a regular expression.') }}</div>
