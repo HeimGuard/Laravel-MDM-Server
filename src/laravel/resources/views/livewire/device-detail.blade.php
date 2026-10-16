@@ -133,7 +133,8 @@
         @livewire('ping-monitor', ['deviceId' => $selectedDevice->id], key('ping-monitor' . $selectedDevice->id))
     @endif
 
-    @if (!empty($selectedDevice->data))
+    {{-- Ping-only devices have no report, but alerts of their own (another address, a failed wake). --}}
+    @if (!empty($selectedDevice->data) || $selectedDevice->isPingOnly)
         @livewire('device-alerts', ['selectedDeviceId' => $selectedDevice->id], key('device-alerts' . $selectedDevice->id))
     @endif
 

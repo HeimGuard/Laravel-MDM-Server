@@ -116,6 +116,11 @@ class NetworkDiscoveryTest extends TestCase
         $this->report('neighbours', [['Ip' => '192.168.1.31', 'Mac' => 'aa-bb-cc-00-00-30']]);
         $this->assertSame(1, $rule->events()->count());
 
+        // On the device page too (ping-only devices have no report, but alerts of their own).
+        $this->actingAs($user);
+        Livewire::test(\App\Livewire\DeviceDetail::class, ['selectedDeviceId' => $printer->id])->assertSeeLivewire('device-alerts');
+        Livewire::test(\App\Livewire\DeviceAlerts::class, ['selectedDeviceId' => $printer->id])->assertSee('The device has another address')->assertSee('Use 192.168.1.31');
+
         // Confirmed: pinged there, the alert is gone.
         $this->assertNull(SmartAlerts::run($printer->fresh(), 'address', $user));
         $this->assertSame('192.168.1.31', $printer->fresh()->ping_address);
@@ -152,6 +157,16 @@ class NetworkDiscoveryTest extends TestCase
         $this->assertSame('192.168.1.9', $seenAt());
         $this->assertSame(1, $rule->events()->count());
         $this->assertSame('192.168.1.9', collect(SmartAlerts::for($switch->fresh()))->firstWhere('key', 'address')['action']['params']['ip']);
+
+        // Nothing talks to the new address, the table only has an old entry of it, and the device
+        // does not answer where the portal pings it: that is where it went.
+        $sw1 = new Device;
+        $sw1->forceFill(['kind' => 'ping', 'name' => 'SW1', 'os' => '', 'token' => hash('sha256', 'w'), 'ping_address' => '192.168.1.241', 'ping_prefix' => 24, 'ping_mac' => 'E0:D3:62:8B:43:2C'])->save();
+        NetworkNeighbour::query()->create(['site' => 'gw:50:C7:BF:AA:BB:CC', 'mac' => 'E0:D3:62:8B:43:2C', 'ip' => '192.168.1.241', 'network' => '192.168.1.0/24', 'first_seen_at' => now()->subDay(), 'last_seen_at' => now()->subHour()]);
+        $this->report('neighbours', [['Ip' => '192.168.1.8', 'Mac' => 'e0-d3-62-8b-43-2c', 'State' => 'stale']]);
+        $this->assertSame('192.168.1.8', NetworkNeighbour::query()->where('mac', 'E0:D3:62:8B:43:2C')->sole()->ip);
+        $this->assertSame(1, $rule->events()->where('device_id', $sw1->id)->count());
+        $this->assertSame('192.168.1.241', $sw1->fresh()->ping_address);
     }
 
     public function test_unknown_devices_are_on_the_map_and_can_be_added_or_ignored(): void

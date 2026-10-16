@@ -519,7 +519,8 @@ class SecurityScannerTest extends TestCase
         // A zip bomb: signed, small, inflates beyond what is allowed.
         $bomb = gzencode(str_repeat(' ', SecurityInbox::MAX_BYTES + 1024).$body, 9);
         $this->assertLessThan(100000, strlen($bomb));
-        $this->signedJson('POST', '/api/device/security', [], 'a', ['raw' => $bomb, 'server' => ['HTTP_CONTENT_ENCODING' => 'gzip']])->assertStatus(422);
+        $this->signedJson('POST', '/api/device/security', [], 'a', ['raw' => $bomb, 'server' => ['HTTP_CONTENT_ENCODING' => 'gzip']])->assertStatus(422)
+            ->assertJsonPath('error', 'not a JSON object, or more than 16 MB unpacked');
         // Not gzip although it says so.
         $this->signedJson('POST', '/api/device/security', [], 'a', ['raw' => $body, 'server' => ['HTTP_CONTENT_ENCODING' => 'gzip']])->assertStatus(422);
         $this->assertSame(0, \Illuminate\Support\Facades\DB::table('jobs')->count());
@@ -558,7 +559,12 @@ class SecurityScannerTest extends TestCase
         // Not a collection: no id, sources of an unknown kind.
         $this->signedJson('POST', '/api/device/security', [], 'a')->assertStatus(422);
         $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'events', 'state' => str_repeat('a', 64)]]], 'a')->assertStatus(422);
-        $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'software', 'state' => 'nope']]], 'a')->assertStatus(422);
+        $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'software', 'state' => 'nope']]], 'a')->assertStatus(422)
+            ->assertJsonPath('error', 'software: unknown, twice, or without a valid state / base');
+        // The agent's log says what is wrong (an alert of the device).
+        $tooMany = collect(range(1, 1001))->map(fn ($i) => [substr(hash('sha256', "p$i"), 0, 16), substr(hash('sha256', "h$i"), 0, 16), ['Name' => "p$i"]])->all();
+        $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'processes', 'state' => str_repeat('a', 64), 'full' => true, 'upsert' => $tooMany]]], 'a')
+            ->assertStatus(422)->assertJsonPath('error', 'processes: 1001 items, at most 1000');
         $this->assertSame(0, SecurityFinding::query()->count());
     }
 

@@ -154,12 +154,17 @@ Route::middleware(['device.signature', 'auth:api'])->group(function () {
         $raw = $request->getContent();
         abort_if(strlen($raw) > SecurityInbox::MAX_BYTES, 413);
         $gzip = strtolower((string) $request->header('Content-Encoding')) === 'gzip';
+        // What is wrong goes back as the error, so the agent's log (an alert of the device) says it.
         $json = SecurityInbox::decode($raw, $gzip);
-        abort_if($json === null, 422);
+        if ($json === null) {
+            return response()->json(['error' => 'not a JSON object, or more than '.(SecurityInbox::MAX_BYTES >> 20).' MB unpacked'], 422);
+        }
         $payload = json_decode($json, true);
-        $sources = SecurityScanner::normalizeSources($payload['sources'] ?? []);
+        $sources = SecurityScanner::normalizeSources($payload['sources'] ?? [], $problem);
         $id = $payload['collection_id'] ?? null;
-        abort_if($sources === null || ! is_string($id) || ! preg_match('/^[0-9a-f-]{16,64}$/i', $id), 422);
+        if ($sources === null || ! is_string($id) || ! preg_match('/^[0-9a-f-]{16,64}$/i', $id)) {
+            return response()->json(['error' => $problem ?? 'collection_id: missing or not an id'], 422);
+        }
 
         // The log positions the agent may move on to once this collection is taken.
         $cursors = array_filter($payload['cursors'] ?? [], fn ($cursor, $source) => isset(SecurityParsers::LOG_SOURCES[$source]) && (is_string($cursor) || is_int($cursor)) && strlen((string) $cursor) <= 512, ARRAY_FILTER_USE_BOTH);

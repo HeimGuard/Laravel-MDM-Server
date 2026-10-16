@@ -61,9 +61,12 @@ class SecurityScanner
      *
      * @return array<int, array>|null
      */
-    public static function normalizeSources(mixed $sources): ?array
+    public static function normalizeSources(mixed $sources, ?string &$problem = null): ?array
     {
+        $problem = null;
         if (! is_array($sources) || ! array_is_list($sources) || count($sources) > count(SecurityInventory::SOURCES)) {
+            $problem = 'sources: not a list of at most '.count(SecurityInventory::SOURCES);
+
             return null;
         }
         $clean = [];
@@ -73,17 +76,23 @@ class SecurityScanner
             if (! in_array($source, SecurityInventory::SOURCES, true) || isset($clean[$source])
                 || ! is_string($delta['state'] ?? null) || ! preg_match('/^[0-9a-f]{64}$/', $delta['state'])
                 || (isset($delta['base']) && (! is_string($delta['base']) || ! preg_match('/^[0-9a-f]{64}$/', $delta['base'])))) {
+                $problem = (is_string($source) ? mb_substr($source, 0, 20) : 'a source').': unknown, twice, or without a valid state / base';
+
                 return null;
             }
             $upsert = [];
             foreach ($delta['upsert'] ?? [] as $row) {
                 if (! is_array($row) || count($row) !== 3 || ! $isKey($row[0]) || ! is_string($row[1]) || ! preg_match('/^[0-9a-f]{16}$/', $row[1]) || ! is_array($row[2])) {
+                    $problem = "{$source}: an item is not [key, hash, fields]";
+
                     return null;
                 }
                 $upsert[] = [$row[0], $row[1], SecurityInventory::sanitizeItem($source, $row[2])];
             }
             $remove = array_values(array_filter($delta['remove'] ?? [], $isKey));
             if (count($upsert) > SecurityInventory::LIMITS[$source] || count($remove) > SecurityInventory::LIMITS[$source] * 2) {
+                $problem = "{$source}: ".count($upsert).' items, at most '.SecurityInventory::LIMITS[$source];
+
                 return null;
             }
             $clean[$source] = [

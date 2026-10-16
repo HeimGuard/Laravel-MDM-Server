@@ -34,6 +34,9 @@ class NetworkNeighbour extends Model
     /** Minutes since it was seen last for a neighbour to be shown as present. */
     public const FRESH_MINUTES = 15;
 
+    /** Minutes an address confirmed lately (a fresh ARP entry) is not replaced by an old entry of another one. */
+    public const FRESH_HOLD_MINUTES = 30;
+
     /** Hours a neighbour not seen anymore is still shown (faint). */
     public const SHOWN_HOURS = 24;
 
@@ -163,21 +166,27 @@ class NetworkNeighbour extends Model
             ->whereIn('mac', array_keys($candidates))->get()
             ->keyBy(fn (self $row) => $row->site.'|'.$row->mac);
         // One MAC at several addresses (the old one still in the table after a change): the fresh
-        // ones count; it stays where it was while that is one of them, and only one address that
-        // is surely its own now moves a ping-only device (followMacs).
+        // ones count, and it stays where it was while that is one of them. Only old (stale) entries
+        // of another address move it there unless where it is was confirmed in the last
+        // FRESH_HOLD_MINUTES (an agent that missed the change would send it back). An address
+        // surely its own (followMacs) is one the report has it at alone, fresh or without states.
         $seen = [];
         foreach ($candidates as $mac => $entries) {
             $fresh = array_values(array_filter($entries, fn ($entry) => $entry['state'] === 'fresh'));
             $pool = $fresh !== [] ? $fresh : $entries;
             $ips = array_values(array_unique(array_column($pool, 'ip')));
             $kept = collect($pool)->first(fn ($entry) => ($existing[$entry['site'].'|'.$mac] ?? null)?->ip === $entry['ip']);
-            // Only old entries of another address: it is still where it was seen last.
             $row = $existing[$pool[0]['site'].'|'.$mac] ?? null;
-            if ($kept === null && $fresh === [] && $row !== null && collect($entries)->contains(fn ($entry) => $entry['state'] === 'stale')) {
+            $confirmed = 'neighbour-fresh:'.$pool[0]['site'].'|'.$mac;
+            if ($kept === null && $fresh === [] && $row !== null && Cache::get($confirmed) === $row->ip) {
                 $kept = ['ip' => $row->ip, 'network' => $row->network, 'site' => $row->site, 'hostname' => null];
             }
-            $seen[$mac] = ($kept ?? $pool[0]) + [
-                'move' => count($ips) === 1 && ($fresh !== [] || collect($entries)->every(fn ($entry) => $entry['state'] === null)),
+            $chosen = $kept ?? $pool[0];
+            if ($fresh !== []) {
+                Cache::put($confirmed, $chosen['ip'], now()->addMinutes(self::FRESH_HOLD_MINUTES));
+            }
+            $seen[$mac] = $chosen + [
+                'sure' => count($ips) === 1 && ($fresh !== [] || collect($entries)->every(fn ($entry) => $entry['state'] === null)),
             ];
         }
         foreach ($seen as $mac => $values) {
@@ -227,16 +236,16 @@ class NetworkNeighbour extends Model
     /**
      * Ping-only devices whose MAC is now at another address of the same network: the portal does
      * not move them, the device gets a smart alert to confirm it (SmartAlerts, movedAddress) and
-     * the address_changed rules are told once per new address. Only when the report has the MAC at
-     * that one address, confirmed lately (agents 1.21.0+; a stale ARP entry of an old address
-     * would send it back and forth).
+     * the address_changed rules are told once per new address: when the report has the MAC at
+     * that one address, confirmed lately (agents 1.21.0+) or without states, or when the device
+     * does not answer at its address anymore (then also an old entry tells where it went).
      */
     private static function followMacs(array $seen): void
     {
         $devices = Device::query()->where('kind', 'ping')->whereIn('ping_mac', array_keys($seen))->get();
         foreach ($devices as $device) {
             $now = $seen[$device->ping_mac];
-            if (! $now['move'] || $device->ping_address === $now['ip'] || ! $device->ping_address || ! NetworkMap::contains($now['network'], $device->ping_address)) {
+            if (! ($now['sure'] || $device->offline) || $device->ping_address === $now['ip'] || ! $device->ping_address || ! NetworkMap::contains($now['network'], $device->ping_address)) {
                 continue;
             }
             if (Cache::add('address-moved:'.$device->id.':'.$now['ip'], true, now()->addDay())) {

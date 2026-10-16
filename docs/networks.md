@@ -76,9 +76,10 @@ know show up. What an agent may do is set on the device, in `network_discovery` 
 - **Dynamic addresses:** when an agent sees the MAC of a ping-only device at another address of
   the same network (DHCP, a readdressed device), the portal does not move it: the device gets a
   smart alert **The device has another address** with **Use 192.168.1.9** (asks first), and the
-  *address changed* alert rules are told once per new address. Only an address the report has
-  that MAC at alone counts; agents 1.21.0+ mark ARP entries confirmed lately, so an old entry the
-  table still keeps after a change (Windows keeps them for hours) does not send it back.
+  *address changed* alert rules are told once per new address: for an address the report has that
+  MAC at alone, or any address of it while the device does not answer where it is pinged. Agents
+  1.21.0+ mark ARP entries confirmed lately; an old entry the table still keeps after a change
+  (Windows keeps them for hours) does not replace an address confirmed in the last 30 minutes.
 - **Scan** (in the network's card, or **Scan 192.168.1.0/24** in the menu of an agent for each of
   its networks, up to a /22): an online agent in the network with
   `network_discovery` `scan` pings every address of it (128 at once, a few seconds for a /24),
