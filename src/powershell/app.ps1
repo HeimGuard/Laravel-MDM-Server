@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.21.0'
+$AgentVersion = '1.21.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -3594,14 +3594,19 @@ function Get-SecurityDeltas {
         $state = Get-SecurityStateHash $map
         $previous = $Acknowledged[$source]
         $delta = [ordered]@{ source = $source; state = $state }
+        # The rows go into a list, not through the pipeline: Windows PowerShell 5.1 would write an
+        # array that went through it as {"value": [...], "Count": 3} in JSON.
+        $upsert = New-Object System.Collections.Generic.List[object]
         if (-not $previous -or $Whole -contains $source) {
             $delta['full'] = $true
-            $delta['upsert'] = @($rows.Values | ForEach-Object { , $_ })
+            foreach ($row in $rows.Values) { $upsert.Add($row) }
+            $delta['upsert'] = $upsert.ToArray()
         }
         elseif ($previous.state -ne $state) {
             $delta['base'] = $previous.state
-            $delta['upsert'] = @($map.Keys | Where-Object { $previous.items[$_] -ne $map[$_] } | ForEach-Object { , $rows[$_] })
-            $delta['remove'] = @($previous.items.Keys | Where-Object { -not $map.ContainsKey($_) })
+            foreach ($key in $map.Keys) { if ($previous.items[$key] -ne $map[$key]) { $upsert.Add($rows[$key]) } }
+            $delta['upsert'] = $upsert.ToArray()
+            $delta['remove'] = [string[]]@($previous.items.Keys | Where-Object { -not $map.ContainsKey($_) })
         }
         $sources.Add($delta)
         $pending[$source] = @{ state = $state; items = $map }
