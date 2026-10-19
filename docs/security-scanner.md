@@ -135,5 +135,9 @@ over feed over bundled), and a bundled rule the feed replaced comes back when it
 - `message`: the finding, with `{Field}` placeholders of the item.
 - `threshold`: one finding for the device when at least *n* items match (`{count}` and `{items}` in
   the message), e.g. more than 3 administrators.
+- `unseen_days` (events only, 1 to 30): only the events whose type with the same user and source
+  (`unseen_by`: `["User", "Source"]` by default, or one of them) no device had in the last *n* days,
+  e.g. a sign-in of a user from an address not seen for 10 days. Compared with the events stored
+  before the collection (kept 30 days).
 - Each matching item is its own finding, told apart by the key fields of its source (software:
   name and source; processes: name, path and command line; ports: protocol, address and port; ...).

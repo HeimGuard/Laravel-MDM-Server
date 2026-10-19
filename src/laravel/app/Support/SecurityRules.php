@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\SecurityEvent;
+
 /**
  * The rule language of the security scanner: a rule (JSON) says which list of the device's
  * security inventory it looks at (source), when an item of it is a finding (when: conditions,
@@ -19,7 +21,9 @@ namespace App\Support;
  *   }
  *
  * Every matching item is its own finding (identified by the key fields of its source), unless
- * "threshold": N makes one finding of the device when at least N items match. Comparisons of
+ * "threshold": N makes one finding of the device when at least N items match. On events,
+ * "unseen_days": N takes only the ones whose type with the same User and Source ("unseen_by")
+ * no device had in the last N days (a sign-in from somewhere new). Comparisons of
  * text ignore case; "matches" is a regular expression (without delimiters, case-insensitive).
  */
 class SecurityRules
@@ -155,6 +159,13 @@ class SecurityRules
         }
         if (isset($rule['threshold']) &&(! is_int($rule['threshold']) || $rule['threshold'] < 1 || $rule['threshold'] > 10000)) {
             $errors[] = __('threshold: a whole number from 1 to 10000.');
+        }
+        if (isset($rule['unseen_days']) && (($rule['source'] ?? null) !== 'events' || ! is_int($rule['unseen_days']) || $rule['unseen_days'] < 1 || $rule['unseen_days'] > SecurityEvent::RETENTION_DAYS)) {
+            $errors[] = __('unseen_days: on rules of the events source, a whole number from 1 to :max.', ['max' => SecurityEvent::RETENTION_DAYS]);
+        }
+        if (isset($rule['unseen_by']) && (! isset($rule['unseen_days']) || ! is_array($rule['unseen_by']) || ! array_is_list($rule['unseen_by']) || $rule['unseen_by'] === []
+            || array_diff($rule['unseen_by'], ['User', 'Source']) !== [] || count(array_unique($rule['unseen_by'])) !== count($rule['unseen_by']))) {
+            $errors[] = __('unseen_by: a list of User and / or Source, with unseen_days.');
         }
         if (! array_key_exists('when', $rule)) {
             $errors[] = __('when: the conditions are missing.');

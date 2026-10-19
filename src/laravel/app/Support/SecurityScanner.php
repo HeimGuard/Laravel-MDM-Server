@@ -222,9 +222,11 @@ class SecurityScanner
     public static function ingest(Device $device, array $sources, array $events = []): array
     {
         $changes = self::applyDeltas($device, $sources);
+        // The events stored before these: what "not seen in N days" (unseen_days) compares with.
+        $before = (int) SecurityEvent::query()->max('id');
         SecurityEvent::record($device, $events);
 
-        return self::scan($device, $events, $changes);
+        return self::scan($device, $events, $changes, $before);
     }
 
     /** A rule is checked in full again at least this often (a safety net for the incremental scan). */
@@ -240,7 +242,7 @@ class SecurityScanner
      * @param  array<string, array>|null  $changes  from applyDeltas, null: look at everything
      * @return array{opened: int, resolved: int}
      */
-    public static function scan(Device $device, array $events = [], ?array $changes = null): array
+    public static function scan(Device $device, array $events = [], ?array $changes = null, ?int $eventsBefore = null): array
     {
         SecurityRule::syncBuiltIn();
         $inventory = SecurityInventory::query()->where('device_id', $device->id)->first();
@@ -261,7 +263,7 @@ class SecurityScanner
                 if ($active && $events !== []) {
                     $rule = $plan['rule'];
                     $open ??= self::openFindings($device);
-                    self::add($counts, self::guard($rule, $device, fn () => self::scanEvents($device, $rule, $open->get($rule->id, collect()), $events)));
+                    self::add($counts, self::guard($rule, $device, fn () => self::scanEvents($device, $rule, $open->get($rule->id, collect()), $events, $eventsBefore)));
                 }
 
                 continue;
@@ -609,8 +611,11 @@ class SecurityScanner
      *
      * @param  Collection<int, SecurityFinding>  $open
      */
-    private static function scanEvents(Device $device, SecurityRule $rule, Collection $open, array $events): array
+    private static function scanEvents(Device $device, SecurityRule $rule, Collection $open, array $events, ?int $eventsBefore = null): array
     {
+        if (isset($rule->definition['unseen_days'])) {
+            $events = self::unseen($rule->definition, $events, $eventsBefore);
+        }
         if ($events === []) {
             return ['opened' => 0, 'resolved' => 0];
         }
@@ -634,6 +639,29 @@ class SecurityScanner
         }
 
         return ['opened' => $opened, 'resolved' => 0];
+    }
+
+    /**
+     * The events whose type with the same unseen_by fields (User and Source by default: who from
+     * where) no device had in the unseen_days before this collection ($before: the last event
+     * stored before it), e.g. a sign-in of a user from an address not seen for 10 days.
+     */
+    private static function unseen(array $definition, array $events, ?int $before): array
+    {
+        $columns = ['User' => 'user', 'Source' => 'source'];
+        $fields = $definition['unseen_by'] ?? array_keys($columns);
+
+        return array_values(array_filter($events, function (array $event) use ($definition, $fields, $columns, $before) {
+            $query = SecurityEvent::query()->where('type', (string) ($event['Type'] ?? ''))
+                ->where('occurred_at', '>=', now()->subDays($definition['unseen_days']))
+                ->when($before !== null, fn ($query) => $query->where('id', '<=', $before));
+            foreach ($fields as $field) {
+                $value = $event[$field] ?? null;
+                $value === null ? $query->whereNull($columns[$field]) : $query->where($columns[$field], $value);
+            }
+
+            return ! $query->exists();
+        }));
     }
 
     private static function open(Device $device, SecurityRule $rule, array $match): SecurityFinding
