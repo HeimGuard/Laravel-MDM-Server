@@ -96,6 +96,7 @@
             <div class="fw-medium mb-1">{{ __('Keys') }}</div>
             <ul class="ps-3 text-muted">
                 <li><code>key</code>, <code>name</code>, <code>description</code>, <code>remediation</code></li>
+                <li><code>urls</code>: {{ __('links shown with the rule and its findings (up to :count)', ['count' => \App\Support\SecurityRules::MAX_URLS]) }}</li>
                 <li><code>severity</code>: {{ implode(', ', array_keys(SecurityRules::SEVERITIES)) }}</li>
                 <li><code>platform</code>: {{ implode(', ', SecurityRules::PLATFORMS) }}</li>
                 <li><code>source</code>: {{ __('which list it looks at, below') }}</li>

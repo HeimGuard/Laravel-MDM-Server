@@ -159,6 +159,17 @@ class SecurityRule extends Model
         return $this->platform === 'any' || $this->platform === $device->platform;
     }
 
+    /**
+     * Links of the rule (documentation, ATT&CK, CVE): only http(s) addresses, as [url, host].
+     *
+     * @return list<array{url: string, host: string}>
+     */
+    public function getUrlsAttribute(): array
+    {
+        return array_map(fn (string $url) => ['url' => $url, 'host' => (string) preg_replace('/^www\./', '', (string) parse_url($url, PHP_URL_HOST))],
+            \App\Support\SecurityRules::urlList($this->definition['urls'] ?? null) ?? []);
+    }
+
     public function getIsParserAttribute(): bool
     {
         return $this->kind === 'parser';
