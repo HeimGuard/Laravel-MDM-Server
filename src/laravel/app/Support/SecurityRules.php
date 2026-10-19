@@ -17,7 +17,8 @@ use App\Models\SecurityEvent;
  *     "source": "software",
  *     "when": {"any": [{"field": "Name", "op": "contains", "value": "anydesk"}]},
  *     "message": "{Name} {Version} is installed",
- *     "remediation": "Uninstall it unless it is used on purpose."
+ *     "remediation": "Uninstall it unless it is used on purpose.",
+ *     "urls": ["https://attack.mitre.org/techniques/T1219/"]
  *   }
  *
  * Every matching item is its own finding (identified by the key fields of its source), unless
@@ -118,6 +119,24 @@ class SecurityRules
     /** Operators without a value. */
     private const UNARY = ['exists', 'empty', 'true', 'false'];
 
+    /** At most this many links (urls) of a rule: documentation, ATT&CK, CVE. */
+    public const MAX_URLS = 10;
+
+    /** The urls of a rule when they are a list of http(s) addresses (shown as links), else null. */
+    public static function urlList(mixed $urls): ?array
+    {
+        if (! is_array($urls) || ! array_is_list($urls) || count($urls) > self::MAX_URLS) {
+            return null;
+        }
+        foreach ($urls as $url) {
+            if (! is_string($url) || strlen($url) > 500 || ! filter_var($url, FILTER_VALIDATE_URL) || ! preg_match('#^https?://[^/\s]+#i', $url)) {
+                return null;
+            }
+        }
+
+        return $urls;
+    }
+
     /** Nesting deeper than this is refused (a rule is read on every report). */
     private const MAX_DEPTH = 6;
 
@@ -159,6 +178,9 @@ class SecurityRules
         }
         if (isset($rule['threshold']) &&(! is_int($rule['threshold']) || $rule['threshold'] < 1 || $rule['threshold'] > 10000)) {
             $errors[] = __('threshold: a whole number from 1 to 10000.');
+        }
+        if (isset($rule['urls']) && self::urlList($rule['urls']) === null) {
+            $errors[] = __('urls: a list of up to :count http(s) addresses.', ['count' => self::MAX_URLS]);
         }
         if (isset($rule['unseen_days']) && (($rule['source'] ?? null) !== 'events' || ! is_int($rule['unseen_days']) || $rule['unseen_days'] < 1 || $rule['unseen_days'] > SecurityEvent::RETENTION_DAYS)) {
             $errors[] = __('unseen_days: on rules of the events source, a whole number from 1 to :max.', ['max' => SecurityEvent::RETENTION_DAYS]);

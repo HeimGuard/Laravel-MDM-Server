@@ -273,6 +273,22 @@ class SecurityScannerTest extends TestCase
         $this->assertSame(1, SecurityFinding::query()->where('security_rule_id', $rule->id)->where('message', 'carol signed in from 203.0.113.9')->value('occurrences'), 'Not seen again by this rule');
     }
 
+    public function test_a_rule_can_have_links(): void
+    {
+        $definition = ['key' => 'custom.anydesk', 'name' => 'AnyDesk', 'severity' => 'medium', 'source' => 'software',
+            'when' => ['field' => 'Name', 'op' => 'contains', 'value' => 'anydesk'], 'urls' => ['https://attack.mitre.org/techniques/T1219/', 'http://www.example.com/a?b=1']];
+        $this->assertSame([], SecurityRules::errors($definition));
+        foreach ([['javascript:alert(1)'], ['ftp://example.com/x'], 'https://example.com', array_fill(0, 11, 'https://example.com/'), ['https://example.com/'.str_repeat('a', 500)]] as $urls) {
+            $this->assertNotEmpty(SecurityRules::errors(['urls' => $urls] + $definition), json_encode($urls));
+        }
+        $rule = new SecurityRule(['origin' => SecurityRule::CUSTOM, 'enabled' => true]);
+        $rule->fill(SecurityRule::attributesFor($definition))->save();
+        $this->assertSame([['url' => 'https://attack.mitre.org/techniques/T1219/', 'host' => 'attack.mitre.org'], ['url' => 'http://www.example.com/a?b=1', 'host' => 'example.com']], $rule->urls);
+        // A stored definition with a bad link shows none.
+        $rule->forceFill(['definition' => ['urls' => ['javascript:alert(1)']] + $definition])->save();
+        $this->assertSame([], $rule->fresh()->urls);
+    }
+
     public function test_collections_are_taken_into_the_cache_and_processed_by_a_job(): void
     {
         $device = $this->device();

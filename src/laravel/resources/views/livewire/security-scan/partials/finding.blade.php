@@ -23,6 +23,9 @@
         @if ($finding->rule?->definition['remediation'] ?? null)
             <div class="small text-muted mt-1"><i class="fas fa-wrench me-1"></i>{{ $finding->rule->definition['remediation'] }}</div>
         @endif
+        @if ($finding->rule?->urls)
+            <div class="mt-1">@foreach ($finding->rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
+        @endif
         <div class="small text-body-tertiary mt-1">
             <span title="{{ $finding->first_seen_at }}">{{ __('Found :time', ['time' => $finding->first_seen_at->diffForHumans()]) }}</span>
             @if ($finding->occurrences > 1)

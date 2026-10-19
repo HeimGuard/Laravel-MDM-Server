@@ -259,7 +259,8 @@
             {"field": "Command", "op": "matches", "value": "\\b(mshta|wscript|cscript)(\\.exe)?\\b|regsvr32.*scrobj|rundll32.*(javascript|http)"},
             {"field": "Command", "op": "matches", "value": "(powershell|pwsh).*\\s[-/](e|enc|encodedcommand|w(indowstyle)?\\s+h(idden)?)\\b"}
         ]},
-        "message": "{Name} ({Location}): {Command}"
+        "message": "{Name} ({Location}): {Command}",
+        "urls": ["https://mobeigi.com/blog/security/malware/the-curious-case-of-queencreek/"]
     },
     {
         "key": "startup.download-linux",

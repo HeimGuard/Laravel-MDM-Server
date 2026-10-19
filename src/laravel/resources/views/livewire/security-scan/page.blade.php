@@ -119,6 +119,9 @@
                                         @if ($rule->definition['description'] ?? null)
                                             <div class="small text-muted">{{ $rule->definition['description'] }}</div>
                                         @endif
+                                        @if ($rule->urls)
+                                            <div>@foreach ($rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
+                                        @endif
                                         <div class="small text-body-tertiary font-monospace">{{ $rule->key }}</div>
                                     </td>
                                     <td><x-badge :color="$rule->severityColor" size="sm" variant="subtle">{{ __(ucfirst($rule->severity)) }}</x-badge></td>

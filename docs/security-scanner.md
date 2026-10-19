@@ -108,7 +108,8 @@ checks it while you type and shows what it would find on a device before it is s
         {"field": "Version", "op": "version_lt", "value": "120"}
     ]},
     "message": "{Name} {Version} is outdated",
-    "remediation": "Update Chrome."
+    "remediation": "Update Chrome.",
+    "urls": ["https://chromereleases.googleblog.com/"]
 }
 ```
 
@@ -133,6 +134,8 @@ over feed over bundled), and a bundled rule the feed replaced comes back when it
   `version_gte` (`1.2.3`, `2:1.2-3ubuntu1`), `exists`, `empty`, `true`, `false`. Texts are compared
   without case; an unknown value is neither `true` nor `false`.
 - `message`: the finding, with `{Field}` placeholders of the item.
+- `urls`: up to 10 `http(s)` links (documentation, MITRE ATT&CK, CVE), shown with the rule on the
+  **Rules** tab and with each of its findings.
 - `threshold`: one finding for the device when at least *n* items match (`{count}` and `{items}` in
   the message), e.g. more than 3 administrators.
 - `unseen_days` (events only, 1 to 30): only the events whose type with the same user and source
