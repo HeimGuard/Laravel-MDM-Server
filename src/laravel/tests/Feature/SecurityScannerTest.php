@@ -592,6 +592,12 @@ class SecurityScannerTest extends TestCase
         $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'events', 'state' => str_repeat('a', 64)]]], 'a')->assertStatus(422);
         $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'software', 'state' => 'nope']]], 'a')->assertStatus(422)
             ->assertJsonPath('error', 'software: unknown, twice, or without a valid state / base');
+        // Windows PowerShell 5.1 writes the rows as {"value": [...], "Count": 3}: taken as they are meant.
+        $key = substr(hash('sha256', 'k'), 0, 16);
+        $wrapped = SecurityScanner::normalizeSources([['source' => 'software', 'state' => str_repeat('a', 64), 'full' => true,
+            'upsert' => [['value' => [$key, substr(hash('sha256', 'h'), 0, 16), ['Name' => '7-Zip', 'Source' => 'registry']], 'Count' => 3]]]], $problem);
+        $this->assertNull($problem);
+        $this->assertSame([$key, '7-Zip'], [$wrapped[0]['upsert'][0][0], $wrapped[0]['upsert'][0][2]['Name']]);
         // The agent's log says what is wrong (an alert of the device).
         $tooMany = collect(range(1, 1001))->map(fn ($i) => [substr(hash('sha256', "p$i"), 0, 16), substr(hash('sha256', "h$i"), 0, 16), ['Name' => "p$i"]])->all();
         $this->signedJson('POST', '/api/device/security', ['collection_id' => 'abcdefabcdefabcdef', 'sources' => [['source' => 'processes', 'state' => str_repeat('a', 64), 'full' => true, 'upsert' => $tooMany]]], 'a')

@@ -82,6 +82,11 @@ class SecurityScanner
             }
             $upsert = [];
             foreach ($delta['upsert'] ?? [] as $row) {
+                // Windows PowerShell 5.1 writes an array that went through the pipeline as an
+                // object (agents before 1.21.1): {"value": [key, hash, fields], "Count": 3}.
+                if (is_array($row) && ! array_is_list($row) && is_array($row['value'] ?? null) && array_is_list($row['value'])) {
+                    $row = $row['value'];
+                }
                 if (! is_array($row) || count($row) !== 3 || ! $isKey($row[0]) || ! is_string($row[1]) || ! preg_match('/^[0-9a-f]{16}$/', $row[1]) || ! is_array($row[2])) {
                     $problem = "{$source}: an item is not [key, hash, fields]";
 
