@@ -11,6 +11,9 @@
             </div>
             @if ($isAdmin)
                 <div class="d-flex gap-2">
+                    <button class="btn btn-light" type="button" wire:click="updateFeed" wire:loading.attr="disabled" wire:target="updateFeed" @disabled(! $feed['enabled']) @if (! $feed['enabled']) title="{{ __('No rules feed is set (MDM_SECURITY_FEED_URL).') }}" @endif>
+                        <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="updateFeed"></span><i class="fas fa-cloud-download-alt me-2" wire:loading.remove wire:target="updateFeed"></i>{{ __('Sync feed') }}
+                    </button>
                     <button class="btn btn-light" type="button" wire:click="rescan" wire:loading.attr="disabled" wire:target="rescan">
                         <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="rescan"></span><i class="fas fa-sync me-2" wire:loading.remove wire:target="rescan"></i>{{ __('Scan again') }}
                     </button>
@@ -43,11 +46,11 @@
         </ul>
 
         @if ($pending > 0)
-            <div class="small text-muted mb-3"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
+            <div class="small text-muted mb-3" wire:key="security-pending"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
         @endif
 
         @if ($scanned === 0)
-            <div class="alert alert-info small">
+            <div class="alert alert-info small" wire:key="security-no-inventory">
                 <i class="fas fa-info-circle me-1"></i>{{ __('No device has sent a security inventory yet: it needs agent :version or newer (collected hourly, or now with Sync).', ['version' => Device::SECURITY_VERSION]) }}
             </div>
         @endif
@@ -145,7 +148,7 @@
                     </table>
                 </div>
             </div>
-            <details class="mt-4" @if ($parsers->isNotEmpty() && request()->query('advanced')) open @endif>
+            <details class="mt-4" wire:key="security-advanced" @if ($parsers->isNotEmpty() && request()->query('advanced')) open @endif>
                 <summary class="fw-medium">{{ __('Advanced') }} <span class="small text-muted fw-normal">{{ __('feed, log parsers and JSON') }}</span></summary>
                 <div class="mt-3">
                 <div class="card card-body mb-4">
