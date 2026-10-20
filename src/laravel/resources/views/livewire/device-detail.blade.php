@@ -1,5 +1,5 @@
-{{-- Polls faster while a command is on its way (install buttons, history). --}}
-<div>
+{{-- Polls faster while a command is on its way (install buttons, history). data-keep-tab: see tabs-state.js. --}}
+<div data-keep-tab>
     @php
         $moduleUpdates = $selectedDevice->moduleUpdates;
         $hasUpdates = count($selectedDevice->updates) > 0 || count($selectedDevice->apps_packages_updates) > 0 || count($moduleUpdates) > 0;
