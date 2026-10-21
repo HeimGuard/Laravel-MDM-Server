@@ -201,6 +201,36 @@ class DeviceCommandTest extends TestCase
         $this->assertSame(['winget:Git.Git', 'windows:6f0a4b2e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'], $device->commands()->orderBy('id')->pluck('target')->map(fn ($target) => str_replace(':', '', substr($target, 0, strpos($target, ':'))).':'.explode(':', $target)[2])->all());
     }
 
+    public function test_update_all_reports_the_row_it_is_at(): void
+    {
+        $device = $this->device('1.22.0', ['packages_updates' => [
+            ['Id' => 'Git.Git', 'Version' => '2.40', 'Avaliable' => '2.44', 'Source' => 'winget'],
+            ['Id' => 'Node.js', 'Version' => '20', 'Avaliable' => '22', 'Source' => 'winget'],
+        ]]);
+        $command = $device->issueCommand('doUpdates');
+        $git = ['kind' => 'winget', 'id' => 'Git.Git'];
+        $node = ['kind' => 'winget', 'id' => 'Node.js'];
+
+        // An agent without the fields: every row waits.
+        $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'running', 'progress' => 5], 'secret-token')->assertOk();
+        $this->assertSame('queued', Device::updateRowState($command->fresh(), 'winget', $git));
+
+        $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'running', 'progress' => 20, 'current' => 'winget::Node.js:', 'done' => ['winget::Git.Git:', 7]], 'secret-token')->assertOk();
+        $bulk = $command->fresh();
+        $this->assertSame(['winget::Node.js:', ['winget::Git.Git:']], [$bulk->current, $bulk->done]);
+        $this->assertSame('done', Device::updateRowState($bulk, 'winget', $git));
+        $this->assertSame('running', Device::updateRowState($bulk, 'winget', $node));
+
+        // A step that updates a whole group names the group.
+        $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'running', 'current' => 'group:apt', 'done' => []], 'secret-token')->assertOk();
+        $this->assertSame('running', Device::updateRowState($command->fresh(), 'apt', ['kind' => 'apt', 'id' => 'curl']));
+        $this->assertSame('queued', Device::updateRowState($command->fresh(), 'snap', ['kind' => 'snap', 'id' => 'core']));
+
+        // Nothing is kept once it is finished.
+        $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'succeeded', 'current' => 'group:apt'], 'secret-token')->assertOk();
+        $this->assertNull($command->fresh()->current);
+    }
+
     public function test_alert_actions_run_once(): void
     {
         $this->actingAs(User::factory()->create());

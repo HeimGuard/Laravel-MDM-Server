@@ -54,6 +54,24 @@ class PythonUpdateTest extends TestCase
         $this->assertSame(['kind' => 'pip', 'id' => 'httpie', 'user' => 'bob', 'title' => 'httpie'], $device->updateTarget('app', $rows[2]));
     }
 
+    public function test_application_updates_are_split_into_sections_by_provider(): void
+    {
+        $device = $this->linuxDevice('1.22.0', [
+            ['Id' => 'org.gimp.GIMP', 'Version' => '2.10', 'Avaliable' => '3.0', 'Source' => 'flatpak'],
+            ['Id' => 'httpie', 'Version' => '3.0', 'Avaliable' => '3.2', 'Source' => 'pip (bob)'],
+            ['Id' => 'core22', 'Version' => '1', 'Avaliable' => '2', 'Source' => 'snap'],
+            ['Id' => 'poetry', 'Version' => '1.1', 'Avaliable' => '1.2', 'Source' => 'pipx'],
+        ]);
+
+        $groups = $device->appUpdateGroups();
+        // In the order of the sections, rows under their index in the report.
+        $this->assertSame(['python', 'flatpak', 'snap'], array_keys($groups));
+        $this->assertSame([1, 3], array_keys($groups['python']));
+        $this->assertSame('pip', $device->updateGroupKey('app', $groups['python'][1]));
+        $this->assertSame('pipx', $device->updateGroupKey('app', $groups['python'][3]));
+        $this->assertSame('apt', $device->updateGroupKey('os', []));
+    }
+
     public function test_an_older_agent_cannot_install_python_updates(): void
     {
         $device = $this->linuxDevice('1.18.0', [

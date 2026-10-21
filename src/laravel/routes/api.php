@@ -299,6 +299,14 @@ Route::middleware(['device.signature', 'auth:api'])->group(function () {
             'message' => is_string($message) && $message !== '' ? mb_strcut($message, 0, 1000) : null,
             'updated_at' => now(),
         ];
+        // Which rows an update of many packages is at (agents 1.22.0+): the one being installed and
+        // the finished ones. Only plain strings of a sensible size are kept.
+        $current = $request->json('current');
+        $done = $request->json('done');
+        $values['current'] = is_string($current) && $status === 'running' && $current !== '' ? mb_strcut($current, 0, 300) : null;
+        if (is_array($done)) {
+            $values['done'] = json_encode(array_values(array_map(fn ($target) => mb_strcut($target, 0, 300), array_slice(array_filter($done, 'is_string'), 0, 300))));
+        }
         if ($status === 'running') {
             $values['started_at'] = $deviceCommand->started_at ?? now();
         } else {

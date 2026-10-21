@@ -353,7 +353,7 @@
                     @endunless
                     @if (count($selectedDevice->updates) > 0)
                         <div x-show="!search || @js($osSearch).some(text => text.includes(search.toLowerCase()))">
-                        <h5>{{ __('Operating system') }}</h5>
+                        <h5>{{ $selectedDevice->platform === 'linux' ? __('Operating system (APT)') : __('Operating system (Windows Update)') }}</h5>
                         <ul class="list-group mb-3">
                             @foreach ($selectedDevice->updates as $update)
                                 @php
@@ -375,7 +375,7 @@
                                         @if ($deferred)
                                             <x-badge color="secondary" title="{{ $deferred['title'] }}" variant="subtle">{{ $deferred['label'] }}</x-badge>
                                         @else
-                                            @include('partials.device.update-button', ['section' => 'os', 'index' => $loop->index, 'target' => $selectedDevice->updateTarget('os', $update)])
+                                            @include('partials.device.update-button', ['section' => 'os', 'index' => $loop->index, 'target' => $selectedDevice->updateTarget('os', $update), 'groupKey' => $selectedDevice->updateGroupKey('os', $update)])
                                         @endif
                                     </span>
                                 </li>
@@ -383,15 +383,21 @@
                         </ul>
                         </div>
                     @endif
-                    @if (count($selectedDevice->apps_packages_updates) > 0)
-                        <div x-show="!search || @js($appSearch).some(text => text.includes(search.toLowerCase()))">
-                        <h5>{{ __('Applications') }}</h5>
+                    @foreach ($selectedDevice->appUpdateGroups() as $groupName => $groupRows)
+                        @php
+                            $groupSearch = array_merge(
+                                array_map(fn ($index) => $appSearch[$index], array_keys($groupRows)),
+                                $groupName === 'powershell' ? $moduleSearch : [],
+                            );
+                        @endphp
+                        <div x-show="!search || @js($groupSearch).some(text => text.includes(search.toLowerCase()))">
+                        <h5 class="mt-3">{{ $groupName === 'other' ? __('Other') : \App\Models\Device::UPDATE_SECTIONS[$groupName] }}</h5>
                         <ul class="list-group">
-                            @foreach ($selectedDevice->apps_packages_updates as $appUpdate)
+                            @foreach ($groupRows as $appIndex => $appUpdate)
                                 @php
                                     $versions = collect([($appUpdate['Version'] ?? '') ?: '?', $appUpdate['Avaliable'] ?? null])->filter()->implode(' → ');
                                 @endphp
-                                <li class="list-group-item d-flex align-items-center gap-2" wire:key="app-update-{{ $loop->index }}" x-show="!search || @js($appSearch[$loop->index]).includes(search.toLowerCase())">
+                                <li class="list-group-item d-flex align-items-center gap-2" wire:key="app-update-{{ $appIndex }}" x-show="!search || @js($appSearch[$appIndex]).includes(search.toLowerCase())">
                                     <span class="flex-grow-1 min-w-0">
                                         <span class="fw-semibold text-break">{{ $appUpdate['Id'] ?? '' }}</span>
                                         @if (! empty($appUpdate['Source']))
@@ -405,36 +411,31 @@
                                     </span>
                                     <span class="d-flex align-items-center gap-2 flex-shrink-0">
                                         <x-badge class="d-none d-sm-inline-flex" color="primary" variant="subtle">{{ $versions }}</x-badge>
-                                        @include('partials.device.update-button', ['section' => 'app', 'index' => $loop->index, 'target' => $selectedDevice->updateTarget('app', $appUpdate)])
+                                        @include('partials.device.update-button', ['section' => 'app', 'index' => $appIndex, 'target' => $selectedDevice->updateTarget('app', $appUpdate), 'groupKey' => $selectedDevice->updateGroupKey('app', $appUpdate)])
                                     </span>
                                 </li>
                             @endforeach
+                            @if ($groupName === 'powershell')
+                                @foreach ($moduleUpdates as $module)
+                                    <li class="list-group-item d-flex align-items-center gap-2" wire:key="module-{{ $loop->index }}" x-show="!search || @js($moduleSearch[$loop->index]).includes(search.toLowerCase())">
+                                        <span class="flex-grow-1 min-w-0">
+                                            <span class="fw-semibold text-break">{{ $module['Name'] ?? '' }}</span>
+                                            <span class="small text-muted ms-1">{{ __('module') }} · {{ $module['Edition'] ?? '' }}</span>
+                                            @if (! empty($module['User']))
+                                                <span class="small text-muted" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
+                                            @endif
+                                            <span class="d-block d-sm-none small text-primary-emphasis">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</span>
+                                        </span>
+                                        <span class="d-flex align-items-center gap-2 flex-shrink-0">
+                                            <x-badge class="d-none d-sm-inline-flex" color="primary" variant="subtle">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</x-badge>
+                                            @include('partials.device.update-button', ['section' => 'module', 'index' => $loop->index, 'target' => $selectedDevice->updateTarget('module', $module), 'groupKey' => 'powershell'])
+                                        </span>
+                                    </li>
+                                @endforeach
+                            @endif
                         </ul>
                         </div>
-                    @endif
-                    @if (count($moduleUpdates) > 0)
-                        <div x-show="!search || @js($moduleSearch).some(text => text.includes(search.toLowerCase()))">
-                        <h5 class="mt-3">{{ __('PowerShell modules') }}</h5>
-                        <ul class="list-group">
-                            @foreach ($moduleUpdates as $module)
-                                <li class="list-group-item d-flex align-items-center gap-2" wire:key="module-{{ $loop->index }}" x-show="!search || @js($moduleSearch[$loop->index]).includes(search.toLowerCase())">
-                                    <span class="flex-grow-1 min-w-0">
-                                        <span class="fw-semibold text-break">{{ $module['Name'] ?? '' }}</span>
-                                        <span class="small text-muted ms-1">{{ $module['Edition'] ?? '' }}</span>
-                                        @if (! empty($module['User']))
-                                            <span class="small text-muted" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
-                                        @endif
-                                        <span class="d-block d-sm-none small text-primary-emphasis">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</span>
-                                    </span>
-                                    <span class="d-flex align-items-center gap-2 flex-shrink-0">
-                                        <x-badge class="d-none d-sm-inline-flex" color="primary" variant="subtle">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</x-badge>
-                                        @include('partials.device.update-button', ['section' => 'module', 'index' => $loop->index, 'target' => $selectedDevice->updateTarget('module', $module)])
-                                    </span>
-                                </li>
-                            @endforeach
-                        </ul>
-                        </div>
-                    @endif
+                    @endforeach
                 </div>
             @endif
 
