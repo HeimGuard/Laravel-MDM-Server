@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.21.1'
+$AgentVersion = '1.22.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -2034,12 +2034,32 @@ function Get-SnapUpdates {
     }
 }
 
+function Test-PythonExternallyManaged {
+    # PEP 668: the distribution marks its Python as managed by the OS package manager
+    # (EXTERNALLY-MANAGED next to the standard library), pip refuses to install into it.
+    param ([string]$Python)
+
+    $stdlib = "$(& $Python -c 'import sysconfig;print(sysconfig.get_path(''stdlib''))' 2>$null)".Trim()
+    return [bool]$stdlib -and (Test-Path -Path (Join-Path $stdlib 'EXTERNALLY-MANAGED'))
+}
+
+function Get-PythonAptPackage {
+    # The Debian package of a Python package (python3-name) when it is installed from apt, else $null.
+    param ([string]$Name)
+
+    if (-not (Get-Command -Name dpkg-query -CommandType Application -ErrorAction SilentlyContinue)) { return $null }
+    $package = 'python3-' + $Name.ToLowerInvariant().Replace('_', '-')
+    $status = "$(dpkg-query -W -f='${Status}' $package 2>$null)"
+    return $(if ($status -eq 'install ok installed') { $package } else { $null })
+}
+
 function Get-PythonUpdates {
     # Outdated Python packages installed per user: pip --user packages and pipx apps, for the current
     # context and (on Linux) each /home user's own site and pipx. Only user installs are touched; the
     # system Python is left to the OS package manager (often externally managed). The latest versions
     # come from pip's own outdated check (it queries the package index). Rows:
-    # @{ Id; Version; Avaliable; Source } with Source 'pip'/'pipx' plus " (user)" for a user's.
+    # @{ Id; Version; Avaliable; Source; Provider } with Source 'pip'/'pipx' plus " (user)" for a
+    # user's, Provider 'python'.
     $hasPipx = [bool](Get-Command -Name pipx -CommandType Application -ErrorAction SilentlyContinue)
     $python = @('python3', 'python') | Where-Object { Get-Command -Name $_ -CommandType Application -ErrorAction SilentlyContinue } | Select-Object -First 1
     if (-not $hasPipx -and -not $python) { return }
@@ -2068,7 +2088,7 @@ function Get-PythonUpdates {
             if ($raw.StartsWith('[')) {
                 foreach ($pkg in @(try { $raw | ConvertFrom-Json } catch { @() })) {
                     if ($pkg.name -and $pkg.latest_version) {
-                        [PSCustomObject]@{ Id = "$($pkg.name)"; Version = "$($pkg.version)"; Avaliable = "$($pkg.latest_version)"; Source = "pip$label" }
+                        [PSCustomObject]@{ Id = "$($pkg.name)"; Version = "$($pkg.version)"; Avaliable = "$($pkg.latest_version)"; Source = "pip$label"; Provider = 'python' }
                     }
                 }
             }
@@ -2087,7 +2107,7 @@ function Get-PythonUpdates {
                 if (-not $outRaw.StartsWith('[')) { continue }
                 foreach ($o in @(try { $outRaw | ConvertFrom-Json } catch { @() })) {
                     if ("$($o.name)".Replace('_', '-').ToLowerInvariant() -eq $pkg -and $o.latest_version) {
-                        [PSCustomObject]@{ Id = "$app"; Version = "$($main.package_version)"; Avaliable = "$($o.latest_version)"; Source = "pipx$label" }
+                        [PSCustomObject]@{ Id = "$app"; Version = "$($main.package_version)"; Avaliable = "$($o.latest_version)"; Source = "pipx$label"; Provider = 'python' }
                     }
                 }
             }
@@ -4038,7 +4058,12 @@ function Send-CommandStatus {
         $Status,
         $Progress,
         [string]
-        $Message
+        $Message,
+        # An update of many packages (agents 1.22.0+): the one being installed and the finished ones.
+        [string]
+        $Current,
+        [string[]]
+        $Done
     )
 
     if (-not $Id -or -not $script:AgentToken) {
@@ -4046,6 +4071,8 @@ function Send-CommandStatus {
     }
     $body = @{ status = $Status }
     if ($null -ne $Progress) { $body['progress'] = [int]$Progress }
+    if ($Current) { $body['current'] = $Current.Substring(0, [Math]::Min(300, $Current.Length)) }
+    if ($PSBoundParameters.ContainsKey('Done')) { $body['done'] = @($Done | Select-Object -Last 300) }
     if ($Message) { $body['message'] = $Message.Substring(0, [Math]::Min(1000, $Message.Length)) }
     try {
         Invoke-MdmApi -Method Post -Path "device/commands/$Id" -Token $script:AgentToken -Body $body | Out-Null
@@ -4879,7 +4906,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -4890,16 +4917,27 @@ function Start-UpdateJob {
         if ((Test-Path -Path $OutputLog) -and (Get-Item -Path $OutputLog).Length -gt 2MB) {
             Move-Item -Path $OutputLog -Destination "$OutputLog.1" -Force
         }
-        $state = @{ Failures = [System.Collections.ArrayList]@(); Base = 0; Span = 100; Last = $null; WingetPercent = 0; WingetLabel = 'winget upgrade' }
+        $state = @{ Failures = [System.Collections.ArrayList]@(); Current = $null; Done = [System.Collections.ArrayList]@(); Base = 0; Span = 100; Last = $null; WingetPercent = 0; WingetLabel = 'winget upgrade' }
         function Set-Progress ([int]$Percent, [string]$Message) {
             # Percent within the current step (Base .. Base + Span), written for the agent loop.
             $total = [Math]::Min(100, [Math]::Max(0, $state.Base + [int]($state.Span * $Percent / 100)))
-            $key = "$total|$Message"
+            $key = "$total|$Message|$($state.Current)|$($state.Done.Count)"
             if ($key -eq $state.Last) { return }
             $state.Last = $key
             $temp = "$ProgressFile.tmp"
-            @{ progress = $total; message = $Message } | ConvertTo-Json -Compress | Set-Content -Path $temp -Encoding UTF8
+            # current: what is being installed now, done: what is finished (targets "kind:edition:id:user"
+            # of the portal's update rows, or "group:<provider>" for a step that updates a whole group).
+            @{ progress = $total; message = $Message; current = $state.Current; done = @($state.Done | Select-Object -Last 300) } | ConvertTo-Json -Compress | Set-Content -Path $temp -Encoding UTF8
             Move-Item -Path $temp -Destination $ProgressFile -Force
+        }
+        function Set-Current ([string]$Target) {
+            # The row (or group) the following progress belongs to; the previous one is finished.
+            Complete-Current
+            $state.Current = $Target
+        }
+        function Complete-Current {
+            if ($state.Current) { [void]$state.Done.Add($state.Current) }
+            $state.Current = $null
         }
         function Enter-Step ([int]$From, [int]$To, [string]$Message) {
             $state.Base = $From
@@ -4923,6 +4961,40 @@ function Start-UpdateJob {
             if ($Ok -notcontains $Code) {
                 [void]$state.Failures.Add("${Name}: exit $Code$(if ($Output) { ', ' + (Get-Tail $Output) })")
             }
+        }
+        function Invoke-PipUpgrade ([string]$Id, [string]$User, [bool]$RefreshApt = $false) {
+            # A pip package of a user. When the distribution manages its Python (PEP 668) pip refuses,
+            # so the package is updated by apt (python3-name) if it came from there, else pip is told
+            # to go on anyway (--break-system-packages). Failures go to the result like any other step.
+            $python = @('python3', 'python') | Where-Object { Get-Command -Name $_ -CommandType Application -ErrorAction SilentlyContinue } | Select-Object -First 1
+            if (-not $python) { [void]$state.Failures.Add('python not found'); return }
+            $managed = $OnLinux -and (Test-PythonExternallyManaged $python)
+            $aptPackage = if ($managed) { Get-PythonAptPackage $Id }
+            if ($aptPackage) {
+                if ($RefreshApt) { $null = Invoke-Logged 'apt-get update' { apt-get @lock -q update } }
+                $output = Invoke-Logged "apt-get install --only-upgrade $aptPackage" { apt-get @lock @aptOptions install --only-upgrade $aptPackage }
+                "apt-get install --only-upgrade ${aptPackage} (python $Id): exit $LASTEXITCODE"
+                Add-Result "apt-get install $aptPackage" $LASTEXITCODE $output
+                return
+            }
+            $asUser = if ($User) { Get-UserCommand -User $User }
+            if ($User -and -not $asUser) { [void]$state.Failures.Add("user $User not found"); return }
+            $extra = @(if ($managed) { '--break-system-packages' })
+            $title = "pip install --upgrade $Id$(if ($User) { " ($User)" })"
+            $run = {
+                param ([string[]]$PipArguments)
+                if ($asUser) { & $asUser[0] @($asUser[1..($asUser.Count - 1)]) $python -m pip install --user --upgrade @PipArguments $Id }
+                else { & $python -m pip install --user --upgrade @PipArguments $Id }
+            }
+            $output = Invoke-Logged $title { & $run $extra }
+            $code = $LASTEXITCODE
+            if ($code -ne 0 -and -not $managed -and ($output -join "`n") -match 'externally-managed-environment') {
+                # The marker was not found by the check, but pip refused: go on the same way.
+                $output = Invoke-Logged "$title --break-system-packages" { & $run @('--break-system-packages') }
+                $code = $LASTEXITCODE
+            }
+            "$title$(if ($extra) { ' --break-system-packages' }): exit $code"
+            Add-Result "pip install --upgrade $Id" $code $output
         }
         # apt progress (APT::Status-Fd=1): "dlstatus:..:percent:text" while downloading (first
         # third of the step), "pmstatus:..:percent:text" while installing.
@@ -5097,19 +5169,9 @@ function Start-UpdateJob {
                     Add-Result "snap refresh $id" $LASTEXITCODE $output
                 }
                 'pip' {
-                    # A user's --user package (never the system Python). Runs as the owning user.
+                    # A user's --user package (never the system Python); apt or pip, see Invoke-PipUpgrade.
                     Set-Progress 10 "pip install --upgrade $id"
-                    $python = @('python3', 'python') | Where-Object { Get-Command -Name $_ -CommandType Application -ErrorAction SilentlyContinue } | Select-Object -First 1
-                    if (-not $python) { [void]$state.Failures.Add('python not found'); break }
-                    if ($Params.user) {
-                        $asUser = Get-UserCommand -User $Params.user
-                        if (-not $asUser) { [void]$state.Failures.Add("user $($Params.user) not found"); break }
-                        $output = Invoke-Logged "pip install --upgrade $id ($($Params.user))" { & $asUser[0] @($asUser[1..($asUser.Count - 1)]) $python -m pip install --user --upgrade $id }
-                    } else {
-                        $output = Invoke-Logged "pip install --upgrade $id" { & $python -m pip install --user --upgrade $id }
-                    }
-                    "pip install --upgrade ${id}: exit $LASTEXITCODE"
-                    Add-Result "pip install --upgrade $id" $LASTEXITCODE $output
+                    Invoke-PipUpgrade -Id $id -User $Params.user -RefreshApt $true
                 }
                 'pipx' {
                     Set-Progress 10 "pipx upgrade $id"
@@ -5151,6 +5213,7 @@ function Start-UpdateJob {
 
             # --with-new-pkgs installs new dependencies (plain upgrade keeps such packages back),
             # nothing is removed; existing configuration files are kept.
+            Set-Current 'group:apt'
             Enter-Step 5 70 'apt-get upgrade'
             $output = Invoke-Logged 'apt-get upgrade' { apt-get @lock @aptOptions --with-new-pkgs upgrade } $aptProgress
             $code = $LASTEXITCODE
@@ -5164,6 +5227,7 @@ function Start-UpdateJob {
                 if ($keptBack -and $line -match '^\s+\S') { $line.Trim() } elseif ($keptBack) { $keptBack = $false }
             }
             if ($held) { "apt-get upgrade: kept back (phased or held): $($held -join ' ')" }
+            Set-Current 'group:flatpak'
             Enter-Step 70 80 'flatpak update'
             if (Get-Command -Name flatpak -CommandType Application -ErrorAction SilentlyContinue) {
                 $output = Invoke-Logged 'flatpak update' { flatpak update --system -y --noninteractive }
@@ -5178,14 +5242,27 @@ function Start-UpdateJob {
                     Add-Result "flatpak update ($user)" $LASTEXITCODE $output
                 }
             }
+            Set-Current 'group:snap'
             Enter-Step 80 90 'snap refresh'
             if (Get-Command -Name snap -CommandType Application -ErrorAction SilentlyContinue) {
                 $output = Invoke-Logged 'snap refresh' { snap refresh }
                 "snap refresh: exit $LASTEXITCODE$(if ($LASTEXITCODE) { ': ' + (Get-Tail $output) })"
                 Add-Result 'snap refresh' $LASTEXITCODE $output
             }
-            Enter-Step 90 95 'pipx upgrade-all'
-            # Each user's pipx apps (pipx is per user); the system Python's pip is left to apt.
+            Enter-Step 90 93 'pip install --upgrade'
+            # Each user's pip --user packages, one at a time (apt for the ones it manages, see Invoke-PipUpgrade).
+            $pipPackages = @(try { Get-PythonUpdates | Where-Object { "$($_.Source)" -match '^pip( \(|$)' } } catch { })
+            $pipDone = 0
+            foreach ($pip in $pipPackages) {
+                $pipUser = if ("$($pip.Source)" -match '\((.+)\)$') { $Matches[1] } else { '' }
+                Set-Current "pip::$($pip.Id):$pipUser"
+                Set-Progress ([int](100 * $pipDone / [Math]::Max(1, $pipPackages.Count))) "pip install --upgrade $($pip.Id) ($($pipDone + 1)/$($pipPackages.Count))"
+                Invoke-PipUpgrade -Id $pip.Id -User $pipUser
+                $pipDone++
+            }
+            Set-Current 'group:pipx'
+            Enter-Step 93 95 'pipx upgrade-all'
+            # Each user's pipx apps (pipx is per user).
             foreach ($userHome in @(Get-ChildItem -Path /home -Directory -ErrorAction SilentlyContinue)) {
                 $asUser = Get-UserCommand -User $userHome.Name
                 if (-not $asUser) { continue }
@@ -5215,6 +5292,7 @@ function Start-UpdateJob {
                 foreach ($package in $packages) {
                     $state.WingetPercent = [int](40 * $done / [Math]::Max(1, $packages.Count))
                     $state.WingetLabel = "winget upgrade $($package.Id) ($($done + 1)/$($packages.Count))"
+                    Set-Current "winget::$($package.Id):"
                     Set-Progress $state.WingetPercent $state.WingetLabel
                     $output = if ($package.Scope -eq 'user') { Invoke-WingetUpgradeAsUser -Id $package.Id -Source $package.Source } else { Invoke-WingetUpgrade -Winget $winget -Id $package.Id -Source $package.Source }
                     if ($null -eq $output) { $output = @('Installed only for a user, who is not logged on now'); $global:LASTEXITCODE = -1 }
@@ -5226,12 +5304,14 @@ function Start-UpdateJob {
             } else {
                 'winget: not found, application updates skipped'
             }
+            Set-Current 'group:windows'
             Enter-Step 40 90 'Windows Update'
             try { Install-WindowsUpdate -OnProgress { param ($p, $m) Set-Progress $p $m } -State $state } catch { "Windows Update failed: $($_.Exception.Message)"; [void]$state.Failures.Add("Windows Update: $($_.Exception.Message)") }
         }
 
         if (-not $Params) {
             # A PowerShell 7 release no package manager updated (winget / apt do it themselves).
+            Set-Current 'group:powershell'
             Enter-Step 88 90 'PowerShell 7'
             try {
                 $release = Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known @()
@@ -5259,6 +5339,7 @@ function Start-UpdateJob {
                 "PowerShell modules failed: $($_.Exception.Message)"
             }
         }
+        Complete-Current
         $restart = if ($OnLinux) { Test-Path -Path /var/run/reboot-required } else { [bool]$state.Restart }
         if ($restart) { 'Restart required' }
 
@@ -5297,7 +5378,7 @@ function Sync-UpdateProgress {
     $script:UpdateProgress = $text
     $script:UpdateProgressSent = Get-Date
     $progress = $text | ConvertFrom-Json
-    [void](Send-CommandStatus -Id $script:UpdateCommandId -Status running -Progress $progress.progress -Message $progress.message)
+    [void](Send-CommandStatus -Id $script:UpdateCommandId -Status running -Progress $progress.progress -Message $progress.message -Current "$($progress.current)" -Done @($progress.done | ForEach-Object { "$_" }))
 }
 
 function Complete-UpdateJob {

@@ -81,11 +81,12 @@ class DeviceCommand extends Model
 
     public const MODULE_EDITIONS = ['Windows PowerShell', 'PowerShell 7'];
 
-    protected $fillable = ['device_id', 'command', 'params', 'target', 'status', 'progress', 'message', 'issued_by'];
+    protected $fillable = ['device_id', 'command', 'params', 'target', 'status', 'progress', 'message', 'current', 'done', 'issued_by'];
 
     protected $casts = [
         'params' => 'array',
         'progress' => 'integer',
+        'done' => 'array',
         'sent_at' => 'datetime',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',

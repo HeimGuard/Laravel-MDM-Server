@@ -126,6 +126,19 @@ On Windows (agents 1.14.0+):
 - **Windows Update** installs the updates it marks as "may ask for user input" too: drivers and
   vendor packages (NVIDIA, Intel, firmware) carry that flag but install quietly (`ForceQuiet`), as
   Windows Update installs them itself. One that really needs a person fails with its result.
+**Python on Linux (agents 1.22.0+):** pip packages of users (`pip --user`) are updated one at a time,
+also by Install updates. When the distribution manages its Python (PEP 668, the `EXTERNALLY-MANAGED`
+marker next to the standard library) pip refuses to install, so a package that came from apt
+(`python3-<name>`) is updated with `apt-get install --only-upgrade`, any other one with
+`pip install --user --upgrade --break-system-packages`. Without the marker it is plain pip.
+
+**Progress per row (agents 1.22.0+):** while Install updates runs, the agent also reports which
+package it is installing and which are finished (`current`, `done` of the command status). The
+Updates tab shows it on the row: installing, done or queued. Steps that update a whole group at once
+(apt, flatpak, snap, pipx, Windows Update, PowerShell) mark all rows of that group. The update
+lists are split into sections by provider: operating system (APT / Windows Update), Python,
+PowerShell (release and modules), Flatpak, Snap, Winget and Other.
+
 On Linux the update list tells what apt would install now (a simulated `apt-get upgrade`, no
 network): updates deferred by phasing and held back ones (pinned, held, or needing other packages
 to change) are shown with an icon and do not count as available updates. The list is also

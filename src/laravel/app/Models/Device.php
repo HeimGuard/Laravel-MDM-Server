@@ -998,6 +998,76 @@ class Device extends Model
         return DeviceCommand::sanitizeParams('installUpdate', $params);
     }
 
+    /** Sections of the application updates (the provider that updates them), in the order they are shown. */
+    public const UPDATE_SECTIONS = ['python' => 'Python', 'powershell' => 'PowerShell', 'flatpak' => 'Flatpak', 'snap' => 'Snap', 'winget' => 'Winget', 'other' => 'Other'];
+
+    /**
+     * What updates a row of the update lists ('os', 'app' or 'module'): apt, windows, pip, pipx,
+     * powershell, flatpak, snap, winget or other. The agent names these in "group:<key>" while it
+     * installs a whole group at once (doUpdates).
+     */
+    public function updateGroupKey(string $section, array $row): string
+    {
+        if ($section === 'os') {
+            return $this->platform === 'linux' ? 'apt' : 'windows';
+        }
+        if ($section === 'module') {
+            return 'powershell';
+        }
+        $source = (string) ($row['Source'] ?? '');
+
+        return match (true) {
+            str_starts_with($source, 'flatpak') => 'flatpak',
+            $source === 'snap' => 'snap',
+            str_starts_with($source, 'pipx') => 'pipx',
+            str_starts_with($source, 'pip') => 'pip',
+            $source === 'github.com/PowerShell' => 'powershell',
+            $this->platform === 'windows' => 'winget',
+            default => 'other',
+        };
+    }
+
+    /**
+     * The application updates split into sections by provider (UPDATE_SECTIONS), each with its rows
+     * under their index in apps_packages_updates (installUpdate finds the row by it). PowerShell
+     * is there for the modules too, with no rows of its own when only modules are outdated.
+     *
+     * @return array<string, array<int, array>>
+     */
+    public function appUpdateGroups(): array
+    {
+        $groups = array_fill_keys(array_keys(self::UPDATE_SECTIONS), []);
+        foreach ($this->apps_packages_updates as $index => $row) {
+            $row = (array) $row;
+            $key = $this->updateGroupKey('app', $row);
+            $section = match (true) {
+                in_array($key, ['pip', 'pipx'], true) => 'python',
+                isset(self::UPDATE_SECTIONS[$key]) => $key,
+                default => 'other',
+            };
+            $groups[$section][$index] = $row;
+        }
+        $keepPowerShell = $this->module_updates !== [];
+
+        return array_filter($groups, fn (array $rows, string $section) => $rows !== [] || ($section === 'powershell' && $keepPowerShell), ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * Where a row stands while "Install all" (doUpdates) runs: running (the agent installs it now),
+     * done or queued. Old agents do not report the rows: everything stays queued.
+     */
+    public static function updateRowState(DeviceCommand $bulk, string $groupKey, ?array $target): string
+    {
+        $own = $target ? DeviceCommand::targetOf('installUpdate', $target) : null;
+        $group = 'group:'.$groupKey;
+        if ($bulk->current !== null && ($bulk->current === $own || $bulk->current === $group)) {
+            return 'running';
+        }
+        $done = (array) $bulk->done;
+
+        return ($own !== null && in_array($own, $done, true)) || in_array($group, $done, true) ? 'done' : 'queued';
+    }
+
     /** Interface types with their icon and label (the agent reports Type from 1.8.0 on). */
     public const NETWORK_TYPES = [
         'lan' => ['icon' => 'fas fa-ethernet', 'label' => 'LAN'],
