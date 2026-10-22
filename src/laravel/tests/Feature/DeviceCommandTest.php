@@ -208,6 +208,8 @@ class DeviceCommandTest extends TestCase
             ['Id' => 'Node.js', 'Version' => '20', 'Avaliable' => '22', 'Source' => 'winget'],
         ]]);
         $command = $device->issueCommand('doUpdates');
+        // Taken by the agent: only a sent or running command takes reports.
+        $this->signedJson('POST', '/api/device/commands/take', [], 'secret-token')->assertOk();
         $git = ['kind' => 'winget', 'id' => 'Git.Git'];
         $node = ['kind' => 'winget', 'id' => 'Node.js'];
 
