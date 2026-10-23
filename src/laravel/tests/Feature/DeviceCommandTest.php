@@ -169,6 +169,25 @@ class DeviceCommandTest extends TestCase
         $this->assertSame(['cancelled', 'Cancelled by '.$user->name], [$queued->fresh()->status, $queued->fresh()->message]);
     }
 
+    public function test_google_chrome_of_all_users_is_updated_from_googles_msi(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $row = ['Id' => 'Google.Chrome', 'Version' => '156.0.8078.47', 'Avaliable' => '157.0.8103.15', 'Source' => 'google.com/chrome'];
+        $old = $this->device('1.25.0', ['packages_updates' => [$row]]);
+        $new = $this->device('1.26.0', ['packages_updates' => [$row]], 'chrome-token');
+
+        // By agents 1.26.0+ (Windows), by the version it is updated to; it is its own section of the update list.
+        $this->assertNull($old->updateTarget('app', $old->apps_packages_updates[0]));
+        $this->assertNull($old->issueCommand('installUpdate', ['kind' => 'chrome', 'id' => '157.0.8103.15']));
+        $this->assertSame(['kind' => 'chrome', 'id' => '157.0.8103.15', 'title' => 'Google Chrome 157.0.8103.15'], $new->updateTarget('app', $new->apps_packages_updates[0]));
+        $this->assertNotNull($new->issueCommand('installUpdate', ['kind' => 'chrome', 'id' => '157.0.8103.15']));
+        $this->assertSame('chrome', $new->updateGroupKey('app', $row));
+        $this->assertSame(['chrome'], array_keys($new->appUpdateGroups()));
+        // Only a version number is taken as the id.
+        $this->assertNull($new->issueCommand('installUpdate', ['kind' => 'chrome', 'id' => '157.0.8103']));
+        $this->assertNull($new->issueCommand('installUpdate', ['kind' => 'chrome', 'id' => '1; calc']));
+    }
+
     public function test_one_update_of_the_list_is_installed(): void
     {
         $this->actingAs(User::factory()->create());

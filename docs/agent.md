@@ -132,12 +132,24 @@ marker next to the standard library) pip refuses to install, so a package that c
 (`python3-<name>`) is updated with `apt-get install --only-upgrade`, any other one with
 `pip install --user --upgrade --break-system-packages`. Without the marker it is plain pip.
 
+**Google Chrome on Windows (agents 1.26.0+):** Chrome installed for all users is updated by the agent
+itself, where winget is not there (Windows Server) or does not have the release yet (its manifest lags
+a day or more behind Chrome, and the CVE rules go by the release). The agent compares the version Google
+Update keeps (`pv` in the registry) with the newest stable release of Google's version history
+(`versionhistory.googleapis.com`) and lists *Google Chrome* in its own section of the updates when it is older (not
+twice when winget lists `Google.Chrome`). Install updates and *Update* on the row download Google's enterprise
+MSI (`dl.google.com`, the build of the architecture of the installed Chrome), install it only when it is
+signed by Google LLC, run `msiexec /qn /norestart` and check that Chrome is newer than it was. Google serves the
+release it rolls out now, which can be one behind the newest: the log says so. Windows of Chrome that are
+open keep the old version until they are restarted. A Chrome installed for one user only is not seen (the agent
+runs as SYSTEM), and the device needs to reach Google (proxies: the system proxy of SYSTEM).
+
 **Progress per row (agents 1.22.0+):** while Install updates runs, the agent also reports which
 package it is installing and which are finished (`current`, `done` of the command status). The
 Updates tab shows it on the row: installing, done or queued. Steps that update a whole group at once
 (apt, flatpak, snap, pipx, Windows Update, PowerShell) mark all rows of that group. The update
 lists are split into sections by provider: operating system (APT / Windows Update), Python,
-PowerShell (release and modules), Flatpak, Snap, Winget and Other.
+PowerShell (release and modules), Google Chrome, Flatpak, Snap, Winget and Other.
 
 On Linux the update list tells what apt would install now (a simulated `apt-get upgrade`, no
 network): updates deferred by phasing and held back ones (pinned, held, or needing other packages
