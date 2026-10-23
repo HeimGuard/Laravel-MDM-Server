@@ -32,10 +32,10 @@ class DeviceSecurity extends Component
     public function exportMarkdown()
     {
         $device = Device::findOrFail($this->deviceId);
-        $findings = $device->securityFindings()->with(['rule', 'device', 'acknowledger'])->open()->bySeverity()->get();
+        $query = SecurityFinding::query()->where('device_id', $device->id)->open()->bySeverity();
 
         return response()->streamDownload(
-            fn () => print SecurityExport::markdown($findings, 'Security findings of '.$device->displayName),
+            fn () => SecurityExport::streamMarkdown($query, 'Security findings of '.$device->displayName),
             'security-findings-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.md',
             ['Content-Type' => 'text/markdown; charset=UTF-8'],
         );

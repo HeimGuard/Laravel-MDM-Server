@@ -75,13 +75,13 @@ class Page extends Component
         }
     }
 
-    /** All the findings of the filters (not only the first LIMIT the page shows) as a Markdown report. */
+    /** All the findings of the filters (not only the first LIMIT the page shows) as a Markdown report, written 200 at a time. */
     public function exportMarkdown()
     {
-        $findings = $this->findings()->bySeverity()->get();
+        $query = $this->findings()->bySeverity();
 
         return response()->streamDownload(
-            fn () => print SecurityExport::markdown($findings),
+            fn () => SecurityExport::streamMarkdown($query),
             'security-findings-'.now()->format('Y-m-d').'.md',
             ['Content-Type' => 'text/markdown; charset=UTF-8'],
         );
