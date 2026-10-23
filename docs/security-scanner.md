@@ -65,6 +65,11 @@ version and does not name the CVE is still reported. The CVEs of a package versi
 names a CVE without fixing it (a note that it does not affect the package) hides it as well; rpm
 packages are not read yet and stay out of the CVE rules.
 
+**Source packages (agents 1.24.0+, Debian / Ubuntu).** A security tracker is about source packages, the inventory
+lists binary ones (`libssl3t64` is `openssl`, `libglib2.0-0t64` and `gir1.2-glib-2.0` are `glib2.0`), and a name
+cannot tell them apart reliably. For every dpkg package whose source package has another name the agent sends it
+as the software field `SourcePackage` (`${source:Package}` of dpkg-query); a package that is its own source has none.
+
 The built-in parsers ([`resources/security/parsers.json`](../src/laravel/resources/security/parsers.json))
 make the events `failed_logon` (sshd, 4625), `sudo_failed`, `account_created` (useradd, 4720),
 `admin_added` (usermod / gpasswd to sudo, wheel or admin, 4732 to Administrators),

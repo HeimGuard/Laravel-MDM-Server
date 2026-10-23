@@ -103,15 +103,16 @@ class SecurityInventory extends Model
     }
 
     /**
-     * The hash of the content of an item (all its fields, in the order of the source). FixedCves counts
-     * only when it is set, so the hashes of the items without it are the ones agents before 1.23.0 send.
+     * The hash of the content of an item (all its fields, in the order of the source). FixedCves and
+     * SourcePackage count only when they are set, so the hashes of the items without them are the ones
+     * agents before 1.23.0 / 1.24.0 send.
      */
     public static function itemHash(string $source, array $item): string
     {
         $parts = [];
         foreach (SecurityRules::SOURCES[$source]['fields'] as $field) {
             $value = self::canon($item[$field] ?? null);
-            if ($field === 'FixedCves' && $value === '') {
+            if (in_array($field, ['FixedCves', 'SourcePackage'], true) && $value === '') {
                 continue;
             }
             $parts[] = $value;

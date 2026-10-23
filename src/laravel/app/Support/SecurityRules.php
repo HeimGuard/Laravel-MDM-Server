@@ -46,7 +46,8 @@ class SecurityRules
         'software' => [
             'label' => 'Installed software',
             // FixedCves (agents 1.23.0+, dpkg): ",CVE-2026-1,CVE-2026-2," the changelog of the package names, see itemHash.
-            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves'],
+            // SourcePackage (agents 1.24.0+, dpkg): the source package when it is not the package itself (libssl3t64: openssl).
+            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage'],
             'key' => ['Name', 'Source'],
         ],
         'processes' => [

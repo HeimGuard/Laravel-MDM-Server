@@ -224,6 +224,22 @@ class SecurityScannerTest extends TestCase
             'when' => ['field' => 'Version', 'op' => 'dpkg_lt', 'value' => '1.0-1']]));
     }
 
+    public function test_a_source_package_counts_in_the_hash_only_when_it_is_set(): void
+    {
+        $item = ['Name' => 'libssl3t64', 'Version' => '3.5.5-1ubuntu3.7', 'Publisher' => 'Ubuntu', 'Source' => 'dpkg', 'FixedCves' => null];
+
+        // The hashes Get-SecurityItemHash of the agent (1.24.0) computes for these items.
+        $this->assertSame('ab91fe1be71bceab', SecurityInventory::itemHash('software', $item + ['SourcePackage' => 'openssl']));
+        $this->assertSame('0507b57470b1c124', SecurityInventory::itemHash('software', ['Name' => 'bash', 'Version' => '5.3-2', 'Publisher' => 'Ubuntu', 'Source' => 'dpkg', 'SourcePackage' => null]));
+        // An agent before 1.24.0 sends none and its hashes stay what they were.
+        $this->assertSame(
+            SecurityInventory::itemHash('software', ['Name' => 'bash', 'Version' => '5.3-2', 'Publisher' => 'Ubuntu', 'Source' => 'dpkg']),
+            SecurityInventory::itemHash('software', ['Name' => 'bash', 'Version' => '5.3-2', 'Publisher' => 'Ubuntu', 'Source' => 'dpkg', 'SourcePackage' => null]),
+        );
+        $this->assertSame('openssl', SecurityInventory::sanitizeItem('software', $item + ['SourcePackage' => ' openssl '])['SourcePackage']);
+        $this->assertNull(SecurityInventory::sanitizeItem('software', $item)['SourcePackage']);
+    }
+
     public function test_an_appimage_mounted_by_its_runtime_is_not_a_program_from_a_temporary_folder(): void
     {
         $rule = collect(json_decode(file_get_contents(resource_path('security/rules.json')), true))
