@@ -419,7 +419,7 @@ class ScriptTest extends TestCase
         $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
         $this->assertNotNull($json);
         $data = json_decode(base64_decode($json['content']), true);
-        $this->assertSame('Firewall\nis off', $data['findings'][0]['message']);
+        $this->assertSame("Firewall\nis off", $data['findings'][0]['message']);
         $this->assertArrayHasKey('inventory', $data);
     }
 }
