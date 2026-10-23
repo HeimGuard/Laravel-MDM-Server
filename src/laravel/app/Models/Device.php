@@ -25,6 +25,9 @@ class Device extends Model
     /** Agents from this version update PowerShell 7 from its GitHub release (installUpdate "pwsh"). */
     public const PWSH_UPDATE_VERSION = '1.8.2';
 
+    /** Agents from this version update Google Chrome of all users on Windows from Google's MSI (installUpdate "chrome"). */
+    public const CHROME_UPDATE_VERSION = '1.26.0';
+
     /** Agents from this version collect and report everything on request (sync). */
     public const SYNC_VERSION = '1.8.2';
 
@@ -456,6 +459,7 @@ class Device extends Model
             $command === 'scanPorts' && ! PortScanResult::enabled() => __('Port scanning is turned off in the portal'),
             $command === 'sync' && version_compare((string) $this->agent_version, self::SYNC_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::SYNC_VERSION]),
             $command === 'installUpdate' && ($params['kind'] ?? null) === 'pwsh' && version_compare((string) $this->agent_version, self::PWSH_UPDATE_VERSION, '<') => __('The agent is too old for this command'),
+            $command === 'installUpdate' && ($params['kind'] ?? null) === 'chrome' && version_compare((string) $this->agent_version, self::CHROME_UPDATE_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::CHROME_UPDATE_VERSION]),
             $command === 'installUpdate' && in_array($params['kind'] ?? null, ['pip', 'pipx'], true) && version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::PYTHON_UPDATE_VERSION]),
             default => null,
         };
@@ -977,6 +981,8 @@ class Device extends Model
                 ($row['Source'] ?? null) === 'snap' => ['kind' => 'snap', 'id' => (string) ($row['Id'] ?? '')],
                 // Installed from the GitHub release, the agent installs the newer one from there.
                 ($row['Source'] ?? null) === 'github.com/PowerShell' => version_compare((string) $this->agent_version, self::PWSH_UPDATE_VERSION, '<') ? null : ['kind' => 'pwsh', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'PowerShell '.($row['Avaliable'] ?? '')],
+                // Google Chrome of all users, the agent installs the newer one from Google's MSI (where winget does not).
+                ($row['Source'] ?? null) === 'google.com/chrome' => version_compare((string) $this->agent_version, self::CHROME_UPDATE_VERSION, '<') ? null : ['kind' => 'chrome', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'Google Chrome '.($row['Avaliable'] ?? '')],
                 // Python: a pipx app or a user's pip --user package ("pipx"/"pip", with " (user)").
                 str_starts_with((string) ($row['Source'] ?? ''), 'pipx') => version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') ? null : ['kind' => 'pipx', 'id' => (string) ($row['Id'] ?? ''), 'user' => preg_match('/\((.+)\)$/', (string) $row['Source'], $m) ? $m[1] : null],
                 str_starts_with((string) ($row['Source'] ?? ''), 'pip') => version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') ? null : ['kind' => 'pip', 'id' => (string) ($row['Id'] ?? ''), 'user' => preg_match('/\((.+)\)$/', (string) $row['Source'], $m) ? $m[1] : null],
@@ -999,11 +1005,11 @@ class Device extends Model
     }
 
     /** Sections of the application updates (the provider that updates them), in the order they are shown. */
-    public const UPDATE_SECTIONS = ['python' => 'Python', 'powershell' => 'PowerShell', 'flatpak' => 'Flatpak', 'snap' => 'Snap', 'winget' => 'Winget', 'other' => 'Other'];
+    public const UPDATE_SECTIONS = ['python' => 'Python', 'powershell' => 'PowerShell', 'chrome' => 'Google Chrome', 'flatpak' => 'Flatpak', 'snap' => 'Snap', 'winget' => 'Winget', 'other' => 'Other'];
 
     /**
      * What updates a row of the update lists ('os', 'app' or 'module'): apt, windows, pip, pipx,
-     * powershell, flatpak, snap, winget or other. The agent names these in "group:<key>" while it
+     * powershell, chrome, flatpak, snap, winget or other. The agent names these in "group:<key>" while it
      * installs a whole group at once (doUpdates).
      */
     public function updateGroupKey(string $section, array $row): string
@@ -1022,6 +1028,7 @@ class Device extends Model
             str_starts_with($source, 'pipx') => 'pipx',
             str_starts_with($source, 'pip') => 'pip',
             $source === 'github.com/PowerShell' => 'powershell',
+            $source === 'google.com/chrome' => 'chrome',
             $this->platform === 'windows' => 'winget',
             default => 'other',
         };

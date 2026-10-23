@@ -74,6 +74,8 @@ class DeviceCommand extends Model
         'module' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
         // A PowerShell 7 release from GitHub (installations no package manager knows about).
         'pwsh' => '/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$/',
+        // Google Chrome of all users (Windows) from Google's enterprise MSI, by the version it is updated to.
+        'chrome' => '/^[0-9]{1,4}(\.[0-9]{1,5}){3}$/',
         // A Python package (pip --user) or a pipx app, by its name.
         'pip' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
         'pipx' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
