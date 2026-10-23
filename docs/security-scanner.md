@@ -53,6 +53,18 @@ What the agent collects (the *sources* of the rules):
 | `posture` | firewall, antivirus (Security Center / Defender), BitLocker, Secure Boot, RDP and NLA, SMBv1, UAC, Guest, auto logon, days since the last update | firewall (ufw, firewalld, iptables / nftables), LUKS, Secure Boot, `sshd -T` (root login, passwords), unattended-upgrades, days since the last apt upgrade |
 | logs (raw, since the previous collection) | `windows.security` (1102, 4625, 4648, 4697, 4698, 4720, 4722, 4724, 4726, 4728, 4732, 4740, 4756), `windows.system` (104, 7045), `windows.defender` (1006, 1116, 1117, 5001, 5010, 5012): `Time`, `Id`, `Provider`, `Level`, `Data` (EventData / UserData, names without spaces) | `linux.auth`: the auth / authpriv journal (or `auth.log`, `secure`): `Time`, `Identifier`, `Pid`, `Message` |
 
+**Backported fixes (agents 1.23.0+, Debian / Ubuntu).** Distributions fix a vulnerability without
+changing the upstream version (`php 8.5.4-0ubuntu1.5` carries the fix of 8.5.12), so a CVE rule that
+compares versions would report a patched package. For every dpkg package the agent therefore reads the
+head (256 KB) of `/usr/share/doc/<package>/changelog.Debian.gz` (`changelog.gz`, `changelog.Debian` or
+`changelog` when it is not there) and sends the CVE ids it names as the software field `FixedCves`:
+`,CVE-2026-1,CVE-2026-2,` (sorted, with commas around, at most 4000 characters). The CVE rules of
+detection-policy skip an item whose `FixedCves` contains `,CVE-x,`, a package that is below the fixed
+version and does not name the CVE is still reported. The CVEs of a package version are remembered in
+`security-cves.json` next to the agent, so only new and updated packages are read. A changelog that
+names a CVE without fixing it (a note that it does not affect the package) hides it as well; rpm
+packages are not read yet and stay out of the CVE rules.
+
 The built-in parsers ([`resources/security/parsers.json`](../src/laravel/resources/security/parsers.json))
 make the events `failed_logon` (sshd, 4625), `sudo_failed`, `account_created` (useradd, 4720),
 `admin_added` (usermod / gpasswd to sudo, wheel or admin, 4732 to Administrators),

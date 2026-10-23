@@ -30,6 +30,9 @@ class SecurityInventory extends Model
     /** Texts are cut to this many characters (command lines are long). */
     private const MAX_TEXT = 1000;
 
+    /** Fields that may be longer: the CVE ids of a package changelog. */
+    private const MAX_TEXT_OF = ['FixedCves' => 4000];
+
     protected $fillable = ['device_id', 'states', 'scanned', 'collected_at'];
 
     protected $casts = [
@@ -99,12 +102,19 @@ class SecurityInventory extends Model
         return substr(hash('sha256', implode("\x1f", $parts)), 0, 16);
     }
 
-    /** The hash of the content of an item (all its fields, in the order of the source). */
+    /**
+     * The hash of the content of an item (all its fields, in the order of the source). FixedCves counts
+     * only when it is set, so the hashes of the items without it are the ones agents before 1.23.0 send.
+     */
     public static function itemHash(string $source, array $item): string
     {
         $parts = [];
         foreach (SecurityRules::SOURCES[$source]['fields'] as $field) {
-            $parts[] = self::canon($item[$field] ?? null);
+            $value = self::canon($item[$field] ?? null);
+            if ($field === 'FixedCves' && $value === '') {
+                continue;
+            }
+            $parts[] = $value;
         }
 
         return substr(hash('sha256', implode("\x1f", $parts)), 0, 16);
@@ -165,7 +175,7 @@ class SecurityInventory extends Model
         }
         $text = trim((string) $value);
 
-        return $text === '' ? null : mb_strimwidth($text, 0, self::MAX_TEXT, '…');
+        return $text === '' ? null : mb_strimwidth($text, 0, self::MAX_TEXT_OF[$field] ?? self::MAX_TEXT, '…');
     }
 
     /**

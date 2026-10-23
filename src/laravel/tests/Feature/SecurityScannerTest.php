@@ -792,4 +792,38 @@ class SecurityScannerTest extends TestCase
         $this->assertSame(['opened' => 0, 'resolved' => 0], SecurityScanner::scan($device));
         $this->assertSame(['opened' => 0, 'resolved' => 0], SecurityScanner::scanAll());
     }
+
+    public function test_a_changelog_that_names_the_cve_clears_a_distro_package(): void
+    {
+        // A CVE rule as detection-policy builds them: an upstream version range, and for a package
+        // whose changelog names the CVE (a backported fix) no finding.
+        $rule = ['when' => ['all' => [
+            ['field' => 'Name', 'op' => 'matches', 'value' => '(^|[^a-z0-9])php($|[^a-z])'],
+            ['field' => 'Version', 'op' => 'version_lt', 'value' => '8.5.12'],
+            ['not' => ['field' => 'FixedCves', 'op' => 'contains', 'value' => ',CVE-2026-109618,']],
+        ]]];
+        $item = fn (array $extra = []) => ['Name' => 'php8.5-cli', 'Version' => '8.5.4-0ubuntu1.5', 'Source' => 'dpkg'] + $extra;
+
+        $this->assertTrue(SecurityRules::test($rule['when'], $item()), 'no changelog entry: reported');
+        $this->assertTrue(SecurityRules::test($rule['when'], $item(['FixedCves' => ',CVE-2026-1,CVE-2026-109619,'])), 'another CVE: reported');
+        $this->assertTrue(SecurityRules::test($rule['when'], $item(['FixedCves' => ',CVE-2026-10961800,'])), 'a longer id is not the CVE');
+        $this->assertFalse(SecurityRules::test($rule['when'], $item(['FixedCves' => ',CVE-2026-109618,CVE-2026-109619,'])), 'the changelog names it: fixed');
+        $this->assertFalse(SecurityRules::test($rule['when'], $item(['FixedCves' => ',cve-2026-109618,'])), 'case is ignored');
+    }
+
+    public function test_fixed_cves_are_kept_and_hashed_only_when_set(): void
+    {
+        $plain = ['Name' => 'php8.5-cli', 'Version' => '8.5.4', 'Publisher' => 'Ubuntu', 'Source' => 'dpkg'];
+        $with = $plain + ['FixedCves' => ','.implode(',', array_map(fn ($n) => "CVE-2026-{$n}", range(100000, 100200))).','];
+
+        // Without it the hash is the one agents before 1.23.0 compute (the four fields).
+        $this->assertSame(substr(hash('sha256', implode("\x1f", array_values($plain))), 0, 16), SecurityInventory::itemHash('software', $plain));
+        $this->assertNotSame(SecurityInventory::itemHash('software', $plain), SecurityInventory::itemHash('software', $with));
+
+        // Longer than an ordinary text (201 ids, about 3200 characters), not more than 4000.
+        $clean = SecurityInventory::sanitizeItem('software', $with);
+        $this->assertSame($with['FixedCves'], $clean['FixedCves']);
+        $this->assertSame(4000, mb_strlen(SecurityInventory::sanitizeItem('software', $plain + ['FixedCves' => str_repeat('x', 5000)])['FixedCves']));
+        $this->assertNull(SecurityInventory::sanitizeItem('software', $plain)['FixedCves']);
+    }
 }
