@@ -2,16 +2,20 @@
 
 namespace App\Livewire;
 
+use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
+use App\Support\SecurityExport;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
 /** The Security tab of a device: the scanner's findings and the security inventory they come from. */
 class DeviceSecurity extends Component
 {
+    use RemediatesFindings;
+
     public int $deviceId;
 
     public function acknowledge(int $id): void
@@ -22,6 +26,37 @@ class DeviceSecurity extends Component
     public function reopen(int $id): void
     {
         $this->finding($id)?->reopen();
+    }
+
+    /** The open findings of the device as a Markdown report. */
+    public function exportMarkdown()
+    {
+        $device = Device::findOrFail($this->deviceId);
+        $query = SecurityFinding::query()->where('device_id', $device->id)->open()->bySeverity();
+
+        return response()->streamDownload(
+            fn () => SecurityExport::streamMarkdown($query, 'Security findings of '.$device->displayName),
+            'security-findings-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.md',
+            ['Content-Type' => 'text/markdown; charset=UTF-8'],
+        );
+    }
+
+    /** The security inventory of the device (software, ports, settings, ...) and its findings as JSON for an AI to analyse. */
+    public function exportInventory()
+    {
+        $device = Device::findOrFail($this->deviceId);
+        $data = SecurityExport::inventory($device, SecurityInventory::query()->where('device_id', $device->id)->first());
+
+        return response()->streamDownload(
+            fn () => print json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+            'security-inventory-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.json',
+            ['Content-Type' => 'application/json; charset=UTF-8'],
+        );
+    }
+
+    protected function findingForRemediation(int $id): SecurityFinding
+    {
+        return SecurityFinding::query()->with(['rule', 'device'])->where('device_id', $this->deviceId)->findOrFail($id);
     }
 
     private function finding(int $id): ?SecurityFinding

@@ -983,5 +983,16 @@
     "which list it looks at, below": "qué lista examina, abajo",
     "which log, below": "qué registro, abajo",
     "with {Field} placeholders": "con marcadores {Field}",
-    "with {group} or {Field} placeholders; {a|b} takes the first that is set": "con marcadores {group} o {Field}; {a|b} toma el primero que esté definido"
+    "with {group} or {Field} placeholders; {a|b} takes the first that is set": "con marcadores {group} o {Field}; {a|b} toma el primero que esté definido",
+    "Remediate with AI": "Remediar con IA",
+    "Writing…": "Escribiendo…",
+    "The AI writes a remediation script for you to review": "La IA escribe un script de remediación para revisar",
+    "The AI did not return a valid script, try again.": "La IA no devolvió un script válido, inténtelo de nuevo.",
+    "The check for OS updates failed, the list may be out of date: :error": "La comprobación de actualizaciones del SO falló, la lista puede estar desactualizada: :error",
+    "The remediation script \":name\" was written, a system admin reviews and runs it.": "Se creó el script de remediación «:name», un administrador del sistema lo revisa y ejecuta.",
+    "Export Markdown": "Exportar a Markdown",
+    "Export inventory (JSON)": "Exportar inventario (JSON)",
+    "The open findings as a Markdown report": "Los hallazgos abiertos como informe Markdown",
+    "The security inventory and the findings of this device as JSON, for an AI to analyse": "El inventario de seguridad y los hallazgos de este dispositivo en JSON, para analizar con una IA",
+    "The findings of the filters as a Markdown report": "Los hallazgos de los filtros como informe Markdown"
 }

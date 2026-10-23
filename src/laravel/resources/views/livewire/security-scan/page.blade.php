@@ -237,12 +237,21 @@
                     @endforeach
                 </select>
                 <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" type="search" wire:model.live.debounce.300ms="search" style="max-width: 20rem">
+                @if ($findings->isNotEmpty())
+                    <button class="btn btn-sm btn-light ms-auto" type="button" wire:click="exportMarkdown" title="{{ __('The findings of the filters as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</button>
+                @endif
                 @if ($status === 'open' && $findings->isNotEmpty())
-                    <button class="btn btn-sm btn-light ms-auto" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
+                    <button class="btn btn-sm btn-light" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
                         <i class="fas fa-check-double me-1"></i>{{ __('Acknowledge shown') }}
                     </button>
                 @endif
             </div>
+            @if ($remediateError)
+                <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+            @endif
+@if ($remediateDone)
+                <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+            @endif
             <div class="card overflow-hidden">
                 <div class="list-group list-group-flush">
                     @forelse ($findings as $finding)

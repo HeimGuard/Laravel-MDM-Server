@@ -22,6 +22,20 @@
         $yesNo = fn ($value) => is_bool($value) ? ($value ? __('Yes') : __('No')) : $value;
     @endphp
 
+    @if ($remediateError ?? null)
+    <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+@endif
+@if ($remediateDone ?? null)
+    <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+@endif
+<div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
+        @if ($findings->isNotEmpty() || $acknowledged->isNotEmpty())
+            <button class="btn btn-sm btn-light" type="button" wire:click="exportMarkdown" title="{{ __('The open findings as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</button>
+        @endif
+        @if ($inventory)
+            <button class="btn btn-sm btn-light" type="button" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}"><i class="fas fa-file-code me-1"></i>{{ __('Export inventory (JSON)') }}</button>
+        @endif
+    </div>
     {{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}
     <div class="card overflow-hidden mb-3">
         <div class="list-group list-group-flush">

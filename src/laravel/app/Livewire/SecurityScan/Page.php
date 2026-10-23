@@ -3,11 +3,13 @@
 namespace App\Livewire\SecurityScan;
 
 use App\Jobs\SyncSecurityFeed;
+use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
 use App\Support\SecurityFeed;
+use App\Support\SecurityExport;
 use App\Support\SecurityInbox;
 use App\Support\SecurityRules;
 use App\Support\SecurityScanner;
@@ -23,6 +25,8 @@ use Livewire\Component;
  */
 class Page extends Component
 {
+    use RemediatesFindings;
+
     /** findings, events or rules */
     #[Url(except: 'findings')]
     public string $tab = 'findings';
@@ -53,6 +57,11 @@ class Page extends Component
         SecurityFinding::query()->with('rule')->findOrFail($id)->acknowledge(auth()->user());
     }
 
+    protected function findingForRemediation(int $id): SecurityFinding
+    {
+        return SecurityFinding::query()->with(['rule', 'device'])->findOrFail($id);
+    }
+
     public function reopen(int $id): void
     {
         SecurityFinding::query()->with('rule')->findOrFail($id)->reopen();
@@ -64,6 +73,18 @@ class Page extends Component
         foreach ($this->findings()->whereNull('acknowledged_at')->get() as $finding) {
             $finding->acknowledge(auth()->user());
         }
+    }
+
+    /** All the findings of the filters (not only the first LIMIT the page shows) as a Markdown report, written 200 at a time. */
+    public function exportMarkdown()
+    {
+        $query = $this->findings()->bySeverity();
+
+        return response()->streamDownload(
+            fn () => SecurityExport::streamMarkdown($query),
+            'security-findings-'.now()->format('Y-m-d').'.md',
+            ['Content-Type' => 'text/markdown; charset=UTF-8'],
+        );
     }
 
     public function toggleRule(int $id): void

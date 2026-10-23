@@ -369,4 +369,57 @@ class ScriptTest extends TestCase
         config(['mdm.ai_provider' => 'gemini', 'mdm.ai_api_key' => 'key']);
         $this->assertFalse(\App\Support\ScriptGenerator::available());
     }
+
+    public function test_a_finding_is_remediated_with_ai(): void
+    {
+        $this->actingAs($this->admin());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        \App\Models\SecurityRule::syncBuiltIn();
+        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        $device = $this->device();
+        $finding = \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
+            'message' => 'Firewall is off', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
+            'name' => 'Firewall on', 'description' => 'Turns it on.', 'platform' => 'linux', 'timeout' => 60,
+            'detection' => "if (-not (Test-Path /x)) { exit 1 }\nexit 0", 'remediation' => 'ufw enable', 'manual_remediation' => false,
+        ])]]])]);
+
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)->assertHasNoErrors();
+
+        $script = Script::query()->where('name', 'Firewall on')->sole();
+        $this->assertTrue($script->manual_remediation);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off'));
+
+        // Anybody signed in may ask for it; the script waits for a system admin.
+        $this->actingAs(User::factory()->create());
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
+            ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
+        $this->assertSame(2, Script::query()->where('name', 'Firewall on')->count());
+    }
+
+    public function test_findings_and_the_inventory_are_exported(): void
+    {
+        $this->actingAs($this->admin());
+        \App\Models\SecurityRule::syncBuiltIn();
+        $rule = \App\Models\SecurityRule::query()->detection()->first();
+        $device = $this->device();
+        \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export', 'severity' => 'high',
+            'message' => "Firewall\nis off", 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+
+        $markdown = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportMarkdown')->effects['download'] ?? null;
+        $this->assertNotNull($markdown);
+        $this->assertStringEndsWith('.md', $markdown['name']);
+        $this->assertStringContainsString('## [High] ', base64_decode($markdown['content']));
+        $this->assertStringContainsString('Firewall is off', base64_decode($markdown['content']));
+
+        $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
+        $this->assertNotNull($json);
+        $data = json_decode(base64_decode($json['content']), true);
+        $this->assertSame("Firewall\nis off", $data['findings'][0]['message']);
+        $this->assertArrayHasKey('inventory', $data);
+    }
 }
