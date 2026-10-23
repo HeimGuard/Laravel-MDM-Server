@@ -120,7 +120,7 @@ HTTPS only) and optionally `MDM_SECURITY_FEED_REF` (branch or tag, default `main
 has a `manifest.json` with a `version` and the SHA-256 of every file (`{"version": "2026.10.1",
 "files": {"rules/apps/remote.json": "<sha256>", "parsers/linux/su.json": "<sha256>"}}`),
 `rules/**/*.json` (detection rules) and `parsers/**/*.json` (parsers), each file one definition or a
-list. Everything is fetched and checked against the manifest first and applied in one go: an
+list (up to 2048 files; they are fetched in chunks of 100, each chunk in its own queue job, and the last job applies them). Everything is fetched and checked against the manifest first and applied in one go: an
 unreachable repository, a file that does not match its hash or a manifest that is not one changes
 nothing. Invalid definitions are skipped and listed; rules of the feed that disappeared from it are
 removed. What you switched on or off stays, a rule you added yourself keeps its definition (custom
