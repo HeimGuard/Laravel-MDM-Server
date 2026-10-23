@@ -391,7 +391,13 @@ class ScriptTest extends TestCase
 
         $script = Script::query()->where('name', 'Firewall on')->sole();
         $this->assertTrue($script->manual_remediation);
-        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off') && ! str_contains($request['messages'][0]['content'], 'References of the detection'));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off') && ! str_contains($request['messages'][0]['content'], 'References of the detection')
+            && ! str_contains($request['messages'][0]['content'], 'Operating system'));
+
+        // The operating system and its version of the device go along: the script is written for that system.
+        $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "Platform: linux\nOperating system: Ubuntu 26.04 LTS"));
 
         // The links of the detection (advisories, vendor documentation) go along: they name recommended mitigations.
         $rule->update(['definition' => array_merge($rule->definition, ['urls' => ['https://example.org/advisory', 'https://vendor.example/kb']])]);
@@ -410,7 +416,7 @@ class ScriptTest extends TestCase
         $this->actingAs(User::factory()->create());
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
-        $this->assertSame(4, Script::query()->where('name', 'Firewall on')->count());
+        $this->assertSame(5, Script::query()->where('name', 'Firewall on')->count());
     }
 
     public function test_a_failed_run_is_fixed_with_ai_into_a_copy_that_only_runs_by_hand(): void
@@ -426,12 +432,14 @@ class ScriptTest extends TestCase
             'detection' => "if (Test-Path /x) { exit 1 }\nexit 0", 'remediation' => 'Remove-Item /x -Force', 'manual_remediation' => false,
         ])]]])]);
 
+        $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
         Livewire::test(RunOutput::class, ['runId' => $run->id])->assertSee('AI fix')->call('aiFix')->assertHasNoErrors()->assertRedirect();
 
         // The AI got the script, the error, the exit codes and the output; the result is a copy for review, the script stays.
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Remove-Item: access denied')
             && str_contains($request['messages'][0]['content'], 'step 2 failed')
             && str_contains($request['messages'][0]['content'], 'remediation 2')
+            && str_contains($request['messages'][0]['content'], 'operating system Ubuntu 26.04 LTS')
             && str_contains($request['messages'][0]['content'], 'Current script'));
         $fixed = Script::query()->where('name', 'Cleanup (AI fix)')->sole();
         $this->assertTrue($fixed->manual_remediation);

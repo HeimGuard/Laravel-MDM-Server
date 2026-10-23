@@ -44,6 +44,7 @@ class Output extends Component
         $request = "Fix this script: its run on a device failed.\nRun: status {$run->status}, version {$run->version}"
             .($run->detectsOnly ? ', only the detection ran' : '')
             .($run->device?->platform ? ", platform {$run->device->platform}" : '')
+            .(filled($run->device?->os) ? ", operating system ".mb_strimwidth(preg_replace('/\s+/', ' ', (string) $run->device->os), 0, 200, '…') : '')
             .($codes !== '' ? "\nExit codes: $codes" : '')
             .($run->error ? "\nError: {$run->error}" : '')
             .($output !== '' ? "\nOutput of the run".(mb_strlen($output) > self::OUTPUT_FOR_AI ? ' (the end of it)' : '').":\n".mb_substr($output, -self::OUTPUT_FOR_AI) : "\nThe run printed nothing.")

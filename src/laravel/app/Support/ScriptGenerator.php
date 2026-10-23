@@ -42,6 +42,9 @@ class ScriptGenerator
         needs a newer release: say so in the output and exit 0 from the detection, do not leave it failing forever.
         The remediation updates the whole product (all its packages), runs `apt-get update` first and does not
         fail when the index cannot be refreshed (the device may be offline): it then works with what it has.
+        A request may name the operating system and its version of the device the script runs on (Ubuntu 26.04 LTS,
+        Microsoft Windows 11 Pro (10.0.26200)): write the commands for that system and version (its package manager,
+        service manager, paths and PowerShell edition), not for another distribution or an older release.
         A request may list the references of the detection (advisories, vendor documentation). You cannot open them,
         so use what you know of the vulnerability or the product: when the vendor recommends a mitigation or
         workaround that needs no new version (a setting, a disabled feature, a registry value, a configuration
