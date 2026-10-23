@@ -45,7 +45,8 @@ class SecurityRules
     public const SOURCES = [
         'software' => [
             'label' => 'Installed software',
-            'fields' => ['Name', 'Version', 'Publisher', 'Source'],
+            // FixedCves (agents 1.23.0+, dpkg): ",CVE-2026-1,CVE-2026-2," the changelog of the package names, see itemHash.
+            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves'],
             'key' => ['Name', 'Source'],
         ],
         'processes' => [

@@ -29,6 +29,19 @@ class ScriptGenerator
         is disruptive (a restart, removing software or data, stopping services) and should be started per device
         by hand. Name (short) and description (one or two sentences) in the language of the request; comments in
         the scripts in English. When a current script is given, change it as the request asks.
+        Linux packages (Debian, Ubuntu): the distribution backports security fixes without changing the upstream
+        version, so 1.0.3-2 or 8.5.4-0ubuntu1.5 can already contain the fix of a CVE that the vendor fixed in a
+        later upstream version. Never decide from comparing the installed version with the upstream "fixed in"
+        version, and never write a detection that only compares versions. Decide with what the distribution says:
+        the CVE ids in /usr/share/doc/<package>/changelog.Debian.gz (zgrep for the id), and whether
+        `apt-get -s --with-new-pkgs install --only-upgrade <packages>` would install anything (packages that are
+        deferred by phasing are not an error, do not force them). The detection exits 0 when the changelog lists the
+        CVE or no update is pending, and 1 only when an update is available that is not installed. Check that the
+        installed package is the affected product at all (a library or plugin named like the product is not the
+        product). When the package is current and nothing can be installed, the finding is a false positive or
+        needs a newer release: say so in the output and exit 0 from the detection, do not leave it failing forever.
+        The remediation updates the whole product (all its packages), runs `apt-get update` first and does not
+        fail when the index cannot be refreshed (the device may be offline): it then works with what it has.
         TEXT;
 
     private const SCHEMA = [

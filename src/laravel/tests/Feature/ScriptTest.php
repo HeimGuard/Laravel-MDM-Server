@@ -392,11 +392,19 @@ class ScriptTest extends TestCase
         $this->assertTrue($script->manual_remediation);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off'));
 
+        // The other open findings of the device go along, so one script fixes them together.
+        \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'second', 'severity' => 'critical',
+            'message' => 'php-cli 8.5.4 is outdated', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Other open findings') && str_contains($request['messages'][0]['content'], 'php-cli 8.5.4 is outdated'));
+
         // Anybody signed in may ask for it; the script waits for a system admin.
         $this->actingAs(User::factory()->create());
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
-        $this->assertSame(2, Script::query()->where('name', 'Firewall on')->count());
+        $this->assertSame(3, Script::query()->where('name', 'Firewall on')->count());
     }
 
     public function test_findings_and_the_inventory_are_exported(): void

@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.22.0'
+$AgentVersion = '1.23.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -935,17 +935,74 @@ function ConvertTo-SecurityText ($Value, [int]$Max = 1000) {
     if ($text) { $text } else { $null }
 }
 
+function Get-DpkgFixedCves {
+    # The CVE ids a Debian / Ubuntu package names in its changelog (the entries of the installed version
+    # and the ones before it): ",CVE-2026-1,CVE-2026-2," (sorted, with the commas around, so a rule can
+    # look for ",CVE-x," and not match a longer id), or $null when there are none or no changelog.
+    # Distributions backport a fix without changing the upstream version, so the version alone says
+    # nothing; only the head of the changelog (the recent entries) is read.
+    param ([string]$Package)
+
+    if ($Package -notmatch '^[a-z0-9][a-z0-9+.\-]*$') { return $null }
+    foreach ($name in 'changelog.Debian.gz', 'changelog.gz', 'changelog.Debian', 'changelog') {
+        $path = "/usr/share/doc/$Package/$name"
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        try {
+            $file = [System.IO.File]::OpenRead($path)
+            try {
+                $source = if ($name -like '*.gz') { New-Object System.IO.Compression.GZipStream($file, [System.IO.Compression.CompressionMode]::Decompress) } else { $file }
+                $buffer = New-Object byte[] 262144
+                $read = 0
+                while ($read -lt $buffer.Length) {
+                    $count = $source.Read($buffer, $read, $buffer.Length - $read)
+                    if ($count -le 0) { break }
+                    $read += $count
+                }
+            }
+            finally { $file.Dispose() }
+            $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
+            $ids = [string[]]@([regex]::Matches($text, 'CVE-\d{4}-\d{4,}', 'IgnoreCase') | ForEach-Object { $_.Value.ToUpperInvariant() } | Select-Object -Unique)
+            if ($ids.Count -eq 0) { return $null }
+            [Array]::Sort($ids, [System.StringComparer]::Ordinal)
+            # At most 4000 characters (the server keeps that much of a field), cut at an id.
+            $result = ','
+            foreach ($id in $ids) {
+                if ($result.Length + $id.Length + 1 -gt 4000) { break }
+                $result += "$id,"
+            }
+            return $result
+        }
+        catch { }
+    }
+    return $null
+}
+
 function Get-SecuritySoftware {
-    param ([bool]$OnLinux)
+    param (
+        [bool]$OnLinux,
+        # A file that remembers the CVEs of the changelog of a package version, so only new and updated packages are read.
+        [string]$CachePath = ''
+    )
 
     if ($OnLinux) {
         if (Get-Command -Name dpkg-query -CommandType Application -ErrorAction SilentlyContinue) {
-            dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\n' 2>$null | ForEach-Object {
+            $cves = @{}
+            if ($CachePath) {
+                try { foreach ($property in (Get-Content -Path $CachePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties) { $cves[$property.Name] = "$($property.Value)" } } catch { }
+            }
+            $used = @{}
+            $dpkg = @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\n' 2>$null | ForEach-Object {
                 $parts = $_ -split "`t"
                 if ($parts.Count -ge 4 -and $parts[0] -like 'i*') {
-                    [PSCustomObject]@{ Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg' }
+                    $key = "$($parts[1])|$($parts[2])"
+                    if (-not $cves.ContainsKey($key)) { $cves[$key] = "$(Get-DpkgFixedCves $parts[1])" }
+                    $used[$key] = $cves[$key]
+                    [PSCustomObject]@{ Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg'; FixedCves = if ($used[$key]) { $used[$key] } else { $null } }
                 }
-            }
+            })
+            # Only the installed versions stay in the cache.
+            if ($CachePath -and $dpkg.Count -gt 0) { try { $used | ConvertTo-Json -Compress | Set-Content -Path $CachePath -Encoding UTF8 } catch { } }
+            $dpkg
         } elseif (Get-Command -Name rpm -CommandType Application -ErrorAction SilentlyContinue) {
             rpm -qa --queryformat '%{NAME}\t%{VERSION}-%{RELEASE}\t%{VENDOR}\n' 2>$null | ForEach-Object {
                 $parts = $_ -split "`t"
@@ -1504,6 +1561,7 @@ function Get-SecurityLogs {
 function Get-SecurityInventory {
     param (
         [bool]$OnLinux,
+        [string]$CachePath = '',
         [datetime]$Since,
         [int]$AgentPid,
         [bool]$InContainer,
@@ -1515,7 +1573,7 @@ function Get-SecurityInventory {
     )
 
     $inventory = @{}
-    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux | Select-Object -First 5000) } catch { }
+    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath | Select-Object -First 5000) } catch { }
     # As many as the server takes of each list (more and it refuses the whole collection).
     try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
@@ -3472,10 +3530,10 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson -ScriptBlock {
-        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson)
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
+        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
-        return Get-SecurityInventory -OnLinux $OnLinux -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson
+        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson
     }
 }
 
@@ -3526,7 +3584,7 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
@@ -3561,7 +3619,12 @@ function Get-SecurityItemKey ([string]$Source, $Item) {
 
 function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
-    $parts = foreach ($field in $SecurityFields[$Source]) { ConvertTo-SecurityCanon $Item.$field }
+    # FixedCves counts only when there are some, so the hashes of the items without them stay what they were.
+    $parts = foreach ($field in $SecurityFields[$Source]) {
+        $value = ConvertTo-SecurityCanon $Item.$field
+        if ($field -eq 'FixedCves' -and $value -eq '') { continue }
+        $value
+    }
     return Get-SecurityShortHash ($parts -join [string][char]0x1f)
 }
 
