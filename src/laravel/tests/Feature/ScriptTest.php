@@ -424,6 +424,11 @@ class ScriptTest extends TestCase
         $this->assertStringContainsString('## [High] ', base64_decode($markdown['content']));
         $this->assertStringContainsString('Firewall is off', base64_decode($markdown['content']));
 
+        // The page exports what its filters show, in chunks.
+        $page = Livewire::test(\App\Livewire\SecurityScan\Page::class)->call('exportMarkdown')->effects['download'] ?? null;
+        $this->assertNotNull($page);
+        $this->assertStringContainsString('Firewall is off', base64_decode($page['content']));
+
         $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
         $this->assertNotNull($json);
         $data = json_decode(base64_decode($json['content']), true);

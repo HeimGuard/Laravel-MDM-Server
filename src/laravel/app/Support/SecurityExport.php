@@ -36,7 +36,6 @@ class SecurityExport
         echo self::header($title, array_sum($counts), $counts);
         $query->with(['rule', 'device', 'acknowledger'])->chunk(self::CHUNK, function ($findings) {
             echo $findings->map(fn ($finding) => self::block($finding))->implode('');
-            flush();
         });
     }
 
