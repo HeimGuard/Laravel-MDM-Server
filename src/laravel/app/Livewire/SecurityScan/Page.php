@@ -9,7 +9,6 @@ use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
 use App\Support\SecurityFeed;
-use App\Support\SecurityExport;
 use App\Support\SecurityInbox;
 use App\Support\SecurityRules;
 use App\Support\SecurityScanner;
@@ -73,18 +72,6 @@ class Page extends Component
         foreach ($this->findings()->whereNull('acknowledged_at')->get() as $finding) {
             $finding->acknowledge(auth()->user());
         }
-    }
-
-    /** All the findings of the filters (not only the first LIMIT the page shows) as a Markdown report, written 200 at a time. */
-    public function exportMarkdown()
-    {
-        $query = $this->findings()->bySeverity();
-
-        return response()->streamDownload(
-            fn () => SecurityExport::streamMarkdown($query),
-            'security-findings-'.now()->format('Y-m-d').'.md',
-            ['Content-Type' => 'text/markdown; charset=UTF-8'],
-        );
     }
 
     public function toggleRule(int $id): void
@@ -152,23 +139,7 @@ class Page extends Component
 
     private function findings()
     {
-        $query = SecurityFinding::query()->with(['device', 'rule', 'acknowledger']);
-        match ($this->status) {
-            'acknowledged' => $query->whereNotNull('acknowledged_at'),
-            'resolved' => $query->whereNotNull('resolved_at')->whereNull('acknowledged_at'),
-            default => $query->active(),
-        };
-        if (isset(SecurityRules::SEVERITIES[$this->severity])) {
-            $query->where('severity', $this->severity);
-        }
-        if (($search = trim($this->search)) !== '') {
-            $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
-            $query->where(fn ($q) => $q->where('message', 'like', $like)
-                ->orWhereHas('device', fn ($device) => $device->where('name', 'like', $like)->orWhere('friendly_name', 'like', $like))
-                ->orWhereHas('rule', fn ($rule) => $rule->where('name', 'like', $like)));
-        }
-
-        return $query;
+        return SecurityFinding::query()->with(['device', 'rule', 'acknowledger'])->filtered($this->status, $this->severity, $this->search);
     }
 
     public function render()

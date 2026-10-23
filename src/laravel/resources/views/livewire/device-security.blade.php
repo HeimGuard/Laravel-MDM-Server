@@ -30,7 +30,7 @@
 @endif
 <div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
         @if ($findings->isNotEmpty() || $acknowledged->isNotEmpty())
-            <button class="btn btn-sm btn-light" type="button" wire:click="exportMarkdown" title="{{ __('The open findings as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</button>
+            <a class="btn btn-sm btn-light" href="{{ route('security.export', ['device' => $deviceId, 'status' => 'unresolved']) }}" download title="{{ __('The open findings as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
         @endif
         @if ($inventory)
             <button class="btn btn-sm btn-light" type="button" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}"><i class="fas fa-file-code me-1"></i>{{ __('Export inventory (JSON)') }}</button>

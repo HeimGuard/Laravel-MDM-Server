@@ -28,19 +28,6 @@ class DeviceSecurity extends Component
         $this->finding($id)?->reopen();
     }
 
-    /** The open findings of the device as a Markdown report. */
-    public function exportMarkdown()
-    {
-        $device = Device::findOrFail($this->deviceId);
-        $query = SecurityFinding::query()->where('device_id', $device->id)->open()->bySeverity();
-
-        return response()->streamDownload(
-            fn () => SecurityExport::streamMarkdown($query, 'Security findings of '.$device->displayName),
-            'security-findings-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.md',
-            ['Content-Type' => 'text/markdown; charset=UTF-8'],
-        );
-    }
-
     /** The security inventory of the device (software, ports, settings, ...) and its findings as JSON for an AI to analyse. */
     public function exportInventory()
     {

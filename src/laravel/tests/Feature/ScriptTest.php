@@ -8,6 +8,7 @@ use App\Livewire\Script\Detail;
 use App\Livewire\Script\Form;
 use App\Livewire\Script\Run;
 use App\Livewire\ScriptRun\DataTable as RunDataTable;
+use App\Livewire\ScriptRun\Output as RunOutput;
 use App\Models\Device;
 use App\Models\Script;
 use App\Models\ScriptRun;
@@ -390,7 +391,18 @@ class ScriptTest extends TestCase
 
         $script = Script::query()->where('name', 'Firewall on')->sole();
         $this->assertTrue($script->manual_remediation);
-        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off'));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off') && ! str_contains($request['messages'][0]['content'], 'References of the detection')
+            && ! str_contains($request['messages'][0]['content'], 'Operating system'));
+
+        // The operating system and its version of the device go along: the script is written for that system.
+        $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "Platform: linux\nOperating system: Ubuntu 26.04 LTS"));
+
+        // The links of the detection (advisories, vendor documentation) go along: they name recommended mitigations.
+        $rule->update(['definition' => array_merge($rule->definition, ['urls' => ['https://example.org/advisory', 'https://vendor.example/kb']])]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "References of the detection (advisories, vendor documentation):\n- https://example.org/advisory\n- https://vendor.example/kb"));
 
         // The other open findings of the device go along, so one script fixes them together.
         \App\Models\SecurityFinding::query()->create([
@@ -404,7 +416,76 @@ class ScriptTest extends TestCase
         $this->actingAs(User::factory()->create());
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
-        $this->assertSame(3, Script::query()->where('name', 'Firewall on')->count());
+        $this->assertSame(5, Script::query()->where('name', 'Firewall on')->count());
+    }
+
+    public function test_a_failed_run_is_fixed_with_ai_into_a_copy_that_only_runs_by_hand(): void
+    {
+        $this->actingAs($this->admin());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        $device = $this->device();
+        $script = $this->script(['name' => 'Cleanup']);
+        $run = $script->runOn([$device->id])->first();
+        $run->forceFill(['status' => 'failed', 'detection_exit' => 1, 'remediation_exit' => 2, 'error' => 'Remove-Item: access denied', 'output' => "step 1\nstep 2 failed"])->save();
+        Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
+            'name' => 'Cleanup', 'description' => 'Cleans up.', 'platform' => 'all', 'timeout' => 60,
+            'detection' => "if (Test-Path /x) { exit 1 }\nexit 0", 'remediation' => 'Remove-Item /x -Force', 'manual_remediation' => false,
+        ])]]])]);
+
+        $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
+        Livewire::test(RunOutput::class, ['runId' => $run->id])->assertSee('AI fix')->call('aiFix')->assertHasNoErrors()->assertRedirect();
+
+        // The AI got the script, the error, the exit codes and the output; the result is a copy for review, the script stays.
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Remove-Item: access denied')
+            && str_contains($request['messages'][0]['content'], 'step 2 failed')
+            && str_contains($request['messages'][0]['content'], 'remediation 2')
+            && str_contains($request['messages'][0]['content'], 'operating system Ubuntu 26.04 LTS')
+            && str_contains($request['messages'][0]['content'], 'Current script'));
+        $fixed = Script::query()->where('name', 'Cleanup (AI fix)')->sole();
+        $this->assertTrue($fixed->manual_remediation);
+        $this->assertSame('Remove-Item /x -Force', $fixed->remediation);
+        $this->assertSame("if (\$true) {\n\texit 1\n}\n", $script->fresh()->detection);
+
+        // Only a failed run is fixed, and only by a system admin.
+        $ok = $script->runOn([$device->id])->first();
+        $ok->forceFill(['status' => 'compliant'])->save();
+        Livewire::test(RunOutput::class, ['runId' => $ok->id])->assertDontSee('AI fix')->call('aiFix');
+        Http::assertSentCount(1);
+        $this->actingAs(User::factory()->create());
+        Livewire::test(RunOutput::class, ['runId' => $run->id])->call('aiFix')->assertForbidden();
+        Http::assertSentCount(1);
+    }
+
+    public function test_failed_devices_run_the_whole_script_again_by_their_latest_run(): void
+    {
+        $this->actingAs($this->admin());
+        $script = $this->script(['name' => 'Patch', 'manual_remediation' => true]);
+        $set = fn (Device $device, string $status) => $script->runs()->create(['device_id' => $device->id, 'version' => $script->version, 'fingerprint' => $script->fingerprint,
+            'status' => $status, 'issued_at' => now(), 'expires_at' => now()->addHour()]);
+
+        $recovered = $this->device('a');   // failed, then went well: not one of them
+        $set($recovered, 'failed');
+        $set($recovered, 'compliant');
+        $failed = $this->device('b');
+        $set($failed, 'failed');
+        $errored = $this->device('c');     // an error, then a failure: its latest run counts
+        $set($errored, 'error');
+        $set($errored, 'failed');
+        $unsigned = $this->device('d', 'linux', false);   // cannot run it now
+        $set($unsigned, 'failed');
+        $waiting = $this->device('e');
+        $set($waiting, 'failed');
+        $set($waiting, 'pending');
+
+        Livewire::test(Detail::class, ['script' => $script])->assertSee('Rerun failed (2)')->assertSee('srv-b')->assertSee('srv-c')
+            ->call('rerunFailed')->assertHasNoErrors();
+
+        $this->assertEqualsCanonicalizing([$failed->id, $errored->id], ScriptRun::query()->where('script_id', $script->id)->where('status', 'pending')->whereIn('device_id', [$recovered->id, $failed->id, $errored->id, $unsigned->id])->pluck('device_id')->all());
+        // The whole script, not only the detection of a script with manual remediation.
+        $this->assertSame([null], ScriptRun::query()->where('script_id', $script->id)->where('status', 'pending')->whereIn('device_id', [$failed->id, $errored->id])->pluck('mode')->unique()->values()->all());
+
+        $this->actingAs(User::factory()->create());
+        $this->get('/scripts/'.$script->id)->assertForbidden();
     }
 
     public function test_findings_and_the_inventory_are_exported(): void
@@ -418,11 +499,22 @@ class ScriptTest extends TestCase
             'message' => "Firewall\nis off", 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
 
-        $markdown = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportMarkdown')->effects['download'] ?? null;
-        $this->assertNotNull($markdown);
-        $this->assertStringEndsWith('.md', $markdown['name']);
-        $this->assertStringContainsString('## [High] ', base64_decode($markdown['content']));
-        $this->assertStringContainsString('Firewall is off', base64_decode($markdown['content']));
+        // The report is a plain download (not an answer of Livewire): of a device, or of the filters of the page.
+        $response = $this->get(route('security.export', ['device' => $device->id, 'status' => 'unresolved']))->assertOk()->assertDownload();
+        $this->assertStringEndsWith('.md', $response->headers->get('Content-Disposition'));
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('## [High] ', $content);
+        $this->assertStringContainsString('Firewall is off', $content);
+        $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export'))->streamedContent());
+        $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['severity' => 'critical']))->streamedContent());
+        $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export', ['search' => 'Firewall']))->streamedContent());
+        $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['search' => 'nothing like it']))->streamedContent());
+        $this->get(route('security.export', ['status' => 'bogus']))->assertSessionHasErrors('status');
+        $this->get(route('security.export', ['device' => 999999]))->assertSessionHasErrors('device');
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertSee('Export Markdown')->assertSee(route('security.export', ['device' => $device->id, 'status' => 'unresolved']));
+        \Illuminate\Support\Facades\Auth::logout();
+        $this->get(route('security.export'))->assertRedirect();
+        $this->actingAs($this->admin());
 
         $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
         $this->assertNotNull($json);

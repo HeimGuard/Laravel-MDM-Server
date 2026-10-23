@@ -86,6 +86,31 @@ class SecurityFinding extends Model
         return $query->whereNull('resolved_at')->whereNull('acknowledged_at');
     }
 
+    /**
+     * The findings of the filters of the Security page and of its export: open (needs attention), acknowledged, resolved
+     * or unresolved (open and acknowledged), of this severity, with the text in the message, the device or the rule.
+     */
+    public function scopeFiltered(Builder $query, string $status = 'open', string $severity = '', string $search = ''): Builder
+    {
+        match ($status) {
+            'acknowledged' => $query->whereNotNull('acknowledged_at'),
+            'resolved' => $query->whereNotNull('resolved_at')->whereNull('acknowledged_at'),
+            'unresolved' => $query->whereNull('resolved_at'),
+            default => $query->active(),
+        };
+        if (isset(SecurityRules::SEVERITIES[$severity])) {
+            $query->where('severity', $severity);
+        }
+        if (($search = trim($search)) !== '') {
+            $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
+            $query->where(fn ($q) => $q->where('message', 'like', $like)
+                ->orWhereHas('device', fn ($device) => $device->where('name', 'like', $like)->orWhere('friendly_name', 'like', $like))
+                ->orWhereHas('rule', fn ($rule) => $rule->where('name', 'like', $like)));
+        }
+
+        return $query;
+    }
+
     /** Ordered most severe first, then newest. */
     public function scopeBySeverity(Builder $query): Builder
     {

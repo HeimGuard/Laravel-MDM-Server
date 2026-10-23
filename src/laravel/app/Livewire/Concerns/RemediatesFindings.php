@@ -4,7 +4,6 @@ namespace App\Livewire\Concerns;
 
 use App\Models\Script;
 use App\Models\SecurityFinding;
-use App\Support\PowerShellCheck;
 use App\Support\ScriptGenerator;
 use App\Support\SecurityRules;
 use Illuminate\Support\Facades\Gate;
@@ -25,7 +24,7 @@ trait RemediatesFindings
      * Writes a script for the finding; any signed-in user may ask for it. A system admin lands on it to
      * review it; for the others it waits in the scripts for one. The script fixes the finding together with the
      * other open findings of the same device (updating php fixes all its packages, not one of them). Only the
-     * rules, the messages and the platform leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
+     * rules (with the links of the detection), the messages, the platform and the operating system leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
      * admin checks it and starts it per device (the scripts are theirs, they run as SYSTEM / root).
      */
     public function remediateWithAi(int $id)
@@ -36,7 +35,11 @@ trait RemediatesFindings
         $platform = $finding->device?->platform;
         $request = "Remediate this security finding.\nRule: {$rule?->name}\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
             .($rule?->definition['remediation'] ?? null ? "\nHint: {$rule->definition['remediation']}" : '')
-            .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '');
+            // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
+            .($rule && $rule->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($rule->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
+            .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '')
+            // The operating system and its version the script runs on (Ubuntu 26.04 LTS, Microsoft Windows 11 Pro (10.0.26200)).
+            .(filled($finding->device?->os) ? "\nOperating system: ".mb_strimwidth(preg_replace('/\s+/', ' ', (string) $finding->device->os), 0, 200, '…') : '');
         $related = $this->relatedFindings($finding);
         if ($related->isNotEmpty()) {
             $request .= "\n\nOther open findings on the same device:\n".$related->map(fn ($other) => '- ['.$other->severity.'] '.mb_strimwidth(preg_replace('/\s+/', ' ', ($other->rule?->name ?? '').': '.$other->message), 0, 250, '…'))->implode("\n")
@@ -45,16 +48,7 @@ trait RemediatesFindings
         $request .= "\nThe detection exits 0 when the findings it covers are fixed and 1 when any of them is still there.";
 
         try {
-            $generated = ScriptGenerator::generate($request);
-            foreach (['detection', 'remediation'] as $field) {
-                $errors = trim($generated[$field]) === '' ? [] : PowerShellCheck::errors($generated[$field]);
-                if ($errors !== [] || strlen($generated[$field]) > Script::MAX_CODE_BYTES) {
-                    throw new RuntimeException(__('The AI did not return a valid script, try again.'));
-                }
-            }
-            if (! PowerShellCheck::exits($generated['detection'], 0) || ! PowerShellCheck::exits($generated['detection'], 1)) {
-                throw new RuntimeException(__('The AI did not return a valid script, try again.'));
-            }
+            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request));
         } catch (RuntimeException $e) {
             $this->remediateError = $e->getMessage();
 
