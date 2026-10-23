@@ -46,7 +46,8 @@ class SecurityRules
         'software' => [
             'label' => 'Installed software',
             // FixedCves (agents 1.23.0+, dpkg): ",CVE-2026-1,CVE-2026-2," the changelog of the package names, see itemHash.
-            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves'],
+            // SourcePackage (agents 1.24.0+, dpkg): the source package when it is not the package itself (libssl3t64: openssl).
+            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage'],
             'key' => ['Name', 'Source'],
         ],
         'processes' => [
@@ -114,8 +115,11 @@ class SecurityRules
     public const OPERATORS = [
         'eq', 'ne', 'contains', 'not_contains', 'starts_with', 'ends_with', 'matches', 'not_matches',
         'in', 'not_in', 'gt', 'gte', 'lt', 'lte', 'version_lt', 'version_lte', 'version_gt', 'version_gte',
-        'exists', 'empty', 'true', 'false',
+        'dpkg_lt', 'dpkg_lte', 'dpkg_gt', 'dpkg_gte', 'exists', 'empty', 'true', 'false',
     ];
+
+    /** @var array<string, ?string> the delimited form of every pattern seen, null for one that does not compile */
+    private static array $regexes = [];
 
     /** Operators without a value. */
     private const UNARY = ['exists', 'empty', 'true', 'false'];
@@ -329,11 +333,7 @@ class SecurityRules
             'gte' => is_numeric($actual) && (float) $actual >= (float) $expected,
             'lt' => is_numeric($actual) && (float) $actual < (float) $expected,
             'lte' => is_numeric($actual) && (float) $actual <= (float) $expected,
-            'version_lt' => self::compareVersions($actual, $expected, '<'),
-            'version_lte' => self::compareVersions($actual, $expected, '<='),
-            'version_gt' => self::compareVersions($actual, $expected, '>'),
-            'version_gte' => self::compareVersions($actual, $expected, '>='),
-            default => false,
+            default => self::compareOrdered($condition['op'], $actual, $expected),
         };
     }
 
@@ -384,9 +384,16 @@ class SecurityRules
     /** "anydesk|teamviewer" as a case-insensitive pattern, null when it does not compile. */
     public static function regex(string $pattern): ?string
     {
-        $regex = '~'.str_replace('~', '\~', $pattern).'~iu';
+        // A scan tests every item against every rule, so a pattern is compiled and checked once.
+        if (! array_key_exists($pattern, self::$regexes)) {
+            if (count(self::$regexes) >= 4096) {
+                self::$regexes = [];
+            }
+            $regex = '~'.str_replace('~', '\~', $pattern).'~iu';
+            self::$regexes[$pattern] = @preg_match($regex, '') === false ? null : $regex;
+        }
 
-        return @preg_match($regex, '') === false ? null : $regex;
+        return self::$regexes[$pattern];
     }
 
     private static function scalar(mixed $value): mixed
@@ -446,13 +453,111 @@ class SecurityRules
         return false;
     }
 
-    /** Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045"). */
-    private static function compareVersions(mixed $actual, mixed $expected, string $operator): bool
+    /** version_lt .. version_gte and dpkg_lt .. dpkg_gte: the order of the two versions, read the way the prefix says. */
+    private static function compareOrdered(string $op, mixed $actual, mixed $expected): bool
+    {
+        if (! preg_match('/^(version|dpkg)_(lt|lte|gt|gte)$/', $op, $m)) {
+            return false;
+        }
+        $order = $m[1] === 'version' ? self::versionOrder($actual, $expected) : self::dpkgOrder($actual, $expected);
+
+        return $order !== null && match ($m[2]) {
+            'lt' => $order < 0,
+            'lte' => $order <= 0,
+            'gt' => $order > 0,
+            'gte' => $order >= 0,
+        };
+    }
+
+    /**
+     * Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045"): only the leading numbers count,
+     * a missing part is 0 ("8.5" is "8.5.0"), so "7.1.2-31" is "7.1.2" - write such a bound as "7.1.2.31".
+     */
+    private static function versionOrder(mixed $actual, mixed $expected): ?int
     {
         $a = self::version($actual);
         $b = self::version($expected);
 
-        return $a !== null && $b !== null && version_compare($a, $b, $operator);
+        return $a === null || $b === null ? null : self::compareNumbers(explode('.', $a), explode('.', $b));
+    }
+
+    /**
+     * Debian package versions ("[epoch:]upstream[-revision]") in the order of dpkg, so "8.2512.0-1ubuntu4.2" is
+     * after "8.2512.0-1ubuntu4.1" and "1.0~rc1" before "1.0".
+     */
+    private static function dpkgOrder(mixed $actual, mixed $expected): ?int
+    {
+        if (! is_scalar($actual) || ! is_scalar($expected) || trim((string) $actual) === '' || trim((string) $expected) === '') {
+            return null;
+        }
+        [$epochA, $upstreamA, $revisionA] = self::dpkgParts(trim((string) $actual));
+        [$epochB, $upstreamB, $revisionB] = self::dpkgParts(trim((string) $expected));
+
+        return self::compareNumbers([$epochA], [$epochB]) ?: self::dpkgCompareString($upstreamA, $upstreamB) ?: self::dpkgCompareString($revisionA, $revisionB);
+    }
+
+    /** @param  array<int, string>  $a @param  array<int, string>  $b */
+    private static function compareNumbers(array $a, array $b): int
+    {
+        for ($i = 0, $n = max(count($a), count($b)); $i < $n; $i++) {
+            $x = ltrim($a[$i] ?? '0', '0');
+            $y = ltrim($b[$i] ?? '0', '0');
+            if ($x !== $y) {
+                return strlen($x) <=> strlen($y) ?: strcmp($x, $y);
+            }
+        }
+
+        return 0;
+    }
+
+    /** @return array{0: string, 1: string, 2: string} epoch, upstream version and Debian revision */
+    private static function dpkgParts(string $version): array
+    {
+        $epoch = '0';
+        if (preg_match('/^(\d+):(.*)$/s', $version, $m)) {
+            [$epoch, $version] = [$m[1], $m[2]];
+        }
+        $dash = strrpos($version, '-');
+
+        return $dash === false ? [$epoch, $version, ''] : [$epoch, substr($version, 0, $dash), substr($version, $dash + 1)];
+    }
+
+    /** dpkg's verrevcmp: letters sort before other characters, "~" before everything, digit runs by number. */
+    private static function dpkgCompareString(string $a, string $b): int
+    {
+        $order = function (string $s, int $i): int {
+            $c = $s[$i] ?? '';
+            if ($c === '' || ctype_digit($c)) {
+                return 0;
+            }
+
+            return ctype_alpha($c) ? ord($c) : ($c === '~' ? -1 : ord($c) + 256);
+        };
+        $i = $j = 0;
+        while ($i < strlen($a) || $j < strlen($b)) {
+            while (($i < strlen($a) && ! ctype_digit($a[$i])) || ($j < strlen($b) && ! ctype_digit($b[$j]))) {
+                $diff = $order($a, $i) <=> $order($b, $j);
+                if ($diff !== 0) {
+                    return $diff;
+                }
+                $i++;
+                $j++;
+            }
+            $startA = $i;
+            $startB = $j;
+            while ($i < strlen($a) && ctype_digit($a[$i])) {
+                $i++;
+            }
+            while ($j < strlen($b) && ctype_digit($b[$j])) {
+                $j++;
+            }
+            $diff = self::compareNumbers([substr($a, $startA, $i - $startA)], [substr($b, $startB, $j - $startB)]);
+            if ($diff !== 0) {
+                return $diff;
+            }
+        }
+
+        return 0;
     }
 
     private static function version(mixed $value): ?string

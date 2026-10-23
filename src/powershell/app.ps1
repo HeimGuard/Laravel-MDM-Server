@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.23.0'
+$AgentVersion = '1.24.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -991,13 +991,16 @@ function Get-SecuritySoftware {
                 try { foreach ($property in (Get-Content -Path $CachePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties) { $cves[$property.Name] = "$($property.Value)" } } catch { }
             }
             $used = @{}
-            $dpkg = @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\n' 2>$null | ForEach-Object {
+            $dpkg = @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\t${source:Package}\n' 2>$null | ForEach-Object {
                 $parts = $_ -split "`t"
                 if ($parts.Count -ge 4 -and $parts[0] -like 'i*') {
                     $key = "$($parts[1])|$($parts[2])"
                     if (-not $cves.ContainsKey($key)) { $cves[$key] = "$(Get-DpkgFixedCves $parts[1])" }
                     $used[$key] = $cves[$key]
-                    [PSCustomObject]@{ Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg'; FixedCves = if ($used[$key]) { $used[$key] } else { $null } }
+                    # The source package of a binary one (libssl3t64 is openssl, libglib2.0-0t64 is glib2.0): what a
+                    # distribution's security tracker is about. Only when it is not the package's own name.
+                    $sourcePackage = if ($parts.Count -ge 5 -and $parts[4] -and $parts[4] -ne $parts[1]) { ConvertTo-SecurityText $parts[4] 200 } else { $null }
+                    [PSCustomObject]@{ Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg'; FixedCves = if ($used[$key]) { $used[$key] } else { $null }; SourcePackage = $sourcePackage }
                 }
             })
             # Only the installed versions stay in the cache.
@@ -3584,7 +3587,7 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
@@ -3619,10 +3622,10 @@ function Get-SecurityItemKey ([string]$Source, $Item) {
 
 function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
-    # FixedCves counts only when there are some, so the hashes of the items without them stay what they were.
+    # FixedCves and SourcePackage count only when they are set, so the hashes of the items without them stay what they were.
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
-        if ($field -eq 'FixedCves' -and $value -eq '') { continue }
+        if ($field -in 'FixedCves', 'SourcePackage' -and $value -eq '') { continue }
         $value
     }
     return Get-SecurityShortHash ($parts -join [string][char]0x1f)

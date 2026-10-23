@@ -65,6 +65,11 @@ version and does not name the CVE is still reported. The CVEs of a package versi
 names a CVE without fixing it (a note that it does not affect the package) hides it as well; rpm
 packages are not read yet and stay out of the CVE rules.
 
+**Source packages (agents 1.24.0+, Debian / Ubuntu).** A security tracker is about source packages, the inventory
+lists binary ones (`libssl3t64` is `openssl`, `libglib2.0-0t64` and `gir1.2-glib-2.0` are `glib2.0`), and a name
+cannot tell them apart reliably. For every dpkg package whose source package has another name the agent sends it
+as the software field `SourcePackage` (`${source:Package}` of dpkg-query); a package that is its own source has none.
+
 The built-in parsers ([`resources/security/parsers.json`](../src/laravel/resources/security/parsers.json))
 make the events `failed_logon` (sshd, 4625), `sudo_failed`, `account_created` (useradd, 4720),
 `admin_added` (usermod / gpasswd to sudo, wheel or admin, 4732 to Administrators),
@@ -143,8 +148,14 @@ over feed over bundled), and a bundled rule the feed replaced comes back when it
   `{"not": {...}}` (up to 6 levels, 64 conditions). Operators: `eq`, `ne`, `contains`,
   `not_contains`, `starts_with`, `ends_with`, `matches`, `not_matches` (regular expression),
   `in`, `not_in` (a list), `gt`, `gte`, `lt`, `lte`, `version_lt`, `version_lte`, `version_gt`,
-  `version_gte` (`1.2.3`, `2:1.2-3ubuntu1`), `exists`, `empty`, `true`, `false`. Texts are compared
-  without case; an unknown value is neither `true` nor `false`.
+  `version_gte` (`1.2.3`, `2:1.2-3ubuntu1`), `dpkg_lt`, `dpkg_lte`, `dpkg_gt`, `dpkg_gte`, `exists`,
+  `empty`, `true`, `false`. Texts are compared without case; an unknown value is neither `true` nor `false`.
+- `version_*` compare the leading numbers only (the epoch and everything after the first character that is
+  not a digit or a dot are ignored) and a missing part is 0, so `8.5` is `8.5.0`. A bound such as
+  `7.1.2-31` is therefore read as `7.1.2`; write it as `7.1.2.31`, the way distributions number it.
+- `dpkg_*` compare Debian / Ubuntu package versions the way dpkg does (`epoch:upstream-revision`, `~` sorts
+  first): `8.2512.0-1ubuntu4.2` is after `8.2512.0-1ubuntu4.1`. Use them with a version an Ubuntu or
+  Debian security tracker names as the fix, e.g. to skip a package that is at or after it.
 - `message`: the finding, with `{Field}` placeholders of the item.
 - `urls`: up to 10 `http(s)` links (documentation, MITRE ATT&CK, CVE), shown with the rule on the
   **Rules** tab and with each of its findings.
