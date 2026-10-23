@@ -983,5 +983,10 @@
     "which list it looks at, below": "na který seznam se dívá, níže",
     "which log, below": "který log, níže",
     "with {Field} placeholders": "se zástupci {Field}",
-    "with {group} or {Field} placeholders; {a|b} takes the first that is set": "se zástupci {group} nebo {Field}; {a|b} vezme první, který je nastaven"
+    "with {group} or {Field} placeholders; {a|b} takes the first that is set": "se zástupci {group} nebo {Field}; {a|b} vezme první, který je nastaven",
+    "Remediate with AI": "Remediovat pomocí AI",
+    "Writing…": "Píšu…",
+    "The AI writes a remediation script for you to review": "AI napíše remediační skript ke kontrole",
+    "The AI did not return a valid script, try again.": "AI nevrátila platný skript, zkuste to znovu.",
+    "The check for OS updates failed, the list may be out of date: :error": "Kontrola aktualizací OS selhala, seznam může být neaktuální: :error"
 }
