@@ -6,6 +6,7 @@
         $lists = [
             'posture' => [__('Settings'), count($posture)],
             'listening' => [__('Open ports'), count($inventory?->data['listening'] ?? [])],
+            'os' => [__('Operating system'), count($inventory?->data['os'] ?? [])],
             'admins' => [__('Administrators'), count($inventory?->data['admins'] ?? [])],
             'startup' => [__('Startup'), count($inventory?->data['startup'] ?? [])],
             'software' => [__('Software'), count($inventory?->data['software'] ?? [])],
@@ -14,6 +15,7 @@
         ];
         $columns = [
             'listening' => ['Protocol', 'Address', 'Port', 'Process'],
+            'os' => ['Name', 'Version', 'Kernel'],
             'admins' => ['Name', 'Source', 'Enabled'],
             'startup' => ['Name', 'Location', 'Command'],
             'software' => ['Name', 'Version', 'Publisher', 'Source'],

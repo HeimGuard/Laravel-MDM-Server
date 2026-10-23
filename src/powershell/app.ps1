@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.24.0'
+$AgentVersion = '1.27.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -146,6 +146,8 @@ $UpdateKinds = @{
     module  = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
     # A PowerShell 7 release from GitHub, by its version.
     pwsh    = '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$'
+    # Google Chrome (all users, Windows) from Google's enterprise MSI, by the version it is updated to.
+    chrome  = '^[0-9]{1,4}(\.[0-9]{1,5}){3}$'
     # A Python package (pip --user) or pipx app, by its name.
     pip     = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
     pipx    = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
@@ -724,6 +726,107 @@ function Install-PowerShellRelease {
     }
 }
 
+function Get-ChromeInstall {
+    # The Google Chrome installed for all users on this device: its version (the one Google Update
+    # keeps), its program and its architecture ('x64', 'x86', 'arm64'); $null when there is none. A
+    # Chrome installed for one user only is not seen here (the agent runs as SYSTEM).
+    $guid = '{8A69D345-D564-463c-AFF1-A69D9E530F96}'
+    $path = "$((Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe' -ErrorAction SilentlyContinue).'(default)')".Trim('"')
+    if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $version = $null
+    foreach ($root in 'HKLM:\SOFTWARE\Google\Update\Clients', 'HKLM:\SOFTWARE\WOW6432Node\Google\Update\Clients') {
+        $value = (Get-ItemProperty -Path "$root\$guid" -Name pv -ErrorAction SilentlyContinue).pv
+        if ($value) { $version = "$value"; break }
+    }
+    if (-not $version) { $version = "$((Get-Item -LiteralPath $path).VersionInfo.ProductVersion)" }
+    if ($version -notmatch '^[0-9]+(\.[0-9]+){3}$') { return $null }
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } elseif ($path -like '*Program Files (x86)*') { 'x86' } else { 'x64' }
+    return @{ Version = $version; Path = $path; Arch = $arch }
+}
+
+function Get-ChromeUpdate {
+    # The update of the Google Chrome of all users: it is outdated when Google's version history has
+    # a newer stable release. winget offers it where there is winget (and the Chrome manifest is
+    # current); servers have none, and the version of winget lags behind: Chrome is not listed twice.
+    param ($Known)
+
+    $chrome = Get-ChromeInstall
+    if (-not $chrome -or @($Known | Where-Object { "$($_.Id)" -eq 'Google.Chrome' })) {
+        return
+    }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $platform = switch ($chrome.Arch) { 'x86' { 'win' } 'arm64' { 'win_arm64' } default { 'win64' } }
+    $page = Invoke-RestMethod -Uri "https://versionhistory.googleapis.com/v1/chrome/platforms/$platform/channels/stable/versions?orderBy=version%20desc&pageSize=1" -TimeoutSec 30
+    $latest = "$(@($page.versions)[0].version)"
+    if ($latest -notmatch '^[0-9]+(\.[0-9]+){3}$') { return }
+    if ([version]$latest -gt [version]$chrome.Version) {
+        [PSCustomObject]@{ Id = 'Google.Chrome'; Version = $chrome.Version; Avaliable = $latest; Source = 'google.com/chrome' }
+    }
+}
+
+function Install-ChromeRelease {
+    # Installs the current stable Google Chrome for all users from Google's enterprise MSI: where winget
+    # is not there (servers) or does not have the release yet. The MSI is checked for the signature of
+    # Google before it runs. Google serves the release it rolls out now, which may be one behind the newest
+    # (a staged rollout): it is enough that Chrome is newer than it was. Returns log lines; failures go to
+    # $State.Failures.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Version,
+        [hashtable]
+        $State = @{ Failures = [System.Collections.ArrayList]@() }
+    )
+
+    if ($Version -notmatch '^[0-9]{1,4}(\.[0-9]{1,5}){3}$') {
+        [void]$State.Failures.Add("Google Chrome: invalid version '$Version'")
+        return
+    }
+    $chrome = Get-ChromeInstall
+    if (-not $chrome) {
+        [void]$State.Failures.Add('Google Chrome is not installed for all users')
+        return
+    }
+    $asset = switch ($chrome.Arch) { 'x86' { 'googlechromestandaloneenterprise.msi' } 'arm64' { 'googlechromestandaloneenterprise_arm64.msi' } default { 'googlechromestandaloneenterprise64.msi' } }
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) "mdm-chrome-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $temp -Force | Out-Null
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $file = Join-Path $temp $asset
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri "https://dl.google.com/dl/chrome/install/$asset" -OutFile $file -UseBasicParsing -TimeoutSec 900
+        $signature = Get-AuthenticodeSignature -FilePath $file
+        if ($signature.Status -ne 'Valid' -or "$($signature.SignerCertificate.Subject)" -notmatch '(^|, )O=Google LLC(,|$)') {
+            [void]$State.Failures.Add("Google Chrome ${Version}: $asset is not signed by Google LLC (signature: $($signature.Status), $($signature.SignerCertificate.Subject))")
+            return
+        }
+        "Google Chrome: $asset downloaded, signed by Google LLC"
+
+        $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/qn', '/norestart') -Wait -PassThru
+        # 3010: installed, a restart completes it.
+        if ($process.ExitCode -notin 0, 3010) {
+            [void]$State.Failures.Add("Google Chrome ${Version}: msiexec exit $($process.ExitCode)")
+            return
+        }
+        $after = Get-ChromeInstall
+        if (-not $after -or [version]$after.Version -le [version]$chrome.Version) {
+            [void]$State.Failures.Add("Google Chrome: version $(if ($after) { $after.Version } else { 'unknown' }) after installing the MSI, it was $($chrome.Version)")
+            return
+        }
+        $note = if ([version]$after.Version -lt [version]$Version) { " (the newest stable is $Version, Google serves this one while it rolls it out)" } else { '' }
+        "Google Chrome: updated $($chrome.Version) -> $($after.Version)$note"
+        if (Get-Process -Name chrome -ErrorAction SilentlyContinue) {
+            'Google Chrome: windows that are open keep running the old version until they are restarted'
+        }
+    }
+    catch {
+        [void]$State.Failures.Add("Google Chrome ${Version}: $($_.Exception.Message)")
+    }
+    finally {
+        Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-PendingReboot {
     if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) {
         return $true
@@ -1236,6 +1339,35 @@ function Get-SecurityStartup {
     }
 }
 
+function Get-SecurityOs {
+    # The operating system: its Id ('windows', or the ID of /etc/os-release: ubuntu, debian, ...), its Name (the caption,
+    # PRETTY_NAME), its Version (Windows: the build with the revision, 10.0.19045.5555, which is what the cumulative
+    # updates of Microsoft change and the rules of their security updates compare; Linux: VERSION_ID, 26.04) and on Linux
+    # its Kernel. One item, none when the system does not tell what it is.
+    param ([bool]$OnLinux)
+
+    if ($OnLinux) {
+        $osRelease = @{}
+        foreach ($line in @(Get-Content -Path /etc/os-release -ErrorAction SilentlyContinue)) {
+            if ($line -match '^(\w+)=(.*)$') { $osRelease[$Matches[1]] = $Matches[2].Trim('"') }
+        }
+        if (-not $osRelease['ID']) { return }
+        [PSCustomObject]@{
+            Id      = ConvertTo-SecurityText $osRelease['ID'] 100
+            Name    = ConvertTo-SecurityText $osRelease['PRETTY_NAME'] 300
+            Version = ConvertTo-SecurityText $osRelease['VERSION_ID'] 100
+            Kernel  = ConvertTo-SecurityText "$(uname -r 2>$null)" 100
+        }
+        return
+    }
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem -Property Caption, Version -ErrorAction Stop
+    $revision = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name UBR -ErrorAction Stop).UBR
+    # The revision is missing on very old systems: the build alone would say less than it seems to.
+    if ("$($os.Version)" -match '^\d+\.\d+\.\d+$' -and "$revision" -match '^\d+$') {
+        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null }
+    }
+}
+
 function Get-SecurityAdmins {
     param ([bool]$OnLinux)
 
@@ -1582,6 +1714,7 @@ function Get-SecurityInventory {
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
     try { $inventory['startup'] = @(Get-SecurityStartup -OnLinux $OnLinux | Select-Object -First 500) } catch { }
     try { $inventory['admins'] = @(Get-SecurityAdmins -OnLinux $OnLinux | Select-Object -First 200) } catch { }
+    try { $inventory['os'] = @(Get-SecurityOs -OnLinux $OnLinux | Select-Object -First 1) } catch { }
     try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer } catch { }
     $records = @()
     $moved = @{}
@@ -3483,7 +3616,7 @@ function Start-AgentJob {
 
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
-    return Start-AgentJob -Name 'inventory' -Functions 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux -ScriptBlock {
+    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux -ScriptBlock {
         param ($OnLinux)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         $data = @{}
@@ -3496,6 +3629,7 @@ function Start-InventoryCollection {
         } else {
             try { $data['os_updates'] = @(Get-WindowsUpdate) } catch { }
             try { $packages += @(Get-WingetUpdates | Select-Object -Property Id, Version, Avaliable, Source, Scope) } catch { }
+            try { $packages += @(Get-ChromeUpdate -Known $packages) } catch { }
         }
         try { $packages += @(Get-PythonUpdates) } catch { }
         try { $packages += @(Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known (@($data['os_updates']) + $packages)) } catch { }
@@ -3539,7 +3673,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson
@@ -3598,6 +3732,7 @@ $SecurityFields = @{
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
     admins    = @('Name', 'Source', 'Enabled')
+    os        = @('Name', 'Version', 'Id', 'Kernel')
     posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate')
 }
 $SecurityKeyFields = @{
@@ -3606,6 +3741,7 @@ $SecurityKeyFields = @{
     listening = @('Protocol', 'Address', 'Port')
     startup   = @('Name', 'Location')
     admins    = @('Name')
+    os        = @('Id')
 }
 
 function ConvertTo-SecurityCanon ($Value) {
@@ -3677,7 +3813,7 @@ function Get-SecurityDeltas {
 
     $sources = New-Object System.Collections.Generic.List[object]
     $pending = @{}
-    foreach ($source in 'software', 'processes', 'listening', 'startup', 'admins', 'posture') {
+    foreach ($source in 'software', 'processes', 'listening', 'startup', 'admins', 'os', 'posture') {
         if (-not $Inventory.ContainsKey($source)) { continue }
         $items = if ($source -eq 'posture') { @($Inventory[$source]) } else { @($Inventory[$source]) }
         $rows = @{}
@@ -4233,7 +4369,7 @@ function Test-UpdateParams {
     if ($kind -eq 'module' -and ("$($Params.edition)" -notin 'Windows PowerShell', 'PowerShell 7' -or "$($Params.version)" -notmatch '^[0-9][0-9A-Za-z.\-]{0,49}$')) {
         throw "invalid module edition or version"
     }
-    if ((($kind -in 'windows', 'winget') -and $OnLinux) -or (($kind -in 'apt', 'flatpak', 'snap') -and -not $OnLinux)) {
+    if ((($kind -in 'windows', 'winget', 'chrome') -and $OnLinux) -or (($kind -in 'apt', 'flatpak', 'snap') -and -not $OnLinux)) {
         throw "'$kind' updates are not available on this platform"
     }
 
@@ -4986,7 +5122,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -5270,6 +5406,10 @@ function Start-UpdateJob {
                     Set-Progress 10 "PowerShell $id"
                     Install-PowerShellRelease -Version $id -OnLinux $OnLinux -State $state
                 }
+                'chrome' {
+                    Set-Progress 10 "Google Chrome $id"
+                    Install-ChromeRelease -Version $id -State $state
+                }
                 'module' {
                     Set-Progress 10 "Update-Module $id"
                     if (-not @(Get-PowerShellHosts -OnLinux $OnLinux | Where-Object { $_.Edition -eq $Params.edition })) { [void]$state.Failures.Add("$($Params.edition) is not installed"); break }
@@ -5383,6 +5523,16 @@ function Start-UpdateJob {
                 if ($packages.Count -eq 0) { 'winget: nothing to update' }
             } else {
                 'winget: not found, application updates skipped'
+            }
+            # Google Chrome of all users when winget did not update it (no winget on servers, or its manifest lags behind).
+            Set-Current 'group:chrome'
+            Enter-Step 38 40 'Google Chrome'
+            try {
+                $update = Get-ChromeUpdate -Known @()
+                if ($update) { Install-ChromeRelease -Version $update.Avaliable -State $state }
+            }
+            catch {
+                "Google Chrome: $($_.Exception.Message)"
             }
             Set-Current 'group:windows'
             Enter-Step 40 90 'Windows Update'
