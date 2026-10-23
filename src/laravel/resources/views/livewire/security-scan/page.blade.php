@@ -243,6 +243,9 @@
                     </button>
                 @endif
             </div>
+            @if ($remediateError)
+                <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+            @endif
             <div class="card overflow-hidden">
                 <div class="list-group list-group-flush">
                     @forelse ($findings as $finding)

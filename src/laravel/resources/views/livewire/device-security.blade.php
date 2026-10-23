@@ -22,7 +22,10 @@
         $yesNo = fn ($value) => is_bool($value) ? ($value ? __('Yes') : __('No')) : $value;
     @endphp
 
-    {{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}
+    @if ($remediateError ?? null)
+    <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+@endif
+{{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}
     <div class="card overflow-hidden mb-3">
         <div class="list-group list-group-flush">
             @forelse ($findings as $finding)

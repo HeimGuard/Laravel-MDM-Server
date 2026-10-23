@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
@@ -12,6 +13,8 @@ use Livewire\Component;
 /** The Security tab of a device: the scanner's findings and the security inventory they come from. */
 class DeviceSecurity extends Component
 {
+    use RemediatesFindings;
+
     public int $deviceId;
 
     public function acknowledge(int $id): void
@@ -22,6 +25,11 @@ class DeviceSecurity extends Component
     public function reopen(int $id): void
     {
         $this->finding($id)?->reopen();
+    }
+
+    protected function findingForRemediation(int $id): SecurityFinding
+    {
+        return SecurityFinding::query()->with(['rule', 'device'])->where('device_id', $this->deviceId)->findOrFail($id);
     }
 
     private function finding(int $id): ?SecurityFinding

@@ -3,6 +3,7 @@
 namespace App\Livewire\SecurityScan;
 
 use App\Jobs\SyncSecurityFeed;
+use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
@@ -23,6 +24,8 @@ use Livewire\Component;
  */
 class Page extends Component
 {
+    use RemediatesFindings;
+
     /** findings, events or rules */
     #[Url(except: 'findings')]
     public string $tab = 'findings';
@@ -51,6 +54,11 @@ class Page extends Component
     public function acknowledge(int $id): void
     {
         SecurityFinding::query()->with('rule')->findOrFail($id)->acknowledge(auth()->user());
+    }
+
+    protected function findingForRemediation(int $id): SecurityFinding
+    {
+        return SecurityFinding::query()->with(['rule', 'device'])->findOrFail($id);
     }
 
     public function reopen(int $id): void

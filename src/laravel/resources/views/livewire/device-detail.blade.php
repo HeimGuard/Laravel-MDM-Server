@@ -333,6 +333,9 @@
                     $moduleSearch = array_map(fn ($module) => strtolower(($module['Name'] ?? '') . ' ' . ($module['Edition'] ?? '') . ' ' . ($module['User'] ?? '')), $moduleUpdates);
                 @endphp
                 <div aria-labelledby="updates-tab" class="tab-pane fade {{ $activeTab === 'updates' ? 'show active' : '' }}" id="updates-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($selectedDevice->data->os_updates_error ?? null)
+                        <div class="alert alert-warning small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</div>
+                    @endif
                     <div class="d-flex align-items-center gap-2 mb-3">
                         <input class="form-control form-control-sm flex-grow-1 min-w-0" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
                         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
