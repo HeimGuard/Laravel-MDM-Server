@@ -94,6 +94,28 @@ class ScriptGenerator
      * @param  array<string, mixed>  $current  the script in the form, changed instead of a new one when it has code
      * @return array{name: string, description: string, platform: string, timeout: int, detection: string, remediation: string, manual_remediation: bool}
      */
+    /**
+     * The scripts of an AI answer when they can be saved: PowerShell that parses, within the size limit, the detection
+     * ending with exit 0 and exit 1. Throws a RuntimeException otherwise (the AI did not return a valid script).
+     *
+     * @param  array<string, mixed>  $generated  what generate() returned
+     * @return array<string, mixed> the same
+     */
+    public static function checked(array $generated): array
+    {
+        foreach (['detection', 'remediation'] as $field) {
+            $errors = trim($generated[$field]) === '' ? [] : PowerShellCheck::errors($generated[$field]);
+            if ($errors !== [] || strlen($generated[$field]) > Script::MAX_CODE_BYTES) {
+                throw new RuntimeException(__('The AI did not return a valid script, try again.'));
+            }
+        }
+        if (! PowerShellCheck::exits($generated['detection'], 0) || ! PowerShellCheck::exits($generated['detection'], 1)) {
+            throw new RuntimeException(__('The AI did not return a valid script, try again.'));
+        }
+
+        return $generated;
+    }
+
     public static function generate(string $request, array $current = []): array
     {
         if (! self::available()) {

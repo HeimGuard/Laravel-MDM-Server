@@ -32,6 +32,17 @@
                 <button class="btn btn-light" type="button" wire:click="schedule">
                     <i class="me-2 fas fa-calendar-alt"></i><span>{{ __('Schedule') }}</span>
                 </button>
+                @if ($failedDevices !== [])
+                    @php
+                        $shown = array_slice($failedDevices, 0, 15);
+                        $confirm = trans_choice('Run the whole script again (the detection and the remediation) on :count failed device?|Run the whole script again (the detection and the remediation) on :count failed devices?', count($failedDevices), ['count' => count($failedDevices)])
+                            ."\n\n".collect($shown)->map(fn ($name) => "• $name")->implode("\n")
+                            .(count($failedDevices) > count($shown) ? "\n".__('and :count more', ['count' => count($failedDevices) - count($shown)]) : '');
+                    @endphp
+                    <button class="btn btn-danger" type="button" wire:click="rerunFailed" wire:confirm="{{ $confirm }}" wire:loading.attr="disabled" wire:target="rerunFailed" title="{{ __('Runs the script again on the devices where its latest run failed') }}">
+                        <i class="me-2 fas fa-redo"></i><span>{{ __('Rerun failed') }} ({{ count($failedDevices) }})</span>
+                    </button>
+                @endif
                 <button class="btn btn-primary" type="button" wire:click="run">
                     <i class="me-2 fas fa-play"></i><span>{{ __('Run') }}</span>
                 </button>

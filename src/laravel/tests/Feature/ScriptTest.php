@@ -8,6 +8,7 @@ use App\Livewire\Script\Detail;
 use App\Livewire\Script\Form;
 use App\Livewire\Script\Run;
 use App\Livewire\ScriptRun\DataTable as RunDataTable;
+use App\Livewire\ScriptRun\Output as RunOutput;
 use App\Models\Device;
 use App\Models\Script;
 use App\Models\ScriptRun;
@@ -410,6 +411,73 @@ class ScriptTest extends TestCase
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
         $this->assertSame(4, Script::query()->where('name', 'Firewall on')->count());
+    }
+
+    public function test_a_failed_run_is_fixed_with_ai_into_a_copy_that_only_runs_by_hand(): void
+    {
+        $this->actingAs($this->admin());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        $device = $this->device();
+        $script = $this->script(['name' => 'Cleanup']);
+        $run = $script->runOn([$device->id])->first();
+        $run->forceFill(['status' => 'failed', 'detection_exit' => 1, 'remediation_exit' => 2, 'error' => 'Remove-Item: access denied', 'output' => "step 1\nstep 2 failed"])->save();
+        Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
+            'name' => 'Cleanup', 'description' => 'Cleans up.', 'platform' => 'all', 'timeout' => 60,
+            'detection' => "if (Test-Path /x) { exit 1 }\nexit 0", 'remediation' => 'Remove-Item /x -Force', 'manual_remediation' => false,
+        ])]]])]);
+
+        Livewire::test(RunOutput::class, ['runId' => $run->id])->assertSee('AI fix')->call('aiFix')->assertHasNoErrors()->assertRedirect();
+
+        // The AI got the script, the error, the exit codes and the output; the result is a copy for review, the script stays.
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Remove-Item: access denied')
+            && str_contains($request['messages'][0]['content'], 'step 2 failed')
+            && str_contains($request['messages'][0]['content'], 'remediation 2')
+            && str_contains($request['messages'][0]['content'], 'Current script'));
+        $fixed = Script::query()->where('name', 'Cleanup (AI fix)')->sole();
+        $this->assertTrue($fixed->manual_remediation);
+        $this->assertSame('Remove-Item /x -Force', $fixed->remediation);
+        $this->assertSame("if (\$true) {\n\texit 1\n}\n", $script->fresh()->detection);
+
+        // Only a failed run is fixed, and only by a system admin.
+        $ok = $script->runOn([$device->id])->first();
+        $ok->forceFill(['status' => 'compliant'])->save();
+        Livewire::test(RunOutput::class, ['runId' => $ok->id])->assertDontSee('AI fix')->call('aiFix');
+        Http::assertSentCount(1);
+        $this->actingAs(User::factory()->create());
+        Livewire::test(RunOutput::class, ['runId' => $run->id])->call('aiFix')->assertForbidden();
+        Http::assertSentCount(1);
+    }
+
+    public function test_failed_devices_run_the_whole_script_again_by_their_latest_run(): void
+    {
+        $this->actingAs($this->admin());
+        $script = $this->script(['name' => 'Patch', 'manual_remediation' => true]);
+        $set = fn (Device $device, string $status) => $script->runs()->create(['device_id' => $device->id, 'version' => $script->version, 'fingerprint' => $script->fingerprint,
+            'status' => $status, 'issued_at' => now(), 'expires_at' => now()->addHour()]);
+
+        $recovered = $this->device('a');   // failed, then went well: not one of them
+        $set($recovered, 'failed');
+        $set($recovered, 'compliant');
+        $failed = $this->device('b');
+        $set($failed, 'failed');
+        $errored = $this->device('c');     // an error, then a failure: its latest run counts
+        $set($errored, 'error');
+        $set($errored, 'failed');
+        $unsigned = $this->device('d', 'linux', false);   // cannot run it now
+        $set($unsigned, 'failed');
+        $waiting = $this->device('e');
+        $set($waiting, 'failed');
+        $set($waiting, 'pending');
+
+        Livewire::test(Detail::class, ['script' => $script])->assertSee('Rerun failed (2)')->assertSee('srv-b')->assertSee('srv-c')
+            ->call('rerunFailed')->assertHasNoErrors();
+
+        $this->assertEqualsCanonicalizing([$failed->id, $errored->id], ScriptRun::query()->where('script_id', $script->id)->where('status', 'pending')->whereIn('device_id', [$recovered->id, $failed->id, $errored->id, $unsigned->id])->pluck('device_id')->all());
+        // The whole script, not only the detection of a script with manual remediation.
+        $this->assertSame([null], ScriptRun::query()->where('script_id', $script->id)->where('status', 'pending')->whereIn('device_id', [$failed->id, $errored->id])->pluck('mode')->unique()->values()->all());
+
+        $this->actingAs(User::factory()->create());
+        $this->get('/scripts/'.$script->id)->assertForbidden();
     }
 
     public function test_findings_and_the_inventory_are_exported(): void

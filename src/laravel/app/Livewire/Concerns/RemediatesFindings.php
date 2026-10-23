@@ -4,7 +4,6 @@ namespace App\Livewire\Concerns;
 
 use App\Models\Script;
 use App\Models\SecurityFinding;
-use App\Support\PowerShellCheck;
 use App\Support\ScriptGenerator;
 use App\Support\SecurityRules;
 use Illuminate\Support\Facades\Gate;
@@ -47,16 +46,7 @@ trait RemediatesFindings
         $request .= "\nThe detection exits 0 when the findings it covers are fixed and 1 when any of them is still there.";
 
         try {
-            $generated = ScriptGenerator::generate($request);
-            foreach (['detection', 'remediation'] as $field) {
-                $errors = trim($generated[$field]) === '' ? [] : PowerShellCheck::errors($generated[$field]);
-                if ($errors !== [] || strlen($generated[$field]) > Script::MAX_CODE_BYTES) {
-                    throw new RuntimeException(__('The AI did not return a valid script, try again.'));
-                }
-            }
-            if (! PowerShellCheck::exits($generated['detection'], 0) || ! PowerShellCheck::exits($generated['detection'], 1)) {
-                throw new RuntimeException(__('The AI did not return a valid script, try again.'));
-            }
+            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request));
         } catch (RuntimeException $e) {
             $this->remediateError = $e->getMessage();
 
