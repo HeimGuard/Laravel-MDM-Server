@@ -131,6 +131,26 @@ class SecurityFeedTest extends TestCase
         $this->assertSame($before, SecurityRule::query()->count());
     }
 
+    public function test_a_big_feed_is_fetched_in_chunks_and_applied_in_one_go(): void
+    {
+        $files = [];
+        foreach (range(1, 250) as $i) {
+            $files["rules/any/r$i.json"] = $this->rule("big$i");
+        }
+        $this->repository('1', $files);
+        $state = SecurityFeed::sync();
+        $this->assertTrue($state['ok']);
+        $this->assertSame(250, $state['added']);
+
+        // One file of a later chunk is wrong: nothing of the new version is applied.
+        $this->repository('2', $files + ['rules/any/r251.json' => $this->rule('big251')], ['rules/any/r251.json' => str_repeat('0', 64)]);
+        $state = SecurityFeed::sync();
+        $this->assertFalse($state['ok']);
+        $this->assertStringContainsString('r251.json does not match the manifest', $state['error']);
+        $this->assertSame('1', $state['version']);
+        $this->assertFalse(SecurityRule::query()->where('key', 'big251')->exists());
+    }
+
     public function test_invalid_rules_are_skipped_and_the_portals_own_rules_win(): void
     {
         SecurityRule::query()->create(SecurityRule::attributesFor($this->rule('mine', ['severity' => 'low'])) + ['origin' => SecurityRule::CUSTOM]);

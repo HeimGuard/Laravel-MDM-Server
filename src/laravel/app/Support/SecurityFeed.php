@@ -3,9 +3,14 @@
 namespace App\Support;
 
 use App\Models\SecurityRule;
+use App\Jobs\ApplySecurityFeed;
+use App\Jobs\FetchSecurityFeedChunk;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
@@ -23,6 +28,9 @@ class SecurityFeed
     public const SETTING = 'mdm.security_feed';
 
     private const MAX_FILES = 2048;
+
+    /** Files one job fetches. */
+    private const CHUNK_FILES = 100;
 
     private const MAX_FILE_BYTES = 1048576;
 
@@ -85,12 +93,40 @@ class SecurityFeed
                 return self::remember($state);
             }
 
+            // Fetched in chunks, each in its own job (a feed of hundreds of files does not fit one job);
+            // the last job applies everything in one go.
+            $run = (string) Str::uuid();
+            self::purgeOldRuns();
+            $jobs = [];
+            foreach (array_chunk($manifest['files'], self::CHUNK_FILES, true) as $index => $files) {
+                $jobs[] = new FetchSecurityFeedChunk($run, $index, $files);
+            }
+            $jobs[] = new ApplySecurityFeed($run, $manifest['version'], count($jobs));
+            Bus::chain($jobs)->dispatch();
+
+            return self::state();
+        } catch (Throwable $e) {
+            Log::warning('Security rules feed: '.$e->getMessage());
+
+            return self::remember(['ok' => false, 'error' => mb_strimwidth($e->getMessage(), 0, 300, '…')] + $state);
+        }
+    }
+
+    /** Fetches and checks one chunk of the manifest and keeps its definitions for the job that applies the run. */
+    public static function fetchChunk(string $run, int $index, array $files): void
+    {
+        if (self::aborted($run)) {
+            return;
+        }
+
+        try {
+            $base = self::rawBase() ?? throw new RuntimeException('The feed is not set.');
             $definitions = [];
-            $total = 0;
-            foreach ($manifest['files'] as $path => $hash) {
+            $bytes = 0;
+            foreach ($files as $path => $hash) {
                 $body = self::fetch("$base/$path");
-                $total += strlen($body);
-                if ($total > self::MAX_TOTAL_BYTES || ! hash_equals(strtolower($hash), hash('sha256', $body))) {
+                $bytes += strlen($body);
+                if ($bytes > self::MAX_TOTAL_BYTES || ! hash_equals(strtolower($hash), hash('sha256', $body))) {
                     throw new RuntimeException("$path does not match the manifest.");
                 }
                 $parsed = json_decode($body, true);
@@ -101,8 +137,34 @@ class SecurityFeed
                     $definitions[] = str_starts_with($path, 'parsers/') && is_array($definition) ? ['kind' => 'parser'] + $definition : $definition;
                 }
             }
+            self::disk()->put(self::dir($run)."/$index.json", json_encode(['bytes' => $bytes, 'definitions' => $definitions]));
+        } catch (Throwable $e) {
+            self::abort($run, $e);
+        }
+    }
 
-            $result = SecurityRule::apply($definitions, SecurityRule::FEED, $manifest['version']);
+    /** Applies the chunks of a run in one go, when every one of them was fetched and checked. */
+    public static function applyRun(string $run, string $version, int $chunks): void
+    {
+        try {
+            if (self::aborted($run)) {
+                return;
+            }
+            $definitions = [];
+            $total = 0;
+            for ($index = 0; $index < $chunks; $index++) {
+                $chunk = json_decode((string) self::disk()->get(self::dir($run)."/$index.json"), true);
+                if (! is_array($chunk)) {
+                    throw new RuntimeException("Part $index of the feed was not fetched.");
+                }
+                $total += (int) $chunk['bytes'];
+                if ($total > self::MAX_TOTAL_BYTES) {
+                    throw new RuntimeException('The feed is larger than '.self::MAX_TOTAL_BYTES.' bytes.');
+                }
+                $definitions = array_merge($definitions, $chunk['definitions']);
+            }
+
+            $result = SecurityRule::apply($definitions, SecurityRule::FEED, $version);
             // A bundled rule the feed no longer has comes back.
             Cache::forget('mdm.security_rules');
             SecurityRule::syncBuiltIn();
@@ -110,14 +172,47 @@ class SecurityFeed
                 SecurityScanner::scanAll();
             }
 
-            return self::remember([
-                'checked_at' => now()->toIso8601String(), 'version' => $manifest['version'], 'ok' => true, 'error' => null,
+            self::remember([
+                'checked_at' => now()->toIso8601String(), 'version' => $version, 'ok' => true, 'error' => null,
                 'added' => $result['added'], 'updated' => $result['updated'], 'removed' => $result['removed'], 'skipped' => array_slice($result['skipped'], 0, 20),
             ]);
         } catch (Throwable $e) {
-            Log::warning('Security rules feed: '.$e->getMessage());
+            self::abort($run, $e);
+        } finally {
+            self::disk()->deleteDirectory(self::dir($run));
+        }
+    }
 
-            return self::remember(['ok' => false, 'error' => mb_strimwidth($e->getMessage(), 0, 300, '…')] + $state);
+    /** A run failed: the other jobs of it do nothing and the state shows why; nothing was applied. */
+    public static function abort(string $run, Throwable $e): void
+    {
+        Log::warning('Security rules feed: '.$e->getMessage());
+        self::disk()->put(self::dir($run).'/failed', '1');
+        self::remember(['ok' => false, 'error' => mb_strimwidth($e->getMessage(), 0, 300, '…'), 'checked_at' => now()->toIso8601String()] + self::state());
+    }
+
+    private static function aborted(string $run): bool
+    {
+        return self::disk()->exists(self::dir($run).'/failed');
+    }
+
+    private static function disk(): \Illuminate\Contracts\Filesystem\Filesystem
+    {
+        return Storage::disk('local');
+    }
+
+    private static function dir(string $run): string
+    {
+        return "security-feed/$run";
+    }
+
+    /** Leftovers of runs whose worker died. */
+    private static function purgeOldRuns(): void
+    {
+        foreach (self::disk()->directories('security-feed') as $dir) {
+            if (self::disk()->lastModified($dir) < now()->subDay()->getTimestamp()) {
+                self::disk()->deleteDirectory($dir);
+            }
         }
     }
 
