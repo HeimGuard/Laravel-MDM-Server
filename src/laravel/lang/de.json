@@ -999,5 +999,20 @@
     "Export inventory (JSON)": "Inventar exportieren (JSON)",
     "The open findings as a Markdown report": "Die offenen Funde als Markdown-Bericht",
     "The security inventory and the findings of this device as JSON, for an AI to analyse": "Das Sicherheitsinventar und die Funde dieses Geräts als JSON, zur Analyse durch eine KI",
-    "The findings of the filters as a Markdown report": "Die Funde der Filter als Markdown-Bericht"
+    "The findings of the filters as a Markdown report": "Die Funde der Filter als Markdown-Bericht",
+    "Sign-in": "Anmeldung",
+    "Account deleted": "Konto gelöscht",
+    "Account disabled": "Konto deaktiviert",
+    "Password reset by someone else": "Passwort von jemand anderem zurückgesetzt",
+    "Password changed": "Passwort geändert",
+    "Removed from administrators": "Aus den Administratoren entfernt",
+    "Failed su": "Fehlgeschlagenes su",
+    "System started": "System gestartet",
+    "Unexpected shutdown": "Unerwartetes Herunterfahren",
+    "Period": "Zeitraum",
+    "Last 24 hours": "Letzte 24 Stunden",
+    "Last 7 days": "Letzte 7 Tage",
+    "All (:days days)": "Alle (:days Tage)",
+    "Search user, source or detail": "Benutzer, Quelle oder Detail suchen",
+    "Show more": "Mehr anzeigen"
 }

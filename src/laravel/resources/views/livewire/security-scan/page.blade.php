@@ -63,6 +63,18 @@
                         <option value="{{ $value }}">{{ $label }}</option>
                     @endforeach
                 </select>
+                <select class="form-select form-select-sm w-auto" wire:model.live="eventDevice" aria-label="{{ __('Device') }}">
+                    <option value="">{{ __('All devices') }}</option>
+                    @foreach ($eventDevices as $id => $name)
+                        <option value="{{ $id }}">{{ $name }}</option>
+                    @endforeach
+                </select>
+                <select class="form-select form-select-sm w-auto" wire:model.live="eventDays" aria-label="{{ __('Period') }}">
+                    <option value="1">{{ __('Last 24 hours') }}</option>
+                    <option value="7">{{ __('Last 7 days') }}</option>
+                    <option value="0">{{ __('All (:days days)', ['days' => SecurityEvent::RETENTION_DAYS]) }}</option>
+                </select>
+                <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" type="search" wire:model.live.debounce.300ms="eventSearch" style="max-width: 20rem">
                 <span class="small text-muted align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
             </div>
             <div class="card overflow-hidden">
@@ -84,7 +96,7 @@
                                 <tr wire:key="security-event-{{ $event->id }}">
                                     <td class="ps-3 small text-nowrap text-body-secondary" title="{{ $event->occurred_at }}">{{ $event->occurred_at->diffForHumans() }}</td>
                                     <td class="small"><a href="{{ route('devices', ['selectedDeviceId' => $event->device_id, 'tab' => 'security']) }}">{{ $event->device?->displayName }}</a></td>
-                                    <td class="small fw-medium text-nowrap">{{ $event->label }}</td>
+                                    <td class="small fw-medium text-nowrap"><span class="badge text-bg-{{ SecurityEvent::TONES[$event->type] ?? 'secondary' }} fw-medium">{{ $event->label }}</span></td>
                                     <td class="small text-end">{{ $event->count }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->user ?? '—' }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->source ?? '—' }}</td>
@@ -97,6 +109,9 @@
                     </table>
                 </div>
             </div>
+            @if ($moreEvents)
+                <div class="text-center mt-3"><button type="button" class="btn btn-sm btn-light" wire:click="showMoreEvents">{{ __('Show more') }}</button></div>
+            @endif
         @elseif ($tab === 'rules')
             <div class="card overflow-hidden">
                 <div class="table-responsive">

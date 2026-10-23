@@ -110,6 +110,16 @@ class SecurityRules
         'malware_detected' => 'Malware detected',
         'protection_disabled' => 'Protection turned off',
         'sudo_failed' => 'Failed sudo',
+        'logon' => 'Sign-in',
+        'account_deleted' => 'Account deleted',
+        'account_disabled' => 'Account disabled',
+        'password_reset' => 'Password reset by someone else',
+        'password_changed' => 'Password changed',
+        'admin_removed' => 'Removed from administrators',
+        'su_failed' => 'Failed su',
+        'sudo_auth_failure' => 'Failed sudo',
+        'system_start' => 'System started',
+        'unexpected_shutdown' => 'Unexpected shutdown',
     ];
 
     public const OPERATORS = [

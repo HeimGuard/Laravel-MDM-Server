@@ -23,6 +23,16 @@ class SecurityEvent extends Model
     /** At most this many (grouped) events are taken from one collection. */
     public const MAX_PER_COLLECTION = 500;
 
+    /** The colour (Bootstrap) of an event type's badge: red for attacks, orange for changes of accounts, grey for the rest. */
+    public const TONES = [
+        'failed_logon' => 'warning', 'sudo_failed' => 'warning', 'sudo_auth_failure' => 'warning', 'su_failed' => 'warning',
+        'account_locked' => 'warning', 'unexpected_shutdown' => 'warning',
+        'log_cleared' => 'danger', 'malware_detected' => 'danger', 'protection_disabled' => 'danger', 'admin_added' => 'danger',
+        'account_created' => 'info', 'account_deleted' => 'info', 'account_disabled' => 'info', 'admin_removed' => 'info',
+        'password_reset' => 'info', 'password_changed' => 'info', 'service_installed' => 'info', 'task_created' => 'info',
+        'logon' => 'success',
+    ];
+
     protected $fillable = ['device_id', 'type', 'count', 'user', 'source', 'message', 'occurred_at'];
 
     protected $casts = [
