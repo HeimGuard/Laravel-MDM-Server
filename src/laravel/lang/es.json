@@ -992,7 +992,7 @@
     "The remediation script \":name\" was written, a system admin reviews and runs it.": "Se creó el script de remediación «:name», un administrador del sistema lo revisa y ejecuta.",
     "Export Markdown": "Exportar a Markdown",
     "Export inventory (JSON)": "Exportar inventario (JSON)",
-    "The findings shown as a Markdown report": "Los hallazgos mostrados como informe Markdown",
     "The open findings as a Markdown report": "Los hallazgos abiertos como informe Markdown",
-    "The security inventory and the findings of this device as JSON, for an AI to analyse": "El inventario de seguridad y los hallazgos de este dispositivo en JSON, para analizar con una IA"
+    "The security inventory and the findings of this device as JSON, for an AI to analyse": "El inventario de seguridad y los hallazgos de este dispositivo en JSON, para analizar con una IA",
+    "The findings of the filters as a Markdown report": "Los hallazgos de los filtros como informe Markdown"
 }

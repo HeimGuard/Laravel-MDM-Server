@@ -992,7 +992,7 @@
     "The remediation script \":name\" was written, a system admin reviews and runs it.": "Remediační skript „:name“ byl vytvořen, zkontroluje a spustí ho system admin.",
     "Export Markdown": "Export do Markdownu",
     "Export inventory (JSON)": "Export inventáře (JSON)",
-    "The findings shown as a Markdown report": "Zobrazené nálezy jako Markdown report",
     "The open findings as a Markdown report": "Otevřené nálezy jako Markdown report",
-    "The security inventory and the findings of this device as JSON, for an AI to analyse": "Bezpečnostní inventář a nálezy tohoto zařízení v JSONu pro analýzu pomocí AI"
+    "The security inventory and the findings of this device as JSON, for an AI to analyse": "Bezpečnostní inventář a nálezy tohoto zařízení v JSONu pro analýzu pomocí AI",
+    "The findings of the filters as a Markdown report": "Nálezy podle filtrů jako Markdown report"
 }

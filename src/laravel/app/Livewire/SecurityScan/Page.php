@@ -75,10 +75,10 @@ class Page extends Component
         }
     }
 
-    /** The findings the page shows (the filters apply) as a Markdown report. */
+    /** All the findings of the filters (not only the first LIMIT the page shows) as a Markdown report. */
     public function exportMarkdown()
     {
-        $findings = $this->findings()->bySeverity()->limit(self::LIMIT)->get();
+        $findings = $this->findings()->bySeverity()->get();
 
         return response()->streamDownload(
             fn () => print SecurityExport::markdown($findings),
