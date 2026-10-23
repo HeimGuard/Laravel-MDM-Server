@@ -499,11 +499,22 @@ class ScriptTest extends TestCase
             'message' => "Firewall\nis off", 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
 
-        $markdown = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportMarkdown')->effects['download'] ?? null;
-        $this->assertNotNull($markdown);
-        $this->assertStringEndsWith('.md', $markdown['name']);
-        $this->assertStringContainsString('## [High] ', base64_decode($markdown['content']));
-        $this->assertStringContainsString('Firewall is off', base64_decode($markdown['content']));
+        // The report is a plain download (not an answer of Livewire): of a device, or of the filters of the page.
+        $response = $this->get(route('security.export', ['device' => $device->id, 'status' => 'unresolved']))->assertOk()->assertDownload();
+        $this->assertStringEndsWith('.md', $response->headers->get('Content-Disposition'));
+        $content = $response->streamedContent();
+        $this->assertStringContainsString('## [High] ', $content);
+        $this->assertStringContainsString('Firewall is off', $content);
+        $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export'))->streamedContent());
+        $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['severity' => 'critical']))->streamedContent());
+        $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export', ['search' => 'Firewall']))->streamedContent());
+        $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['search' => 'nothing like it']))->streamedContent());
+        $this->get(route('security.export', ['status' => 'bogus']))->assertSessionHasErrors('status');
+        $this->get(route('security.export', ['device' => 999999]))->assertSessionHasErrors('device');
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertSee('Export Markdown')->assertSee(route('security.export', ['device' => $device->id, 'status' => 'unresolved']));
+        \Illuminate\Support\Facades\Auth::logout();
+        $this->get(route('security.export'))->assertRedirect();
+        $this->actingAs($this->admin());
 
         $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
         $this->assertNotNull($json);
