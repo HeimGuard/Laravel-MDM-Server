@@ -70,6 +70,13 @@ class SecurityRules
             'fields' => ['Name', 'Source', 'Enabled'],
             'key' => ['Name'],
         ],
+        'os' => [
+            'label' => 'Operating system',
+            // Agents 1.27.0+: Id windows or the ID of /etc/os-release (ubuntu), Name the caption (PRETTY_NAME), Version the build of
+            // Windows with its revision (10.0.19045.5555) or VERSION_ID (26.04), Kernel on Linux. One item.
+            'fields' => ['Name', 'Version', 'Id', 'Kernel'],
+            'key' => ['Id'],
+        ],
         'posture' => [
             'label' => 'Security settings',
             'fields' => [

@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.26.0'
+$AgentVersion = '1.27.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1339,6 +1339,35 @@ function Get-SecurityStartup {
     }
 }
 
+function Get-SecurityOs {
+    # The operating system: its Id ('windows', or the ID of /etc/os-release: ubuntu, debian, ...), its Name (the caption,
+    # PRETTY_NAME), its Version (Windows: the build with the revision, 10.0.19045.5555, which is what the cumulative
+    # updates of Microsoft change and the rules of their security updates compare; Linux: VERSION_ID, 26.04) and on Linux
+    # its Kernel. One item, none when the system does not tell what it is.
+    param ([bool]$OnLinux)
+
+    if ($OnLinux) {
+        $osRelease = @{}
+        foreach ($line in @(Get-Content -Path /etc/os-release -ErrorAction SilentlyContinue)) {
+            if ($line -match '^(\w+)=(.*)$') { $osRelease[$Matches[1]] = $Matches[2].Trim('"') }
+        }
+        if (-not $osRelease['ID']) { return }
+        [PSCustomObject]@{
+            Id      = ConvertTo-SecurityText $osRelease['ID'] 100
+            Name    = ConvertTo-SecurityText $osRelease['PRETTY_NAME'] 300
+            Version = ConvertTo-SecurityText $osRelease['VERSION_ID'] 100
+            Kernel  = ConvertTo-SecurityText "$(uname -r 2>$null)" 100
+        }
+        return
+    }
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem -Property Caption, Version -ErrorAction Stop
+    $revision = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name UBR -ErrorAction Stop).UBR
+    # The revision is missing on very old systems: the build alone would say less than it seems to.
+    if ("$($os.Version)" -match '^\d+\.\d+\.\d+$' -and "$revision" -match '^\d+$') {
+        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null }
+    }
+}
+
 function Get-SecurityAdmins {
     param ([bool]$OnLinux)
 
@@ -1685,6 +1714,7 @@ function Get-SecurityInventory {
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
     try { $inventory['startup'] = @(Get-SecurityStartup -OnLinux $OnLinux | Select-Object -First 500) } catch { }
     try { $inventory['admins'] = @(Get-SecurityAdmins -OnLinux $OnLinux | Select-Object -First 200) } catch { }
+    try { $inventory['os'] = @(Get-SecurityOs -OnLinux $OnLinux | Select-Object -First 1) } catch { }
     try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer } catch { }
     $records = @()
     $moved = @{}
@@ -3643,7 +3673,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson
@@ -3702,6 +3732,7 @@ $SecurityFields = @{
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
     admins    = @('Name', 'Source', 'Enabled')
+    os        = @('Name', 'Version', 'Id', 'Kernel')
     posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate')
 }
 $SecurityKeyFields = @{
@@ -3710,6 +3741,7 @@ $SecurityKeyFields = @{
     listening = @('Protocol', 'Address', 'Port')
     startup   = @('Name', 'Location')
     admins    = @('Name')
+    os        = @('Id')
 }
 
 function ConvertTo-SecurityCanon ($Value) {
@@ -3781,7 +3813,7 @@ function Get-SecurityDeltas {
 
     $sources = New-Object System.Collections.Generic.List[object]
     $pending = @{}
-    foreach ($source in 'software', 'processes', 'listening', 'startup', 'admins', 'posture') {
+    foreach ($source in 'software', 'processes', 'listening', 'startup', 'admins', 'os', 'posture') {
         if (-not $Inventory.ContainsKey($source)) { continue }
         $items = if ($source -eq 'posture') { @($Inventory[$source]) } else { @($Inventory[$source]) }
         $rows = @{}

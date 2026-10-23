@@ -131,6 +131,30 @@ class SecurityScannerTest extends TestCase
         return SecurityFinding::query()->open()->where('device_id', $device->id)->with('rule')->get()->map(fn ($finding) => $finding->rule->key)->sort()->values()->all();
     }
 
+    public function test_the_operating_system_is_a_source_of_one_item_the_agent_hashes_alike(): void
+    {
+        $windows = ['Name' => 'Microsoft Windows 10 Pro', 'Version' => '10.0.19045.5555', 'Id' => 'windows', 'Kernel' => null];
+        $linux = ['Name' => 'Ubuntu 26.04 LTS', 'Version' => '26.04', 'Id' => 'ubuntu', 'Kernel' => '7.0.0-34-generic'];
+
+        // The key and hash Get-SecurityItemKey and Get-SecurityItemHash of the agent (1.27.0) compute for these items.
+        $this->assertSame('340d600392818df2', SecurityInventory::itemKey('os', $windows));
+        $this->assertSame('be488e8d2c00ae23', SecurityInventory::itemHash('os', $windows));
+        $this->assertSame('7804a56a5c7636cc', SecurityInventory::itemKey('os', $linux));
+        $this->assertSame('efcc2cff8e5cacbb', SecurityInventory::itemHash('os', $linux));
+        $this->assertSame(1, SecurityInventory::LIMITS['os']);
+        $this->assertSame('10.0.19045.5555', SecurityInventory::sanitizeItem('os', $windows + ['Extra' => 'x'])['Version']);
+
+        $rule = ['key' => 'os.windows-test', 'name' => 'Windows build', 'source' => 'os', 'severity' => 'high', 'message' => 'Missing update.', 'when' => ['all' => [
+            ['field' => 'Id', 'op' => 'eq', 'value' => 'windows'],
+            ['field' => 'Version', 'op' => 'starts_with', 'value' => '10.0.19045.'],
+            ['field' => 'Version', 'op' => 'version_lt', 'value' => '10.0.19045.6000'],
+        ]]];
+        $this->assertSame([], SecurityRules::errors($rule));
+        $this->assertTrue(SecurityRules::test($rule['when'], $windows));
+        $this->assertFalse(SecurityRules::test($rule['when'], ['Id' => 'windows', 'Version' => '10.0.26100.1'] + $windows));
+        $this->assertFalse(SecurityRules::test($rule['when'], $linux));
+    }
+
     public function test_the_built_in_rules_are_valid(): void
     {
         $rules = json_decode(file_get_contents(resource_path('security/rules.json')), true);

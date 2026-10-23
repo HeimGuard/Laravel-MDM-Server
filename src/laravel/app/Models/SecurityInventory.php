@@ -19,10 +19,10 @@ use Throwable;
 class SecurityInventory extends Model
 {
     /** The sources an inventory has (events are not part of it). */
-    public const SOURCES = ['software', 'processes', 'listening', 'startup', 'admins', 'posture'];
+    public const SOURCES = ['software', 'processes', 'listening', 'startup', 'admins', 'os', 'posture'];
 
     /** At most this many items per list are kept. */
-    public const LIMITS = ['software' => 5000, 'processes' => 1000, 'listening' => 1000, 'startup' => 500, 'admins' => 200, 'posture' => 1];
+    public const LIMITS = ['software' => 5000, 'processes' => 1000, 'listening' => 1000, 'startup' => 500, 'admins' => 200, 'os' => 1, 'posture' => 1];
 
     /** The key of the one item of the posture source. */
     public const POSTURE_KEY = 'posture';
