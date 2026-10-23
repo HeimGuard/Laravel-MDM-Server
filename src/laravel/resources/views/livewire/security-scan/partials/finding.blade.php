@@ -47,8 +47,11 @@
     <div class="d-flex flex-column gap-2 align-items-stretch">
         @if (\App\Support\ScriptGenerator::available() && ! $finding->rule?->isEvent)
             <button class="btn btn-sm btn-outline-primary text-nowrap text-start" type="button" wire:click="remediateWithAi({{ $finding->id }})" wire:loading.attr="disabled" wire:target="remediateWithAi({{ $finding->id }})" title="{{ __('The AI writes a remediation script for you to review') }}">
-                <span wire:loading.remove wire:target="remediateWithAi({{ $finding->id }})"><i class="fas fa-magic me-1"></i>{{ __('Remediate with AI') }}</span>
-                <span wire:loading wire:target="remediateWithAi({{ $finding->id }})"><span class="spinner-border spinner-border-sm me-1"></span>{{ __('Writing…') }}</span>
+                {{-- Both labels share one cell, so the button (and the Acknowledge button stretched to it) keeps its width while it writes. --}}
+                <span class="d-grid">
+                    <span style="grid-area: 1 / 1" wire:loading.class="invisible" wire:target="remediateWithAi({{ $finding->id }})"><i class="fas fa-magic me-1"></i>{{ __('Remediate with AI') }}</span>
+                    <span class="invisible" style="grid-area: 1 / 1" wire:loading.class.remove="invisible" wire:target="remediateWithAi({{ $finding->id }})"><span class="spinner-border spinner-border-sm me-1"></span>{{ __('Writing…') }}</span>
+                </span>
             </button>
         @endif
         <button class="btn btn-sm btn-light text-nowrap" type="button" wire:click="acknowledge({{ $finding->id }})" title="{{ $finding->rule?->isEvent ? __('Done with it') : __('Known, stays quiet until it is gone') }}">

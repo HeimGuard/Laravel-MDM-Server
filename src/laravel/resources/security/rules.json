@@ -196,11 +196,14 @@
     {
         "key": "process.temp-folder-linux",
         "name": "Program runs from a temporary folder",
-        "description": "Programs started from /tmp, /var/tmp or /dev/shm are a classic sign of a compromised server.",
+        "description": "Programs started from /tmp, /var/tmp or /dev/shm are a classic sign of a compromised server. An AppImage mounted by its own runtime (/tmp/.mount_<name>) is left out.",
         "severity": "high",
         "platform": "linux",
         "source": "processes",
-        "when": {"field": "Path", "op": "matches", "value": "^/(tmp|var/tmp|dev/shm)/"},
+        "when": {"all": [
+            {"field": "Path", "op": "matches", "value": "^/(tmp|var/tmp|dev/shm)/"},
+            {"field": "Path", "op": "not_matches", "value": "^/tmp/\\.mount_[A-Za-z0-9]{6,12}/"}
+        ]},
         "message": "{Name} runs from {Path} as {User}"
     },
     {

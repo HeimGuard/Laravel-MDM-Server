@@ -197,6 +197,46 @@ class SecurityScannerTest extends TestCase
         $this->assertNotEmpty(SecurityRules::errors(['when' => $deep] + $valid));
     }
 
+    public function test_versions_compare_by_their_numbers_and_packages_like_dpkg(): void
+    {
+        $test = fn (string $op, string $actual, string $expected) => SecurityRules::test(['field' => 'Version', 'op' => $op, 'value' => $expected], ['Version' => $actual]);
+
+        // A missing part is 0: "8.5" is "8.5.0", so a bound "from 8.5.0" takes it in.
+        $this->assertTrue($test('version_gte', '8.5', '8.5.0'));
+        $this->assertTrue($test('version_lte', '8.5.0', '8.5'));
+        $this->assertFalse($test('version_lt', '8.5', '8.5.0'));
+        $this->assertTrue($test('version_lt', '7.1.2.18', '7.1.2.31'));
+        // Only the leading numbers count: "7.1.2-31" is "7.1.2", rules write it "7.1.2.31".
+        $this->assertFalse($test('version_lt', '7.1.2.18', '7.1.2-31'));
+
+        // The order of dpkg: the revision counts, "~" sorts before everything, the epoch first.
+        $this->assertTrue($test('dpkg_gte', '8.2512.0-1ubuntu4.2', '8.2512.0-1ubuntu4.1'));
+        $this->assertFalse($test('dpkg_lt', '8.2512.0-1ubuntu4.2', '8.2512.0-1ubuntu4.1'));
+        $this->assertTrue($test('dpkg_lt', '8.2512.0-1ubuntu4.1', '8.2512.0-1ubuntu4.2'));
+        $this->assertTrue($test('dpkg_lt', '2.7.4-1ubuntu0.2', '2.7.4-1ubuntu0.10'));
+        $this->assertTrue($test('dpkg_lt', '1.0~rc1-1', '1.0-1'));
+        $this->assertTrue($test('dpkg_gt', '1:0.9-1', '2.0-1'));
+        $this->assertTrue($test('dpkg_lte', '1.0-1', '1.0-1'));
+        $this->assertTrue($test('dpkg_lt', '1.0', '1.0-1'));
+        $this->assertFalse($test('dpkg_gte', '', '1.0'));
+        $this->assertFalse(SecurityRules::test(['field' => 'Missing', 'op' => 'dpkg_gte', 'value' => '1.0'], ['Version' => '2.0']));
+        $this->assertSame([], SecurityRules::errors(['key' => 'custom.x', 'name' => 'X', 'severity' => 'low', 'source' => 'software',
+            'when' => ['field' => 'Version', 'op' => 'dpkg_lt', 'value' => '1.0-1']]));
+    }
+
+    public function test_an_appimage_mounted_by_its_runtime_is_not_a_program_from_a_temporary_folder(): void
+    {
+        $rule = collect(json_decode(file_get_contents(resource_path('security/rules.json')), true))
+            ->firstWhere('key', 'process.temp-folder-linux');
+        $this->assertSame([], SecurityRules::errors($rule));
+        $runs = fn (string $path) => SecurityRules::test($rule['when'], ['Name' => 'x', 'Path' => $path]);
+
+        $this->assertTrue($runs('/tmp/payload'));
+        $this->assertTrue($runs('/dev/shm/.x/miner'));
+        $this->assertFalse($runs('/tmp/.mount_KeePasCahnmm/usr/bin/keepassxc'));
+        $this->assertFalse($runs('/usr/bin/bash'));
+    }
+
     public function test_parsers_turn_raw_logs_into_events(): void
     {
         SecurityRule::syncBuiltIn();
