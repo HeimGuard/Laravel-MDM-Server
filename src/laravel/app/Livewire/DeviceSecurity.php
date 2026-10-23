@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
+use App\Support\SecurityExport;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -25,6 +26,32 @@ class DeviceSecurity extends Component
     public function reopen(int $id): void
     {
         $this->finding($id)?->reopen();
+    }
+
+    /** The open findings of the device as a Markdown report. */
+    public function exportMarkdown()
+    {
+        $device = Device::findOrFail($this->deviceId);
+        $findings = $device->securityFindings()->with(['rule', 'device', 'acknowledger'])->open()->bySeverity()->get();
+
+        return response()->streamDownload(
+            fn () => print SecurityExport::markdown($findings, 'Security findings of '.$device->displayName),
+            'security-findings-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.md',
+            ['Content-Type' => 'text/markdown; charset=UTF-8'],
+        );
+    }
+
+    /** The security inventory of the device (software, ports, settings, ...) and its findings as JSON for an AI to analyse. */
+    public function exportInventory()
+    {
+        $device = Device::findOrFail($this->deviceId);
+        $data = SecurityExport::inventory($device, SecurityInventory::query()->where('device_id', $device->id)->first());
+
+        return response()->streamDownload(
+            fn () => print json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+            'security-inventory-'.str($device->displayName)->slug().'-'.now()->format('Y-m-d').'.json',
+            ['Content-Type' => 'application/json; charset=UTF-8'],
+        );
     }
 
     protected function findingForRemediation(int $id): SecurityFinding

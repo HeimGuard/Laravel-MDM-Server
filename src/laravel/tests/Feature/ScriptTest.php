@@ -398,4 +398,28 @@ class ScriptTest extends TestCase
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
         $this->assertSame(2, Script::query()->where('name', 'Firewall on')->count());
     }
+
+    public function test_findings_and_the_inventory_are_exported(): void
+    {
+        $this->actingAs($this->admin());
+        \App\Models\SecurityRule::syncBuiltIn();
+        $rule = \App\Models\SecurityRule::query()->detection()->first();
+        $device = $this->device();
+        \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export', 'severity' => 'high',
+            'message' => "Firewall\nis off", 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+
+        $markdown = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportMarkdown')->effects['download'] ?? null;
+        $this->assertNotNull($markdown);
+        $this->assertStringEndsWith('.md', $markdown['name']);
+        $this->assertStringContainsString('## [High] ', base64_decode($markdown['content']));
+        $this->assertStringContainsString('Firewall is off', base64_decode($markdown['content']));
+
+        $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
+        $this->assertNotNull($json);
+        $data = json_decode(base64_decode($json['content']), true);
+        $this->assertSame('Firewall\nis off', $data['findings'][0]['message']);
+        $this->assertArrayHasKey('inventory', $data);
+    }
 }

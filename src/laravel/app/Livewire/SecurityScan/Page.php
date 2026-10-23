@@ -9,6 +9,7 @@ use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
 use App\Support\SecurityFeed;
+use App\Support\SecurityExport;
 use App\Support\SecurityInbox;
 use App\Support\SecurityRules;
 use App\Support\SecurityScanner;
@@ -72,6 +73,18 @@ class Page extends Component
         foreach ($this->findings()->whereNull('acknowledged_at')->get() as $finding) {
             $finding->acknowledge(auth()->user());
         }
+    }
+
+    /** The findings the page shows (the filters apply) as a Markdown report. */
+    public function exportMarkdown()
+    {
+        $findings = $this->findings()->bySeverity()->limit(self::LIMIT)->get();
+
+        return response()->streamDownload(
+            fn () => print SecurityExport::markdown($findings),
+            'security-findings-'.now()->format('Y-m-d').'.md',
+            ['Content-Type' => 'text/markdown; charset=UTF-8'],
+        );
     }
 
     public function toggleRule(int $id): void

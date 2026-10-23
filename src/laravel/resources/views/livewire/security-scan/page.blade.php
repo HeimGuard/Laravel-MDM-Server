@@ -237,8 +237,11 @@
                     @endforeach
                 </select>
                 <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" type="search" wire:model.live.debounce.300ms="search" style="max-width: 20rem">
+                @if ($findings->isNotEmpty())
+                    <button class="btn btn-sm btn-light ms-auto" type="button" wire:click="exportMarkdown" title="{{ __('The findings shown as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</button>
+                @endif
                 @if ($status === 'open' && $findings->isNotEmpty())
-                    <button class="btn btn-sm btn-light ms-auto" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
+                    <button class="btn btn-sm btn-light" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
                         <i class="fas fa-check-double me-1"></i>{{ __('Acknowledge shown') }}
                     </button>
                 @endif
