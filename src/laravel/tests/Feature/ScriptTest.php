@@ -390,7 +390,12 @@ class ScriptTest extends TestCase
 
         $script = Script::query()->where('name', 'Firewall on')->sole();
         $this->assertTrue($script->manual_remediation);
-        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off'));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off') && ! str_contains($request['messages'][0]['content'], 'References of the detection'));
+
+        // The links of the detection (advisories, vendor documentation) go along: they name recommended mitigations.
+        $rule->update(['definition' => array_merge($rule->definition, ['urls' => ['https://example.org/advisory', 'https://vendor.example/kb']])]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "References of the detection (advisories, vendor documentation):\n- https://example.org/advisory\n- https://vendor.example/kb"));
 
         // The other open findings of the device go along, so one script fixes them together.
         \App\Models\SecurityFinding::query()->create([
@@ -404,7 +409,7 @@ class ScriptTest extends TestCase
         $this->actingAs(User::factory()->create());
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
-        $this->assertSame(3, Script::query()->where('name', 'Firewall on')->count());
+        $this->assertSame(4, Script::query()->where('name', 'Firewall on')->count());
     }
 
     public function test_findings_and_the_inventory_are_exported(): void

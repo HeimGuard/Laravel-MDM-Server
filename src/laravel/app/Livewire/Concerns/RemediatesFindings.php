@@ -25,7 +25,7 @@ trait RemediatesFindings
      * Writes a script for the finding; any signed-in user may ask for it. A system admin lands on it to
      * review it; for the others it waits in the scripts for one. The script fixes the finding together with the
      * other open findings of the same device (updating php fixes all its packages, not one of them). Only the
-     * rules, the messages and the platform leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
+     * rules (with the links of the detection), the messages and the platform leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
      * admin checks it and starts it per device (the scripts are theirs, they run as SYSTEM / root).
      */
     public function remediateWithAi(int $id)
@@ -36,6 +36,8 @@ trait RemediatesFindings
         $platform = $finding->device?->platform;
         $request = "Remediate this security finding.\nRule: {$rule?->name}\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
             .($rule?->definition['remediation'] ?? null ? "\nHint: {$rule->definition['remediation']}" : '')
+            // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
+            .($rule && $rule->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($rule->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
             .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '');
         $related = $this->relatedFindings($finding);
         if ($related->isNotEmpty()) {

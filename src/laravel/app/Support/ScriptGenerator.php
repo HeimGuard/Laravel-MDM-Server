@@ -42,6 +42,12 @@ class ScriptGenerator
         needs a newer release: say so in the output and exit 0 from the detection, do not leave it failing forever.
         The remediation updates the whole product (all its packages), runs `apt-get update` first and does not
         fail when the index cannot be refreshed (the device may be offline): it then works with what it has.
+        A request may list the references of the detection (advisories, vendor documentation). You cannot open them,
+        so use what you know of the vulnerability or the product: when the vendor recommends a mitigation or
+        workaround that needs no new version (a setting, a disabled feature, a registry value, a configuration
+        line), apply it in the remediation where the update cannot be installed or is not available yet, and name
+        in the description of the script which reference to check. A mitigation never replaces installing an
+        available update.
         TEXT;
 
     private const SCHEMA = [
