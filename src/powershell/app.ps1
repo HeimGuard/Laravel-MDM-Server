@@ -2936,6 +2936,7 @@ function Test-NetworkError {
     param ($ErrorRecord)
 
     $exception = if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) { $ErrorRecord.Exception } else { $ErrorRecord }
+    if ($exception -and $exception.Data['MdmGateway']) { return $true }
     if ($exception -and $null -ne $exception.Data['MdmStatus']) { return $false }
     # By name: Windows PowerShell has no System.Net.Http before the first request loads it (a type
     # literal would throw). An IOException only under one of them (a broken connection), not a
@@ -3078,7 +3079,12 @@ function Invoke-MdmApi {
         $serverTime = Get-ResponseHeader -Response $response -Name 'X-MDM-Timestamp'
         $signed = Test-ServerSignature -Context 'MDM1-RESP' -Message "$device`n$nonce`n$serverTime`n$(Get-Sha256Hex -Bytes $content)" -Signature (Get-ResponseHeader -Response $response -Name 'X-MDM-Signature')
         if (-not $signed) {
-            throw "The response of $Path (HTTP $([int]$response.StatusCode)) is not signed with the pinned server key, it is ignored"
+            $unsigned = New-Object System.Exception("The response of $Path (HTTP $([int]$response.StatusCode)) is not signed with the pinned server key, it is ignored")
+            # A gateway in front of the server that has nothing to forward to (the server restarts: a new version is
+            # deployed and the agents update right after it) answers 502 / 503 / 504 without the signature. That is
+            # the server not being reached, like a refused connection, not an alert of the device.
+            if ([int]$response.StatusCode -in 502, 503, 504) { $unsigned.Data['MdmGateway'] = $true }
+            throw $unsigned
         }
         if ($script:DeviceId -and "$device" -ne "$($script:DeviceId)" -and $response.IsSuccessStatusCode) {
             throw "The response of $Path is signed for device $device, not for this device ($($script:DeviceId))"
