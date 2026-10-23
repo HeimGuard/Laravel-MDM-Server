@@ -2158,10 +2158,16 @@ function Get-PowerShellReleaseUpdate {
 }
 
 function Get-AptUpdates {
-    # Reads the local apt cache only, no network access. "apt list --upgradable" also lists
-    # packages apt will not install now, so a simulated upgrade (as Install updates runs it)
-    # tells which ones are installable, deferred by phasing or held back.
+    # The apt cache is refreshed first (apt-get update), a stale cache is the reason updates were
+    # missed. When the refresh fails this throws, so the caller never reports "0 updates" from an old
+    # cache. "apt list --upgradable" also lists packages apt will not install now, so a simulated
+    # upgrade (as Install updates runs it) tells which ones are installable, deferred by phasing
+    # or held back.
+    $env:DEBIAN_FRONTEND = 'noninteractive'
+    $refresh = @(apt-get -o DPkg::Lock::Timeout=600 -q update 2>&1 | ForEach-Object { "$_" })
+    if ($LASTEXITCODE) { throw "apt-get update failed (exit $LASTEXITCODE): $((@($refresh) | Select-Object -Last 2) -join ' | ')" }
     $simulation = @(apt-get -s -q -o Debug::NoLocking=1 --with-new-pkgs upgrade 2>$null)
+    if ($LASTEXITCODE) { throw "apt-get -s upgrade failed (exit $LASTEXITCODE)" }
     $installable = @{}
     $phased = @{}
     $section = $null
@@ -3417,7 +3423,7 @@ function Start-InventoryCollection {
         try { $data['module_updates'] = @(Invoke-PowerShellModules -OnLinux $OnLinux | Where-Object { $_.Version }) } catch { }
         $packages = @()
         if ($OnLinux) {
-            try { $data['os_updates'] = @(Get-AptUpdates) } catch { }
+            try { $data['os_updates'] = @(Get-AptUpdates) } catch { $data['os_updates_error'] = $_.Exception.Message }
             try { $packages += @(Get-FlatpakUpdates) } catch { }
             try { $packages += @(Get-SnapUpdates) } catch { }
         } else {
@@ -3757,7 +3763,9 @@ function Get-Report {
         try { $data['neighbours'] = @(Get-Neighbours) } catch { Write-AgentLog "Neighbours failed: $($_.Exception.Message)" -ErrorRecord $_ }
     }
     if ($Inventory) {
-        $data['os_updates'] = $Inventory.os_updates
+        # Not sent when the check failed: a failed check is not "0 updates".
+        if ($null -ne $Inventory.os_updates) { $data['os_updates'] = $Inventory.os_updates }
+        if ($Inventory.os_updates_error) { $data['os_updates_error'] = $Inventory.os_updates_error }
         $data['packages_updates'] = $Inventory.packages_updates
         $data['module_updates'] = $Inventory.module_updates
     }
@@ -6213,6 +6221,7 @@ function Start-Agent {
             if ($inventoryJob -and $inventoryJob.State -ne 'Running') {
                 if ($inventoryJob.State -eq 'Completed') {
                     $data = Receive-Job -Job $inventoryJob
+                    if ($data.os_updates_error) { Write-AgentLog "OS update check failed: $($data.os_updates_error)" }
                     Write-AgentLog ('Inventory collected: {0} OS, {1} application, {2} module update(s)' -f @($data.os_updates).Count, @($data.packages_updates).Count, @($data.module_updates).Count)
                     Save-CachedInventory -Data $data
                     $inventory = @{ CollectedAt = Get-Date; Data = $data }
