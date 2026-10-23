@@ -332,15 +332,7 @@ class SecurityRules
             'gte' => is_numeric($actual) && (float) $actual >= (float) $expected,
             'lt' => is_numeric($actual) && (float) $actual < (float) $expected,
             'lte' => is_numeric($actual) && (float) $actual <= (float) $expected,
-            'version_lt' => self::compareVersions($actual, $expected, '<'),
-            'version_lte' => self::compareVersions($actual, $expected, '<='),
-            'version_gt' => self::compareVersions($actual, $expected, '>'),
-            'version_gte' => self::compareVersions($actual, $expected, '>='),
-            'dpkg_lt' => self::compareDpkg($actual, $expected, '<'),
-            'dpkg_lte' => self::compareDpkg($actual, $expected, '<='),
-            'dpkg_gt' => self::compareDpkg($actual, $expected, '>'),
-            'dpkg_gte' => self::compareDpkg($actual, $expected, '>='),
-            default => false,
+            default => self::compareOrdered($condition['op'], $actual, $expected),
         };
     }
 
@@ -460,44 +452,47 @@ class SecurityRules
         return false;
     }
 
+    /** version_lt .. version_gte and dpkg_lt .. dpkg_gte: the order of the two versions, read the way the prefix says. */
+    private static function compareOrdered(string $op, mixed $actual, mixed $expected): bool
+    {
+        if (! preg_match('/^(version|dpkg)_(lt|lte|gt|gte)$/', $op, $m)) {
+            return false;
+        }
+        $order = $m[1] === 'version' ? self::versionOrder($actual, $expected) : self::dpkgOrder($actual, $expected);
+
+        return $order !== null && match ($m[2]) {
+            'lt' => $order < 0,
+            'lte' => $order <= 0,
+            'gt' => $order > 0,
+            'gte' => $order >= 0,
+        };
+    }
+
     /**
      * Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045"): only the leading numbers count,
      * a missing part is 0 ("8.5" is "8.5.0"), so "7.1.2-31" is "7.1.2" - write such a bound as "7.1.2.31".
      */
-    private static function compareVersions(mixed $actual, mixed $expected, string $operator): bool
+    private static function versionOrder(mixed $actual, mixed $expected): ?int
     {
         $a = self::version($actual);
         $b = self::version($expected);
 
-        return $a !== null && $b !== null && self::fulfils(self::compareNumbers(explode('.', $a), explode('.', $b)), $operator);
+        return $a === null || $b === null ? null : self::compareNumbers(explode('.', $a), explode('.', $b));
     }
 
     /**
      * Debian package versions ("[epoch:]upstream[-revision]") in the order of dpkg, so "8.2512.0-1ubuntu4.2" is
      * after "8.2512.0-1ubuntu4.1" and "1.0~rc1" before "1.0".
      */
-    private static function compareDpkg(mixed $actual, mixed $expected, string $operator): bool
+    private static function dpkgOrder(mixed $actual, mixed $expected): ?int
     {
         if (! is_scalar($actual) || ! is_scalar($expected) || trim((string) $actual) === '' || trim((string) $expected) === '') {
-            return false;
+            return null;
         }
         [$epochA, $upstreamA, $revisionA] = self::dpkgParts(trim((string) $actual));
         [$epochB, $upstreamB, $revisionB] = self::dpkgParts(trim((string) $expected));
 
-        return self::fulfils(
-            self::compareNumbers([$epochA], [$epochB]) ?: self::dpkgCompareString($upstreamA, $upstreamB) ?: self::dpkgCompareString($revisionA, $revisionB),
-            $operator,
-        );
-    }
-
-    private static function fulfils(int $order, string $operator): bool
-    {
-        return match ($operator) {
-            '<' => $order < 0,
-            '<=' => $order <= 0,
-            '>' => $order > 0,
-            default => $order >= 0,
-        };
+        return self::compareNumbers([$epochA], [$epochB]) ?: self::dpkgCompareString($upstreamA, $upstreamB) ?: self::dpkgCompareString($revisionA, $revisionB);
     }
 
     /** @param  array<int, string>  $a @param  array<int, string>  $b */
