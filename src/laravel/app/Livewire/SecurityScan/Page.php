@@ -4,6 +4,7 @@ namespace App\Livewire\SecurityScan;
 
 use App\Jobs\SyncSecurityFeed;
 use App\Livewire\Concerns\RemediatesFindings;
+use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
@@ -43,8 +44,36 @@ class Page extends Component
     #[Url(except: '')]
     public string $eventType = '';
 
+    #[Url(except: '')]
+    public string $eventDevice = '';
+
+    #[Url(except: '')]
+    public string $eventSearch = '';
+
+    /** Days back the events reach (0: all that are kept). */
+    #[Url(except: 7)]
+    public int $eventDays = 7;
+
     /** Findings and events shown at most. */
     public const LIMIT = 200;
+
+    /** Events shown at most; "Show more" raises it by this much. */
+    public const EVENT_PAGE = 100;
+
+    public int $eventLimit = self::EVENT_PAGE;
+
+    public function showMoreEvents(): void
+    {
+        $this->eventLimit += self::EVENT_PAGE;
+    }
+
+    /** A new filter starts from the first page again. */
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['eventType', 'eventDevice', 'eventDays', 'eventSearch'], true)) {
+            $this->eventLimit = self::EVENT_PAGE;
+        }
+    }
 
     public function mount(): void
     {
@@ -149,13 +178,23 @@ class Page extends Component
         if ($this->tab === 'events') {
             $events = SecurityEvent::query()->with('device')->latest('occurred_at')->latest('id')
                 ->when($this->eventType !== '', fn ($q) => $q->where('type', $this->eventType))
-                ->limit(self::LIMIT)->get();
+                ->when($this->eventDevice !== '', fn ($q) => $q->where('device_id', (int) $this->eventDevice))
+                ->when($this->eventDays > 0, fn ($q) => $q->where('occurred_at', '>=', now()->subDays($this->eventDays)))
+                ->when(trim($this->eventSearch) !== '', function ($q) {
+                    $like = '%'.addcslashes(trim($this->eventSearch), '%_\\').'%';
+                    $q->where(fn ($q) => $q->where('user', 'like', $like)->orWhere('source', 'like', $like)->orWhere('message', 'like', $like));
+                })
+                ->limit($this->eventLimit + 1)->get();
+            $moreEvents = $events->count() > $this->eventLimit;
+            $events = $events->take($this->eventLimit);
         }
 
         return view('livewire.security-scan.page', [
             'counts' => collect(SecurityRules::SEVERITIES)->map(fn ($rank, $severity) => (int) ($active[$severity] ?? 0)),
             'findings' => $this->tab === 'findings' ? $this->findings()->bySeverity()->limit(self::LIMIT)->get() : collect(),
             'events' => $events,
+            'moreEvents' => $moreEvents ?? false,
+            'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->select('device_id')->distinct())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
             'rules' => $this->tab === 'rules' ? SecurityRule::query()->detection()->addSelect(['open_count' => SecurityFinding::query()->active()->selectRaw('count(distinct coalesce(device_id, target_ip))')->whereColumn('security_rule_id', 'security_rules.id')])->orderBy('source')->orderBy('name')->get() : collect(),
             'parsers' => $this->tab === 'rules' ? SecurityRule::query()->parsers()->orderBy('source')->orderBy('name')->get() : collect(),
             'eventTypes' => $this->tab === 'events' ? SecurityEvent::query()->distinct()->orderBy('type')->pluck('type')->mapWithKeys(fn ($type) => [$type => (new SecurityEvent(['type' => $type]))->label]) : collect(),

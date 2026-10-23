@@ -999,5 +999,20 @@
     "Export inventory (JSON)": "Export inventáře (JSON)",
     "The open findings as a Markdown report": "Otevřené nálezy jako Markdown report",
     "The security inventory and the findings of this device as JSON, for an AI to analyse": "Bezpečnostní inventář a nálezy tohoto zařízení v JSONu pro analýzu pomocí AI",
-    "The findings of the filters as a Markdown report": "Nálezy podle filtrů jako Markdown report"
+    "The findings of the filters as a Markdown report": "Nálezy podle filtrů jako Markdown report",
+    "Sign-in": "Přihlášení",
+    "Account deleted": "Účet smazán",
+    "Account disabled": "Účet zakázán",
+    "Password reset by someone else": "Heslo resetováno někým jiným",
+    "Password changed": "Heslo změněno",
+    "Removed from administrators": "Odebrán z administrátorů",
+    "Failed su": "Neúspěšné su",
+    "System started": "Systém spuštěn",
+    "Unexpected shutdown": "Neočekávané vypnutí",
+    "Period": "Období",
+    "Last 24 hours": "Posledních 24 hodin",
+    "Last 7 days": "Posledních 7 dní",
+    "All (:days days)": "Vše (:days dní)",
+    "Search user, source or detail": "Hledat uživatele, zdroj nebo detail",
+    "Show more": "Zobrazit další"
 }
