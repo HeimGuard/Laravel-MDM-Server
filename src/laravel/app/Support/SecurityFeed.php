@@ -22,7 +22,7 @@ class SecurityFeed
 {
     public const SETTING = 'mdm.security_feed';
 
-    private const MAX_FILES = 256;
+    private const MAX_FILES = 2048;
 
     private const MAX_FILE_BYTES = 1048576;
 

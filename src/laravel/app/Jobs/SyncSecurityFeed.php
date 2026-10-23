@@ -17,7 +17,7 @@ class SyncSecurityFeed implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 300;
+    public int $timeout = 900;
 
     public function __construct(public bool $force = false)
     {
