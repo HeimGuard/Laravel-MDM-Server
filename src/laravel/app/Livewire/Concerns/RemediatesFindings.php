@@ -14,15 +14,17 @@ trait RemediatesFindings
 {
     public ?string $remediateError = null;
 
+    public ?string $remediateDone = null;
+
     /**
-     * Writes a script for the finding and opens it. Only the rule, the message and the platform leave the
+     * Writes a script for the finding; any signed-in user may ask for it. A system admin lands on it to
+     * review it; for the others it waits in the scripts for one. Only the rule, the message and the platform leave the
      * server. The script is saved as manual (it never runs by itself): it is AI written, so a system
-     * admin checks it and starts it per device.
+     * admin checks it and starts it per device (the scripts are theirs, they run as SYSTEM / root).
      */
     public function remediateWithAi(int $id)
     {
-        Gate::authorize('is-system-admin');
-        $this->remediateError = null;
+        $this->remediateError = $this->remediateDone = null;
         $finding = $this->findingForRemediation($id);
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
@@ -52,7 +54,10 @@ trait RemediatesFindings
         $script->created_by = auth()->id();
         $script->save();
 
-        return $this->redirectRoute('script.show', $script, navigate: true);
+        if (Gate::allows('is-system-admin')) {
+            return $this->redirectRoute('script.show', $script, navigate: true);
+        }
+        $this->remediateDone = __('The remediation script ":name" was written, a system admin reviews and runs it.', ['name' => $script->name]);
     }
 
     abstract protected function findingForRemediation(int $id): SecurityFinding;

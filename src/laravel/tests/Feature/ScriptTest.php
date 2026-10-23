@@ -391,5 +391,11 @@ class ScriptTest extends TestCase
         $script = Script::query()->where('name', 'Firewall on')->sole();
         $this->assertTrue($script->manual_remediation);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Firewall is off'));
+
+        // Anybody signed in may ask for it; the script waits for a system admin.
+        $this->actingAs(User::factory()->create());
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
+            ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
+        $this->assertSame(2, Script::query()->where('name', 'Firewall on')->count());
     }
 }

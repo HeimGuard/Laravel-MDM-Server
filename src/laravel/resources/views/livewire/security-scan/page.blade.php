@@ -246,6 +246,9 @@
             @if ($remediateError)
                 <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
             @endif
+@if ($remediateDone)
+                <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+            @endif
             <div class="card overflow-hidden">
                 <div class="list-group list-group-flush">
                     @forelse ($findings as $finding)

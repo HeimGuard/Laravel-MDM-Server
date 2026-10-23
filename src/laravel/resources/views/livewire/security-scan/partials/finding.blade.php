@@ -44,14 +44,12 @@
             <button class="btn btn-sm btn-light text-nowrap" type="button" wire:click="reopen({{ $finding->id }})">{{ __('Open again') }}</button>
         @endif
     @elseif (! $finding->resolved_at)
-        @can('is-system-admin')
-            @if (\App\Support\ScriptGenerator::available() && ! $finding->rule?->isEvent)
-                <button class="btn btn-sm btn-outline-primary text-nowrap" type="button" wire:click="remediateWithAi({{ $finding->id }})" wire:loading.attr="disabled" wire:target="remediateWithAi({{ $finding->id }})" title="{{ __('The AI writes a remediation script for you to review') }}">
-                    <span wire:loading.remove wire:target="remediateWithAi({{ $finding->id }})"><i class="fas fa-wand-magic-sparkles me-1"></i>{{ __('Remediate with AI') }}</span>
-                    <span wire:loading wire:target="remediateWithAi({{ $finding->id }})"><span class="spinner-border spinner-border-sm me-1"></span>{{ __('Writing…') }}</span>
-                </button>
-            @endif
-        @endcan
+        @if (\App\Support\ScriptGenerator::available() && ! $finding->rule?->isEvent)
+            <button class="btn btn-sm btn-outline-primary text-nowrap" type="button" wire:click="remediateWithAi({{ $finding->id }})" wire:loading.attr="disabled" wire:target="remediateWithAi({{ $finding->id }})" title="{{ __('The AI writes a remediation script for you to review') }}">
+                <span wire:loading.remove wire:target="remediateWithAi({{ $finding->id }})"><i class="fas fa-wand-magic-sparkles me-1"></i>{{ __('Remediate with AI') }}</span>
+                <span wire:loading wire:target="remediateWithAi({{ $finding->id }})"><span class="spinner-border spinner-border-sm me-1"></span>{{ __('Writing…') }}</span>
+            </button>
+        @endif
         <button class="btn btn-sm btn-light text-nowrap" type="button" wire:click="acknowledge({{ $finding->id }})" title="{{ $finding->rule?->isEvent ? __('Done with it') : __('Known, stays quiet until it is gone') }}">
             <i class="fas fa-check me-1"></i>{{ __('Acknowledge') }}
         </button>
