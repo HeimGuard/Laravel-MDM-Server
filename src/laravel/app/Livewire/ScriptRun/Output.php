@@ -5,6 +5,7 @@ namespace App\Livewire\ScriptRun;
 use App\Models\Script;
 use App\Models\ScriptRun;
 use App\Support\ScriptGenerator;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 use RuntimeException;
@@ -61,11 +62,11 @@ class Output extends Component
             return;
         }
 
-        $fixed = new Script(array_merge($generated, ['manual_remediation' => true, 'name' => mb_substr(($generated['name'] ?: $script->name).' ('.__('AI fix').')', 0, 255)]));
-        $fixed->created_by = auth()->id();
-        $fixed->save();
+        // The script itself is fixed (a new version, the runs keep theirs), no copy: its name, description and schedule stay.
+        // The AI wrote it, so it runs only by hand until a system admin has read it.
+        $script->fill(Arr::except($generated, ['name', 'description']) + ['manual_remediation' => true])->save();
 
-        return $this->redirectRoute('script.show', $fixed, navigate: true);
+        return $this->redirectRoute('script.show', $script, navigate: true);
     }
 
     public function render()

@@ -6,11 +6,12 @@ use App\Models\Script;
 use App\Models\SecurityFinding;
 use App\Support\ScriptGenerator;
 use App\Support\SecurityRules;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Collection;
 use RuntimeException;
 
-/** "Remediate with AI" of a finding: the AI writes a remediation script, the admin reviews it and runs it. */
+/** "Remediate with AI" of a finding: the AI writes a remediation script (one per rule, asking again updates it), the admin reviews it and runs it. */
 trait RemediatesFindings
 {
     /** At most this many other findings of the device go into the request. */
@@ -47,17 +48,34 @@ trait RemediatesFindings
         }
         $request .= "\nThe detection exits 0 when the findings it covers are fixed and 1 when any of them is still there.";
 
+        // The script written for this rule before (for this platform) is updated, not copied: one script per rule.
+        $existing = $rule ? Script::query()->where('security_rule_id', $rule->id)
+            ->when(in_array($platform, ['windows', 'linux'], true), fn ($query) => $query->whereIn('platform', [$platform, 'all']))->latest('id')->first() : null;
+        if ($existing) {
+            $request .= "\n\nA script for this rule exists (the current script): update that one, keep what works and keep its name and the language of its texts; do not write a new one.";
+        }
+
         try {
-            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request));
+            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request, $existing ? [
+                'name' => $existing->name, 'description' => $existing->description, 'platform' => $existing->platform, 'timeout' => $existing->timeout,
+                'detection' => $existing->detection, 'remediation' => $existing->remediation, 'manual_remediation' => $existing->manual_remediation,
+            ] : []));
         } catch (RuntimeException $e) {
             $this->remediateError = $e->getMessage();
 
             return;
         }
 
-        $script = new Script(array_merge($generated, ['manual_remediation' => true, 'name' => $generated['name'] ?: ($rule?->name ?? 'Remediation')]));
-        $script->created_by = auth()->id();
-        $script->save();
+        if ($existing) {
+            // A change of what runs is a new version of the script; the runs keep theirs.
+            $script = $existing;
+            $script->fill(Arr::except($generated, ['name', 'description']) + ['manual_remediation' => true])->save();
+        } else {
+            $script = new Script(array_merge($generated, ['manual_remediation' => true, 'name' => $generated['name'] ?: ($rule?->name ?? 'Remediation')]));
+            $script->created_by = auth()->id();
+            $script->security_rule_id = $rule?->id;
+            $script->save();
+        }
 
         if (Gate::allows('is-system-admin')) {
             return $this->redirectRoute('script.show', $script, navigate: true);

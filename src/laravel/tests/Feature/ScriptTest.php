@@ -416,7 +416,42 @@ class ScriptTest extends TestCase
         $this->actingAs(User::factory()->create());
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
-        $this->assertSame(5, Script::query()->where('name', 'Firewall on')->count());
+        // Asking again for the findings of a rule updates its script, it does not write another one.
+        $this->assertSame(1, Script::query()->where('name', 'Firewall on')->count());
+        $this->assertSame($rule->id, $script->fresh()->security_rule_id);
+        $this->assertTrue(Script::query()->where('name', 'Firewall on')->sole()->is($script));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'A script for this rule exists') && str_contains($request['messages'][0]['content'], 'Current script'));
+    }
+
+    public function test_asking_for_a_new_version_of_a_remediation_script_keeps_its_name_and_makes_a_version(): void
+    {
+        $this->actingAs($this->admin());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        \App\Models\SecurityRule::syncBuiltIn();
+        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        $device = $this->device();
+        $finding = \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
+            'message' => 'LXD is affected', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        $answer = fn (string $name, string $remediation) => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
+            'name' => $name, 'description' => 'Updates LXD.', 'platform' => 'linux', 'timeout' => 60,
+            'detection' => "exit 0", 'remediation' => $remediation, 'manual_remediation' => false,
+        ])]]]);
+
+        Http::fake(['api.anthropic.com/*' => $answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd')]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        $script = Script::query()->sole();
+        $this->assertSame(1, $script->version);
+
+        // Another language or another answer of the AI: the same script, its name stays, the code is a new version.
+        Http::fake(['api.anthropic.com/*' => $answer('LXD (Snap) aktualisieren', 'snap refresh lxd --channel=5.21/stable')]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+
+        $script = Script::query()->sole();
+        $this->assertSame('LXD CVE-2025-54289 (snap)', $script->name);
+        $this->assertSame('snap refresh lxd --channel=5.21/stable', $script->remediation);
+        $this->assertSame(2, $script->version);
     }
 
     public function test_a_failed_run_is_fixed_with_ai_into_a_copy_that_only_runs_by_hand(): void
@@ -435,16 +470,19 @@ class ScriptTest extends TestCase
         $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
         Livewire::test(RunOutput::class, ['runId' => $run->id])->assertSee('AI fix')->call('aiFix')->assertHasNoErrors()->assertRedirect();
 
-        // The AI got the script, the error, the exit codes and the output; the result is a copy for review, the script stays.
+        // The AI got the script, the error, the exit codes and the output; the result is the script itself, a new version.
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Remove-Item: access denied')
             && str_contains($request['messages'][0]['content'], 'step 2 failed')
             && str_contains($request['messages'][0]['content'], 'remediation 2')
             && str_contains($request['messages'][0]['content'], 'operating system Ubuntu 26.04 LTS')
             && str_contains($request['messages'][0]['content'], 'Current script'));
-        $fixed = Script::query()->where('name', 'Cleanup (AI fix)')->sole();
+        $this->assertSame(1, Script::query()->count(), 'no copy is written');
+        $fixed = $script->fresh();
+        $this->assertSame('Cleanup', $fixed->name);
         $this->assertTrue($fixed->manual_remediation);
         $this->assertSame('Remove-Item /x -Force', $fixed->remediation);
-        $this->assertSame("if (\$true) {\n\texit 1\n}\n", $script->fresh()->detection);
+        $this->assertStringContainsString('Test-Path /x', $fixed->detection);
+        $this->assertSame(2, $fixed->version);
 
         // Only a failed run is fixed, and only by a system admin.
         $ok = $script->runOn([$device->id])->first();
