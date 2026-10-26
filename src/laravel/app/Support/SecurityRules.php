@@ -186,7 +186,7 @@ class SecurityRules
             if (! is_array($cve) || ! is_string($cve['id'] ?? null) || ! preg_match('/^CVE-\d{4}-\d+$/', $cve['id'])
                 || (isset($cve['severity']) && ! isset(self::SEVERITIES[$cve['severity']]))
                 || (isset($cve['ranges']) && (! is_array($cve['ranges']) || ! array_is_list($cve['ranges'])))
-                || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu']))) {
+                || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu'])) || (isset($cve['debian']) && ! is_array($cve['debian']))) {
                 return false;
             }
         }

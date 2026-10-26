@@ -173,6 +173,33 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('update_available', SecurityCves::status($mixed));
     }
 
+    public function test_a_debian_host_is_judged_by_the_debian_tracker_not_the_ubuntu_one(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [[null, '9.0', null]],
+            'ubuntu' => ['foo' => ['noble' => ['needed', '']]],
+            'debian' => ['foo' => ['bookworm' => ['released', '1.0-2+deb12u1'], 'trixie' => ['needed', '']]]];
+        $debian = ['Name' => 'foo', 'Version' => '1.0-1+deb12u1', 'Source' => 'dpkg', 'Origin' => 'Debian'];
+
+        // bookworm has the fix in a later revision: update available (before: the Ubuntu data had no line for bookworm and the CVE was lost).
+        $this->assertSame('update_available', SecurityCves::affecting([$cve], ['Candidate' => '1.0-2+deb12u1'] + $debian, 'bookworm', 'debian')['CVE-1']['status']);
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '1.0-2+deb12u1'] + $debian, 'bookworm', 'debian'));
+        $this->assertSame('no_fix', SecurityCves::affecting([$cve], $debian, 'trixie', 'debian')['CVE-1']['status']);
+        // The same package on Ubuntu noble is judged by the Ubuntu data.
+        $this->assertSame('no_fix', SecurityCves::affecting([$cve], ['Origin' => 'Ubuntu'] + $debian, 'noble', 'ubuntu')['CVE-1']['status']);
+    }
+
+    public function test_a_derivative_or_a_debian_without_tracker_data_is_judged_by_the_nvd_ranges(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [[null, '9.0', null]], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]];
+        $item = ['Name' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        $this->assertCount(1, SecurityCves::affecting([$cve], $item, 'wilma', 'linuxmint'), 'Mint: the Ubuntu data is not its');
+        $this->assertCount(1, SecurityCves::affecting([$cve], ['Origin' => 'Debian'] + $item, 'bookworm', 'debian'), 'no Debian data: the NVD decides');
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '9.1-1'] + $item, 'wilma', 'linuxmint'));
+        $this->assertSame('bookworm', SecurityCves::release(['Id' => 'debian', 'Version' => '12']));
+        $this->assertSame('trixie', SecurityCves::release(['Id' => 'debian', 'Version' => '13', 'Codename' => null]));
+    }
+
     public function test_status_and_severity_of_a_finding_are_the_most_urgent_of_its_cves(): void
     {
         $affecting = [
