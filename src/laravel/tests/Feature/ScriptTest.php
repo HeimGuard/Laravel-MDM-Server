@@ -433,6 +433,7 @@ class ScriptTest extends TestCase
         $finding = \App\Models\SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'LXD is affected', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+            'details' => ['Status' => 'no fix available yet', 'Cves' => 'CVE-2025-54289', 'Channel' => '4.0/stable/…'],
         ]);
         $answer = fn (string $name, string $remediation) => ['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
             'name' => $name, 'description' => 'Updates LXD.', 'platform' => 'linux', 'timeout' => 60,
@@ -445,6 +446,12 @@ class ScriptTest extends TestCase
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame(1, $script->version);
+        // The AI is told what the scanner found out (status, CVEs, channel, the rule) and what the detection has to mean.
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "Rule: {$rule->name} ({$rule->key})")
+            && str_contains($request['messages'][0]['content'], 'Status of the CVEs: no fix available yet')
+            && str_contains($request['messages'][0]['content'], 'CVEs: CVE-2025-54289')
+            && str_contains($request['messages'][0]['content'], 'Snap channel: 4.0/stable/…')
+            && str_contains($request['messages'][0]['content'], 'is not a fix'));
 
         // Another language or another answer of the AI: the same script, its name stays, the code is a new version.
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
