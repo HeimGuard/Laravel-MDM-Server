@@ -91,6 +91,20 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], array_values($found)[0]['legacy']);
     }
 
+    public function test_cves_ubuntu_has_not_assessed_are_a_low_finding(): void
+    {
+        $cves = $this->cves(2, ['python3.10' => ['jammy' => ['needs-triage', '']]]);
+        $cves[0]['severity'] = 'high';
+        $rule = $this->cveRule($cves, '^python3');
+        $found = SecurityScanner::matches($rule, [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']);
+
+        $this->assertSame('low', array_values($found)[0]['severity']);
+        $this->assertSame('not yet assessed by Ubuntu', array_values($found)[0]['item']['Status']);
+
+        $cves[1]['ubuntu'] = ['python3.10' => ['jammy' => ['needed', '']]];
+        $this->assertSame('high', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity']);
+    }
+
     public function test_the_severity_of_a_cve_finding_is_the_one_of_its_worst_cve(): void
     {
         $cves = $this->cves(2, ['foo' => ['resolute' => ['needed', '']]]);

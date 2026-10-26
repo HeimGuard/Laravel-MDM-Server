@@ -128,7 +128,7 @@ class SecurityCvesTest extends TestCase
     {
         // A4: PowerShell 7.6.6 from snap, CVE-2026-96251 and CVE-2026-96303 fixed in 7.6.7.
         $cves = [$this->cve('CVE-2026-96251', [[null, '7.6.7', null]]), $this->cve('CVE-2026-96303', [[null, '7.6.7', null]])];
-        $snap = ['Name' => 'powershell', 'Version' => '7.6.6', 'Source' => 'snap', 'Channel' => 'latest/stable'];
+        $snap = ['Name' => 'powershell', 'Version' => '7.6.6', 'Source' => 'snap', 'Channel' => 'latest/stable', 'Candidate' => '7.6.7'];
         $affecting = SecurityCves::affecting($cves, $snap, 'resolute');
 
         $this->assertCount(2, $affecting);
@@ -138,6 +138,39 @@ class SecurityCvesTest extends TestCase
         $deb = ['Name' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu', 'Candidate' => '1.2-1'];
         $update = SecurityCves::affecting([$this->cve('CVE-9', [[null, '1.1', null]])], $deb, 'noble');
         $this->assertSame('Update: sudo apt update && sudo apt full-upgrade', SecurityCves::remediation([$deb], $update));
+    }
+
+    public function test_a_snap_whose_channel_has_no_fix_is_told_to_change_the_track(): void
+    {
+        // LXD 5.0.10 from 5.0/stable: the advisory fixes 5.21.4 and 6.5, the 5.0 track is not patched, so a refresh brings nothing.
+        $cves = [$this->cve('CVE-2025-54289', [['4.0.0', '5.21.4', null], ['6.1', '6.5', null]])];
+        $lxd = ['Name' => 'lxd', 'Version' => '5.0.10-24fe763', 'Source' => 'snap', 'Channel' => '5.0/stable/…'];
+
+        $affecting = SecurityCves::affecting($cves, $lxd, 'jammy');
+        $this->assertSame('no_fix', $affecting['CVE-2025-54289']['status']);
+        $text = SecurityCves::remediation([$lxd], $affecting);
+        $this->assertStringContainsString('--channel=', $text);
+        $this->assertStringNotContainsString('Update: sudo snap refresh', $text);
+
+        // The same snap with a refresh that brings a fixed version, and one that brings another vulnerable one.
+        $this->assertSame('update_available', SecurityCves::affecting($cves, ['Candidate' => '5.21.4'] + $lxd, 'jammy')['CVE-2025-54289']['status']);
+        $this->assertSame('no_fix', SecurityCves::affecting($cves, ['Candidate' => '5.21.2'] + $lxd, 'jammy')['CVE-2025-54289']['status']);
+        // An agent that does not send the channel cannot tell: an update is assumed.
+        $this->assertSame('update_available', SecurityCves::affecting($cves, ['Channel' => null] + $lxd, 'jammy')['CVE-2025-54289']['status']);
+    }
+
+    public function test_a_cve_ubuntu_has_not_triaged_is_the_least_urgent(): void
+    {
+        $cve = $this->cve('CVE-2026-0864', [[null, '3.10.21', null]], ['python3.10' => ['jammy' => ['needs-triage', '']]]);
+        $item = ['Name' => 'python3.10', 'Version' => '3.10.12-1~22.04.18', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        $affecting = SecurityCves::affecting([$cve], $item, 'jammy');
+        $this->assertSame('not_triaged', $affecting['CVE-2026-0864']['status']);
+        $this->assertSame('not_triaged', SecurityCves::status($affecting));
+        $this->assertStringContainsString('has not assessed', SecurityCves::remediation([$item], $affecting));
+        // A CVE with a fix to install is more urgent than one not triaged.
+        $mixed = $affecting + ['B' => ['id' => 'B', 'severity' => 'low', 'status' => 'update_available', 'fixed' => null]];
+        $this->assertSame('update_available', SecurityCves::status($mixed));
     }
 
     public function test_status_and_severity_of_a_finding_are_the_most_urgent_of_its_cves(): void
