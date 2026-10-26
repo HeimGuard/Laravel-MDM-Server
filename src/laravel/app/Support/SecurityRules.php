@@ -58,7 +58,7 @@ class SecurityRules
             // SourcePackage (agents 1.24.0+, dpkg): the source package when it is not the package itself (libssl3t64: openssl).
             // Candidate (the version apt would install), Origin (the repository: Ubuntu, Debian, ... or dpkg/status for none), Channel (snap),
             // UpdateAvailable / NoUpdateSource (what these say), Running / RunUser / Listening (the program is a running process, its
-            // user, it listens on the network; agents 1.28.0+, remote access tools and packages without a source only).
+            // user, it listens on the network; agents 1.29.0+, remote access tools and packages without a source only).
             'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening'],
             'key' => ['Name', 'Source'],
         ],

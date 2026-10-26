@@ -45,7 +45,7 @@ What the agent collects (the *sources* of the rules):
 
 | Source | Windows | Debian / Ubuntu |
 |---|---|---|
-| `software` | Programs and Features (machine, and the profiles of every user: the hive of one who is not signed in is loaded for a moment), Store apps (`appx`) | dpkg (or rpm), snap, flatpak (system and the users') |
+| `software` | Programs and Features (machine, and the profiles of every user, agents 1.29.0+: the hive of one who is not signed in is loaded for a moment), Store apps (`appx`) | dpkg (or rpm), snap, flatpak (system and the users') |
 | `processes` | `Win32_Process` with the user and command line (the agent's own processes left out) | `/proc` |
 | `listening` | `Get-NetTCPConnection` / `Get-NetUDPEndpoint` with the process | `ss -tulpn` |
 | `startup` | Run / RunOnce keys, Startup folders, scheduled tasks outside `\Microsoft\` | cron (system and users), units in `/etc/systemd/system`, `rc.local`, desktop autostart |
@@ -71,7 +71,7 @@ lists binary ones (`libssl3t64` is `openssl`, `libglib2.0-0t64` and `gir1.2-glib
 cannot tell them apart reliably. For every dpkg package whose source package has another name the agent sends it
 as the software field `SourcePackage` (`${source:Package}` of dpkg-query); a package that is its own source has none.
 
-**Where a package comes from (agents 1.28.0+, Debian / Ubuntu).** For every dpkg package the agent reads `apt-cache policy`
+**Where a package comes from (agents 1.29.0+, Debian / Ubuntu; 1.28.0 sent the fields but never filled them: `apt-cache policy` was asked without package names).** For every dpkg package the agent reads `apt-cache policy`
 and sends the `Candidate` (the version apt would install, only when it is another one), the `Origin` of the installed version
 (`Ubuntu`, `Debian`, the host of another repository, or `dpkg/status` when no active repository has it: it was installed from
 a file or its repository is gone), and `UpdateAvailable` / `NoUpdateSource`. Snap packages have their `Channel` and, when a refresh would bring a version, their `Candidate` (`snap refresh --list`): a snap whose
