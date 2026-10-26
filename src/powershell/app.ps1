@@ -1088,6 +1088,14 @@ function Get-AptPolicy {
     param ([string[]]$Names)
 
     $env:LC_ALL = 'C'
+    # What the repositories call themselves (o= of their release line: Ubuntu, Debian, Docker, Google LLC): "Package files:" of
+    # `apt-cache policy` without names, by the line of the repository ("http://x/ubuntu jammy/main amd64 Packages").
+    $labels = @{}
+    $files = $null
+    foreach ($line in @(apt-cache policy 2>$null)) {
+        if ($line -match '^\s+-?\d+\s+(\S.*?)\s*$') { $files = $Matches[1] }
+        elseif ($files -and $line -match '^\s+release\s+.*\bo=([^,]+)') { $labels[$files] = $Matches[1].Trim(); $files = $null }
+    }
     $map = @{}
     $name = $null
     $installed = $null
@@ -1111,9 +1119,11 @@ function Get-AptPolicy {
         } elseif ($line -match '^\s+Installed:\s*(\S+)') { $installed = $Matches[1]
         } elseif ($line -match '^\s+Candidate:\s*(\S+)') { $candidate = if ($Matches[1] -eq '(none)') { $null } else { $Matches[1] }
         } elseif ($line -match '^\s+(\*\*\*\s+)?(\S+)\s+\d+\s*$') { $current = if ($Matches[1]) { $Matches[2] } else { $null }
-        } elseif ($current -and -not $origin -and $line -match '^\s+\d+\s+(https?://\S+|file:\S+|cdrom:\S+)') {
-            $url = $Matches[1].ToLowerInvariant()
-            $origin = if ($url -match 'ubuntu') { 'Ubuntu' } elseif ($url -match 'debian') { 'Debian' } elseif ($url -match '^https?://([^/:]+)') { $Matches[1] } else { 'local' }
+        } elseif ($current -and -not $origin -and $line -match '^\s+\d+\s+((?:https?|file|cdrom):\S.*?)\s*$') {
+            $rest = $Matches[1]
+            $url = ($rest -split '\s+')[0].ToLowerInvariant()
+            # The name the repository gives itself, else the address tells (a mirror of Ubuntu has "ubuntu" in it).
+            $origin = if ($labels[$rest]) { $labels[$rest] } elseif ($url -match 'ubuntu') { 'Ubuntu' } elseif ($url -match 'debian') { 'Debian' } elseif ($url -match '^https?://([^/:]+)') { $Matches[1] } else { 'local' }
         }
     }
     & $flush
@@ -1188,18 +1198,26 @@ function Test-LinuxDeviceEncrypted {
 }
 
 function Get-LinuxUnencryptedMounts {
-    # The mount points among / and /home (when it is a mount of its own) that are not on an encrypted device, $null when it cannot be told.
-    $points = @('/')
-    if ("$(findmnt -n -o TARGET --target /home 2>$null)".Trim() -eq '/home') { $points += '/home' }
+    # The mounts of the disks of the device (/, /home, /var, /srv, /data, ... on a block device, each device once) that are not on
+    # an encrypted device; $null when it cannot be told. Boot and EFI partitions, snaps, containers, removable media and what is not
+    # a disk (tmpfs, network shares) are not looked at.
     $unencrypted = @()
     $known = 0
-    foreach ($point in $points) {
-        $device = "$(findmnt -n -o SOURCE $point 2>$null)".Trim() -replace '\[.*\]$', ''
-        if (-not $device.StartsWith('/dev/')) { continue }
-        $encrypted = Test-LinuxDeviceEncrypted -Device $device
+    $seen = @{}
+    $mounts = @(findmnt -rn -o TARGET,SOURCE,FSTYPE 2>$null | ForEach-Object {
+            $p = $_ -split '\s+'
+            if ($p.Count -ge 3) { [PSCustomObject]@{ Target = $p[0] -replace '\\x20', ' '; Source = $p[1] -replace '\[.*\]$', ''; Type = $p[2] } }
+        } | Sort-Object -Property { $_.Target.Length })
+    foreach ($mount in $mounts) {
+        if ($mount.Type -notin 'ext2', 'ext3', 'ext4', 'xfs', 'btrfs', 'f2fs', 'jfs', 'reiserfs') { continue }
+        if (-not $mount.Source.StartsWith('/dev/')) { continue }
+        if ($mount.Target -match '^/(boot|snap|media|run|var/lib/(docker|containers|snapd|kubelet|lxd))(/|$)') { continue }
+        if ($seen[$mount.Source]) { continue }
+        $seen[$mount.Source] = $true
+        $encrypted = Test-LinuxDeviceEncrypted -Device $mount.Source
         if ($null -eq $encrypted) { continue }
         $known++
-        if (-not $encrypted) { $unencrypted += $point }
+        if (-not $encrypted) { $unencrypted += $mount.Target }
     }
     if ($known -eq 0) { return $null }
     return , $unencrypted
@@ -1313,15 +1331,24 @@ function Get-SecuritySoftware {
                 $parts = $_ -split "`t"
                 if ($parts[0]) { [PSCustomObject]@{ Name = $parts[0]; Version = if ($parts.Count -ge 2) { $parts[1] } else { $null }; Publisher = $null; Source = 'flatpak' } }
             }
+            # What the users installed for themselves (flatpak --user is theirs: asked as each of them).
+            foreach ($userDir in @(Get-ChildItem -Path /home -Directory -ErrorAction SilentlyContinue)) {
+                if (-not (Test-Path -LiteralPath "$($userDir.FullName)/.local/share/flatpak/app")) { continue }
+                runuser -u $userDir.Name -- flatpak list --app --user --columns=application,version,origin 2>$null | ForEach-Object {
+                    $parts = $_ -split "`t"
+                    if ($parts[0]) { [PSCustomObject]@{ Name = $parts[0]; Version = if ($parts.Count -ge 2) { $parts[1] } else { $null }; Publisher = $null; Source = 'flatpak' } }
+                }
+            }
         }
         return
     }
 
-    # Programs and Features: machine-wide (64 and 32 bit) and per user (the loaded profiles).
+    # Programs and Features: machine-wide (64 and 32 bit) and per user (the loaded profiles, then the profiles of users who are
+    # not signed in: their programs - VS Code, Teams, Slack, a per-user Chrome - are installed for them only), and the Store apps.
     $paths = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
     $paths += @(Get-ChildItem -Path Registry::HKEY_USERS -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^S-1-5-21-[\d-]+$' } |
             ForEach-Object { "Registry::HKEY_USERS\$($_.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" })
-    Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
+    $software = @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
         Where-Object { $_.DisplayName -and $_.SystemComponent -ne 1 -and -not $_.ParentKeyName } |
         ForEach-Object {
             [PSCustomObject]@{
@@ -1330,7 +1357,56 @@ function Get-SecuritySoftware {
                 Publisher = ConvertTo-SecurityText $_.Publisher 200
                 Source    = if ($_.PSPath -match 'HKEY_USERS') { 'registry (user)' } else { 'registry' }
             }
-        } | Sort-Object -Property Name, Version, Source -Unique
+        })
+    try { $software += @(Get-OfflineUserSoftware) } catch { }
+    try { $software += @(Get-AppxSoftware) } catch { }
+    $software | Sort-Object -Property Name, Version, Source -Unique
+}
+
+function Get-OfflineUserSoftware {
+    # The programs of the users who are not signed in: the hive of their profile (NTUSER.DAT) is loaded for a moment, read and
+    # unloaded again (the agent runs as SYSTEM). A profile whose hive is in use is left out.
+    $loaded = @(Get-ChildItem -Path Registry::HKEY_USERS -ErrorAction SilentlyContinue | ForEach-Object { $_.PSChildName })
+    $profiles = @(Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match '^S-1-5-21-[\d-]+$' -and $_.ProfileImagePath })
+    foreach ($profile in $profiles) {
+        if ($loaded -contains $profile.PSChildName) { continue }
+        $file = Join-Path ([Environment]::ExpandEnvironmentVariables($profile.ProfileImagePath)) 'NTUSER.DAT'
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        $hive = "MDM_$($profile.PSChildName)"
+        & reg.exe load "HKU\$hive" $file *> $null
+        if ($LASTEXITCODE -ne 0) { continue }
+        try {
+            # Plain objects before the hive is unloaded: nothing may keep a handle on it.
+            @(Get-ItemProperty -Path "Registry::HKEY_USERS\$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue |
+                Where-Object { $_.DisplayName -and $_.SystemComponent -ne 1 -and -not $_.ParentKeyName } |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        Name      = ConvertTo-SecurityText $_.DisplayName 300
+                        Version   = ConvertTo-SecurityText $_.DisplayVersion 100
+                        Publisher = ConvertTo-SecurityText $_.Publisher 200
+                        Source    = 'registry (user)'
+                    }
+                })
+        }
+        finally {
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+            & reg.exe unload "HKU\$hive" *> $null
+        }
+    }
+}
+
+function Get-AppxSoftware {
+    # The Store apps of every user (not the frameworks and not what belongs to Windows itself).
+    Get-AppxPackage -AllUsers -ErrorAction Stop | Where-Object { -not $_.IsFramework -and "$($_.SignatureKind)" -ne 'System' -and $_.Name -and $_.Version } | ForEach-Object {
+        [PSCustomObject]@{
+            Name      = ConvertTo-SecurityText $_.Name 300
+            Version   = ConvertTo-SecurityText "$($_.Version)" 100
+            Publisher = ConvertTo-SecurityText ($(if ($_.PublisherId) { $_.PublisherId } else { $_.Publisher }) -replace '^CN=([^,]+).*$', '$1') 200
+            Source    = 'appx'
+        }
+    } | Sort-Object -Property Name, Version -Unique
 }
 
 function Get-SecurityProcesses {
@@ -3876,7 +3952,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
