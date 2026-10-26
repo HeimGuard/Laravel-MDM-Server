@@ -84,9 +84,11 @@ class SecurityCves
                 continue;
             }
             foreach (['ubuntu', 'debian'] as $tracker) {
-                foreach (array_keys($cve[$tracker] ?? []) as $source) {
-                    // By id: a CVE that both trackers name the source of is one entry.
-                    $index['by'][self::trackerSource((string) $source)][$cve['id'] ?? count($index['by'])] = $cve;
+                foreach (array_keys($cve[$tracker] ?? []) as $names) {
+                    foreach (explode(',', (string) $names) as $source) {
+                        // By id: a CVE that both trackers name the source of is one entry.
+                        $index['by'][self::trackerSource($source)][$cve['id'] ?? count($index['by'])] = $cve;
+                    }
                 }
             }
         }
@@ -201,12 +203,20 @@ class SecurityCves
         return ['status' => 'update_available', 'fixed' => $fixed];
     }
 
-    /** The lines of the tracker for a source package (by name, without case), null when it says nothing of it. */
+    /**
+     * The lines of the tracker for a source package (by name, without case), null when it says nothing of it. A key may name several
+     * source packages with commas ("linux,linux-aws,linux-gcp": the same lines for each, as a kernel CVE has them).
+     */
     private static function tracker(array $sources, string $source): ?array
     {
-        foreach ($sources as $name => $releases) {
-            if (self::trackerSource((string) $name) === $source && is_array($releases) && $releases !== []) {
-                return array_change_key_case($releases);
+        foreach ($sources as $names => $releases) {
+            if (! is_array($releases) || $releases === []) {
+                continue;
+            }
+            foreach (explode(',', (string) $names) as $name) {
+                if (self::trackerSource($name) === $source) {
+                    return array_change_key_case($releases);
+                }
             }
         }
 

@@ -636,7 +636,8 @@ class SecurityScanner
                 }
             }
             $group = isset($definition['group']) ? self::groupName($definition['group'], $item) : null;
-            $name = $group ?? (strtolower((string) ($item['Source'] ?? '')) === 'dpkg' && ($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? ''));
+            // The signed kernel is built from the unsigned one: linux-image-* (linux-signed) and linux-headers-* (linux) are one finding.
+            $name = $group ?? (strtolower((string) ($item['Source'] ?? '')) === 'dpkg' && ($item['SourcePackage'] ?? '') !== '' ? SecurityCves::trackerSource($item['SourcePackage']) : ($item['Name'] ?? ''));
             $fingerprint = hash('sha256', implode("\x1f", [$definition['key'], mb_strtolower((string) $name), mb_strtolower((string) ($group !== null ? '' : ($item['Source'] ?? '')))]));
             $groups[$fingerprint]['items'][] = $item;
             $groups[$fingerprint]['legacy'][] = SecurityRules::fingerprint($definition, $item);

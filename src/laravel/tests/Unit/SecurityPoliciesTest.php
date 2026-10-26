@@ -80,6 +80,24 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], SecurityScanner::matches($rule, $items, ['release' => 'resolute']));
     }
 
+    public function test_the_kernel_image_and_its_headers_are_one_finding(): void
+    {
+        $cve = ['id' => 'CVE-2026-1', 'severity' => 'critical', 'ranges' => [], 'ubuntu' => ['linux' => ['jammy' => ['needed', '']]]];
+        $rule = $this->cveRule([$cve], '^linux-');
+        $rule['cves'] = [$cve];
+        $items = [
+            $this->deb('linux-image-5.15.0-198-generic', '5.15.0-198.208', 'linux-signed'),
+            $this->deb('linux-headers-5.15.0-198', '5.15.0-198.208', 'linux'),
+            $this->deb('linux-modules-5.15.0-198-generic', '5.15.0-198.208', 'linux'),
+        ];
+
+        $found = SecurityScanner::matches($rule, $items, ['release' => 'jammy', 'os' => 'ubuntu']);
+
+        $this->assertCount(1, $found);
+        $this->assertStringContainsString('linux-image-5.15.0-198-generic', array_values($found)[0]['item']['Packages']);
+        $this->assertStringContainsString('linux-headers-5.15.0-198', array_values($found)[0]['item']['Packages']);
+    }
+
     public function test_the_fingerprint_of_one_package_is_the_one_it_always_had(): void
     {
         $rule = $this->cveRule($this->cves(1, ['foo' => ['resolute' => ['needed', '']]]), '^foo');

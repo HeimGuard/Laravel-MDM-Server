@@ -214,6 +214,18 @@ class SecurityCvesTest extends TestCase
         $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '5.15.0-130.140'] + $kernel, 'jammy', 'ubuntu'));
     }
 
+    public function test_a_key_may_name_several_source_packages(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['linux,linux-aws,linux-azure' => ['jammy' => ['needed', '']]]];
+        $kernel = fn (string $source) => ['Name' => 'linux-image-x', 'Version' => '5.15.0-1.1', 'SourcePackage' => $source, 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        foreach (['linux', 'linux-aws', 'linux-signed-azure'] as $source) {
+            $this->assertCount(1, SecurityCves::affecting([$cve], $kernel($source), 'jammy', 'ubuntu'), $source);
+            $this->assertCount(1, SecurityCves::affecting([$cve], $kernel($source), 'jammy', 'ubuntu', SecurityCves::index([$cve])), $source.' by the index');
+        }
+        $this->assertSame([], SecurityCves::affecting([$cve], $kernel('linux-gcp'), 'jammy', 'ubuntu'));
+    }
+
     public function test_the_index_gives_a_package_only_the_cves_of_its_source_and_the_ones_with_ranges(): void
     {
         $cves = [
