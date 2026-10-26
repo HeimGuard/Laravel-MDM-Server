@@ -558,7 +558,7 @@ class SecurityScanner
     {
         $os = SecurityInventory::query()->where('device_id', $device->id)->first()?->items('os')[0] ?? null;
 
-        return ['release' => SecurityCves::release($os)];
+        return ['release' => SecurityCves::release($os), 'os' => $os['Id'] ?? null];
     }
 
     /**
@@ -567,7 +567,7 @@ class SecurityScanner
      * with "cves"). Each: fingerprint, message, item (the details), and for a rule with "cves" the
      * severity of its CVEs and "legacy", the fingerprints the packages of the group had when each was a finding.
      *
-     * @param  array{release?: ?string}  $context
+     * @param  array{release?: ?string, os?: ?string}  $context
      * @return array<string, array{fingerprint: string, message: string, item: array, severity?: string, legacy?: array<int, string>}>
      */
     public static function matches(array $definition, array $items, array $context = []): array
@@ -626,16 +626,18 @@ class SecurityScanner
     private static function matchGroups(array $definition, array $matching, string $template, array $context): array
     {
         $groups = [];
+        $index = isset($definition['cves']) ? SecurityCves::index($definition['cves']) : null;
         foreach ($matching as $item) {
             $affecting = [];
             if (isset($definition['cves'])) {
-                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null);
+                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null, $index);
                 if ($affecting === []) {
                     continue;
                 }
             }
             $group = isset($definition['group']) ? self::groupName($definition['group'], $item) : null;
-            $name = $group ?? (strtolower((string) ($item['Source'] ?? '')) === 'dpkg' && ($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? ''));
+            // The signed kernel is built from the unsigned one: linux-image-* (linux-signed) and linux-headers-* (linux) are one finding.
+            $name = $group ?? (strtolower((string) ($item['Source'] ?? '')) === 'dpkg' && ($item['SourcePackage'] ?? '') !== '' ? SecurityCves::trackerSource($item['SourcePackage']) : ($item['Name'] ?? ''));
             $fingerprint = hash('sha256', implode("\x1f", [$definition['key'], mb_strtolower((string) $name), mb_strtolower((string) ($group !== null ? '' : ($item['Source'] ?? '')))]));
             $groups[$fingerprint]['items'][] = $item;
             $groups[$fingerprint]['legacy'][] = SecurityRules::fingerprint($definition, $item);

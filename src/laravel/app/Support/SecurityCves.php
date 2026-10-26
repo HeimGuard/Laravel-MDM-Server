@@ -8,10 +8,11 @@ namespace App\Support;
  * (installed < fixed, never equal), so a finding names exactly those:
  *
  *  - "ranges": [[start, end_excl, end_incl]] the versions of the project the NVD says are vulnerable;
- *  - "ubuntu": {source package: {release: [status, fixed version]}} what the Ubuntu security tracker says, which
- *    is what counts for a package of Ubuntu / Debian (a distribution fixes with a backport and does not change the
- *    upstream version). Without it for the package, the ranges decide on the upstream version (epoch and Debian
- *    revision taken off).
+ *  - "ubuntu" / "debian": {source package: {release: [status, fixed version]}} what the security tracker of the
+ *    distribution says (Ubuntu CVE tracker, Debian Security Tracker), which is what counts for a package of that
+ *    distribution (it fixes with a backport and does not change the upstream version); the tracker of the OS of the device
+ *    is used, another distribution (Mint, ...) is judged by the NVD ranges. Without a word of the tracker for the package
+ *    the ranges decide on the upstream version (epoch and Debian revision taken off).
  *
  * A CVE the changelog of the package names (the agent's FixedCves) is fixed whatever the versions say.
  */
@@ -32,15 +33,67 @@ class SecurityCves
         '25.04' => 'plucky', '25.10' => 'questing', '26.04' => 'resolute',
     ];
 
-    /** The release of a device, from its os item (the codename, or the version of Ubuntu). */
+    /** The codename of a Debian release by its VERSION_ID. */
+    private const DEBIAN_RELEASES = ['10' => 'buster', '11' => 'bullseye', '12' => 'bookworm', '13' => 'trixie', '14' => 'forky'];
+
+    /** The release of a device, from its os item (the codename, or the version of Ubuntu / Debian). */
     public static function release(?array $os): ?string
     {
         if ($os === null) {
             return null;
         }
         $codename = strtolower(trim((string) ($os['Codename'] ?? '')));
+        $version = trim((string) ($os['Version'] ?? ''));
 
-        return $codename !== '' ? $codename : (self::UBUNTU_RELEASES[trim((string) ($os['Version'] ?? ''))] ?? null);
+        return $codename !== '' ? $codename : (strtolower((string) ($os['Id'] ?? '')) === 'debian' ? (self::DEBIAN_RELEASES[$version] ?? null) : (self::UBUNTU_RELEASES[$version] ?? null));
+    }
+
+    /** Which tracker of the CVEs speaks for the distribution of the device: debian, ubuntu (also when it is not known), null for another one. */
+    private static function trackerOf(?string $osId): ?string
+    {
+        $osId = strtolower(trim((string) $osId));
+
+        return match (true) {
+            $osId === 'debian' => 'debian',
+            $osId === '' || $osId === 'ubuntu' => 'ubuntu',
+            default => null,
+        };
+    }
+
+    /** The name a tracker knows a source package by: the signed kernel packages are built from the unsigned one (linux-signed-aws is linux-aws). */
+    public static function trackerSource(string $source): string
+    {
+        return preg_replace('/^linux-signed(?:-(?:amd64|arm64|i386))?/', 'linux', strtolower(trim($source))) ?? $source;
+    }
+
+    /**
+     * The CVEs of a rule by what they are about, so that a rule of thousands of CVEs of a tracker (each about a few source
+     * packages, no ranges) is not evaluated for every package: the ones with ranges are for every package, the others for the
+     * source packages named in their tracker data.
+     *
+     * @param  array<int, array>  $cves
+     * @return array{generic: array<int, array>, by: array<string, array<int, array>>}
+     */
+    public static function index(array $cves): array
+    {
+        $index = ['generic' => [], 'by' => []];
+        foreach ($cves as $cve) {
+            if (! empty($cve['ranges'])) {
+                $index['generic'][] = $cve;
+
+                continue;
+            }
+            foreach (['ubuntu', 'debian'] as $tracker) {
+                foreach (array_keys($cve[$tracker] ?? []) as $names) {
+                    foreach (explode(',', (string) $names) as $source) {
+                        // By id: a CVE that both trackers name the source of is one entry.
+                        $index['by'][self::trackerSource($source)][$cve['id'] ?? count($index['by'])] = $cve;
+                    }
+                }
+            }
+        }
+
+        return $index;
     }
 
     /**
@@ -49,8 +102,12 @@ class SecurityCves
      * @param  array<int, array>  $cves
      * @return array<string, array{id: string, severity: string, status: string, fixed: ?string}> by CVE id
      */
-    public static function affecting(array $cves, array $item, ?string $release): array
+    public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null, ?array $index = null): array
     {
+        if ($index !== null) {
+            $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? '')));
+            $cves = [...$index['generic'], ...array_values($index['by'][$source] ?? [])];
+        }
         $found = [];
         $dpkg = strtolower((string) ($item['Source'] ?? '')) === 'dpkg';
         $changelog = strtolower((string) ($item['FixedCves'] ?? ''));
@@ -61,7 +118,7 @@ class SecurityCves
             if ($dpkg && $changelog !== '' && str_contains($changelog, ','.strtolower($cve['id']).',')) {
                 continue;
             }
-            $result = $dpkg ? self::dpkg($cve, $item, $release) : self::upstream($cve, $item);
+            $result = $dpkg ? self::dpkg($cve, $item, $release, $osId) : self::upstream($cve, $item);
             if ($result !== null) {
                 $found[$cve['id']] = ['id' => $cve['id'], 'severity' => $cve['severity'] ?? 'medium'] + $result;
             }
@@ -71,16 +128,17 @@ class SecurityCves
     }
 
     /** @return array{status: string, fixed: ?string}|null null when the package is not affected */
-    private static function dpkg(array $cve, array $item, ?string $release): ?array
+    private static function dpkg(array $cve, array $item, ?string $release, ?string $osId): ?array
     {
         $version = trim((string) ($item['Version'] ?? ''));
         $candidate = trim((string) ($item['Candidate'] ?? ''));
         $origin = strtolower(trim((string) ($item['Origin'] ?? '')));
-        $source = strtolower(trim((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? ''))));
+        $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? '')));
         $distribution = in_array($origin, ['', 'ubuntu', 'debian'], true);
 
-        if ($distribution && $release !== null) {
-            $known = self::tracker($cve['ubuntu'] ?? [], $source);
+        $trackerKey = self::trackerOf($osId);
+        if ($distribution && $release !== null && $trackerKey !== null) {
+            $known = self::tracker($cve[$trackerKey] ?? [], $source);
             if ($known !== null) {
                 // The tracker knows the package: it decides (a release it has no line for does not have the package).
                 $line = $known[$release] ?? null;
@@ -145,12 +203,20 @@ class SecurityCves
         return ['status' => 'update_available', 'fixed' => $fixed];
     }
 
-    /** The lines of the tracker for a source package (by name, without case), null when it says nothing of it. */
+    /**
+     * The lines of the tracker for a source package (by name, without case), null when it says nothing of it. A key may name several
+     * source packages with commas ("linux,linux-aws,linux-gcp": the same lines for each, as a kernel CVE has them).
+     */
     private static function tracker(array $sources, string $source): ?array
     {
-        foreach ($sources as $name => $releases) {
-            if (strtolower((string) $name) === $source && is_array($releases) && $releases !== []) {
-                return array_change_key_case($releases);
+        foreach ($sources as $names => $releases) {
+            if (! is_array($releases) || $releases === []) {
+                continue;
+            }
+            foreach (explode(',', (string) $names) as $name) {
+                if (self::trackerSource($name) === $source) {
+                    return array_change_key_case($releases);
+                }
             }
         }
 

@@ -45,7 +45,7 @@ What the agent collects (the *sources* of the rules):
 
 | Source | Windows | Debian / Ubuntu |
 |---|---|---|
-| `software` | Programs and Features (machine and loaded user profiles) | dpkg (or rpm), snap, flatpak |
+| `software` | Programs and Features (machine, and the profiles of every user, agents 1.29.0+: the hive of one who is not signed in is loaded for a moment), Store apps (`appx`) | dpkg (or rpm), snap, flatpak (system and the users') |
 | `processes` | `Win32_Process` with the user and command line (the agent's own processes left out) | `/proc` |
 | `listening` | `Get-NetTCPConnection` / `Get-NetUDPEndpoint` with the process | `ss -tulpn` |
 | `startup` | Run / RunOnce keys, Startup folders, scheduled tasks outside `\Microsoft\` | cron (system and users), units in `/etc/systemd/system`, `rc.local`, desktop autostart |
@@ -71,10 +71,12 @@ lists binary ones (`libssl3t64` is `openssl`, `libglib2.0-0t64` and `gir1.2-glib
 cannot tell them apart reliably. For every dpkg package whose source package has another name the agent sends it
 as the software field `SourcePackage` (`${source:Package}` of dpkg-query); a package that is its own source has none.
 
-**Where a package comes from (agents 1.28.0+, Debian / Ubuntu).** For every dpkg package the agent reads `apt-cache policy`
+**Where a package comes from (agents 1.29.0+, Debian / Ubuntu; 1.28.0 sent the fields but never filled them: `apt-cache policy` was asked without package names).** For every dpkg package the agent reads `apt-cache policy`
 and sends the `Candidate` (the version apt would install, only when it is another one), the `Origin` of the installed version
 (`Ubuntu`, `Debian`, the host of another repository, or `dpkg/status` when no active repository has it: it was installed from
-a file or its repository is gone), and `UpdateAvailable` / `NoUpdateSource`. Snap packages have their `Channel`. The `os` item
+a file or its repository is gone), and `UpdateAvailable` / `NoUpdateSource`. Snap packages have their `Channel` and, when a refresh would bring a version, their `Candidate` (`snap refresh --list`): a snap whose
+channel has no fixed version (lxd on `5.0/stable`) is *no fix available yet* and the advice is to change the track. The `Origin` is what
+the repository calls itself (`o=` of its release line: Ubuntu, Debian, Docker, Google LLC). The `os` item
 has the `Codename` of the release (`resolute`). Remote access tools and packages without a source of updates also get
 `Running`, `RunUser` and `Listening` (a process and a port on a non-loopback address that carry the first word of the name).
 
@@ -83,7 +85,8 @@ and names the packages it is about in `select`; the `when` next to it is what a 
 For every package each CVE is judged on its own and the finding names only the CVEs that apply:
 
 - a CVE the changelog of the package names (`FixedCves`) is fixed;
-- for a package of Ubuntu / Debian the Ubuntu security tracker decides, by the release of the device: *released* in a version
+- for a package of Ubuntu / Debian the security tracker of the device's distribution decides (the `ubuntu` data for Ubuntu, the `debian`
+  data of the Debian Security Tracker for Debian; another distribution such as Mint is judged by the NVD ranges), by the release of the device: *released* in a version
   at or below the installed one is fixed, *not-affected* is no finding, *released* in a newer version is **update available**
   (the candidate has it) or **fix available via Ubuntu Pro / ESM** (`~esm`), and *needed*, *deferred*, *pending* is
   **no fix available yet**. Without a word of the tracker the versions of the project (NVD) decide, with the epoch and the
@@ -91,6 +94,12 @@ For every package each CVE is judged on its own and the finding names only the C
 - installed must be **below** the fixed version, never equal; Debian versions are compared as `dpkg --compare-versions` does;
 - a package whose repository is none (`dpkg/status`) is **no update source**;
 - no CVE left: no finding, and an open one is resolved.
+
+**Rules of the trackers.** Besides the rules that start from the NVD, the feed has rules that start from the Ubuntu and Debian trackers
+(`org.distro-ubuntu-NN`, `org.distro-debian-NN`): for every source package the critical and high CVEs with their status per release, with
+no ranges and no `when` (an older server skips them as invalid). They find what the NVD has no product for yet, and the kernel
+(`linux-signed*` packages are judged by the tracker of `linux*`). A CVE is one entry for a package: what a rule of the NVD already judges
+with the word of a tracker is not in these.
 
 The binary packages of one source package (`imagemagick`, `libsoup-3.0-0` and `libsoup-3.0-common`) are **one finding** that lists
 the packages and the CVEs. Findings that were one per package move to it on the next scan: the one that was acknowledged
@@ -106,8 +115,8 @@ not errors. Until it works the CVEs of the device are judged on package lists th
 
 **Settings of the posture.** *Firewall* (Linux) is on when ufw is active, firewalld runs, or an nftables chain on the input hook
 (or the iptables INPUT chain) has a drop / reject policy or rules; the chains of Docker (`DOCKER*`, `FORWARD`) do not count. The
-finding says what is installed and how to turn it on (`sudo ufw enable`). *Disk encryption* (Linux) looks at `/` and at `/home`
-when it is a mount of its own: it is encrypted when dm-crypt / LUKS is somewhere under it (`lsblk -s`, or sysfs; LVM on LUKS and
+finding says what is installed and how to turn it on (`sudo ufw enable`). *Disk encryption* (Linux) looks at every mount of a disk
+(`/`, `/home`, `/var`, `/srv`, `/data`, ...; not boot, snaps, containers, removable media): a mount is encrypted when dm-crypt / LUKS is somewhere under it (`lsblk -s`, or sysfs; LVM on LUKS and
 LUKS on LVM count), and the finding lists the mount points that are not.
 
 **Remote access tools** are three rules: *installed* (low), *running* as a service or daemon (medium), and *running and out of

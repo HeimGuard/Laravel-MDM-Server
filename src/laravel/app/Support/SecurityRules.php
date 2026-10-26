@@ -58,7 +58,7 @@ class SecurityRules
             // SourcePackage (agents 1.24.0+, dpkg): the source package when it is not the package itself (libssl3t64: openssl).
             // Candidate (the version apt would install), Origin (the repository: Ubuntu, Debian, ... or dpkg/status for none), Channel (snap),
             // UpdateAvailable / NoUpdateSource (what these say), Running / RunUser / Listening (the program is a running process, its
-            // user, it listens on the network; agents 1.28.0+, remote access tools and packages without a source only).
+            // user, it listens on the network; agents 1.29.0+, remote access tools and packages without a source only).
             'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening'],
             'key' => ['Name', 'Source'],
         ],
@@ -186,7 +186,7 @@ class SecurityRules
             if (! is_array($cve) || ! is_string($cve['id'] ?? null) || ! preg_match('/^CVE-\d{4}-\d+$/', $cve['id'])
                 || (isset($cve['severity']) && ! isset(self::SEVERITIES[$cve['severity']]))
                 || (isset($cve['ranges']) && (! is_array($cve['ranges']) || ! array_is_list($cve['ranges'])))
-                || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu']))) {
+                || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu'])) || (isset($cve['debian']) && ! is_array($cve['debian']))) {
                 return false;
             }
         }
@@ -246,9 +246,10 @@ class SecurityRules
             || array_diff($rule['unseen_by'], ['User', 'Source']) !== [] || count(array_unique($rule['unseen_by'])) !== count($rule['unseen_by']))) {
             $errors[] = __('unseen_by: a list of User and / or Source, with unseen_days.');
         }
-        if (! array_key_exists('when', $rule)) {
+        // A rule that names its packages in "select" and its CVEs in "cves" has no "when": only servers that know them read it.
+        if (! array_key_exists('when', $rule) && ! (isset($rule['select'], $rule['cves']) && is_array($rule['cves']))) {
             $errors[] = __('when: the conditions are missing.');
-        } else {
+        } elseif (array_key_exists('when', $rule)) {
             $count = 0;
             self::conditionErrors($rule['when'], 'when', 1, $count, $errors);
         }

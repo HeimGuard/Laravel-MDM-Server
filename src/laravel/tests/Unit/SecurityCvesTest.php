@@ -173,6 +173,75 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('update_available', SecurityCves::status($mixed));
     }
 
+    public function test_a_debian_host_is_judged_by_the_debian_tracker_not_the_ubuntu_one(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [[null, '9.0', null]],
+            'ubuntu' => ['foo' => ['noble' => ['needed', '']]],
+            'debian' => ['foo' => ['bookworm' => ['released', '1.0-2+deb12u1'], 'trixie' => ['needed', '']]]];
+        $debian = ['Name' => 'foo', 'Version' => '1.0-1+deb12u1', 'Source' => 'dpkg', 'Origin' => 'Debian'];
+
+        // bookworm has the fix in a later revision: update available (before: the Ubuntu data had no line for bookworm and the CVE was lost).
+        $this->assertSame('update_available', SecurityCves::affecting([$cve], ['Candidate' => '1.0-2+deb12u1'] + $debian, 'bookworm', 'debian')['CVE-1']['status']);
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '1.0-2+deb12u1'] + $debian, 'bookworm', 'debian'));
+        $this->assertSame('no_fix', SecurityCves::affecting([$cve], $debian, 'trixie', 'debian')['CVE-1']['status']);
+        // The same package on Ubuntu noble is judged by the Ubuntu data.
+        $this->assertSame('no_fix', SecurityCves::affecting([$cve], ['Origin' => 'Ubuntu'] + $debian, 'noble', 'ubuntu')['CVE-1']['status']);
+    }
+
+    public function test_a_derivative_or_a_debian_without_tracker_data_is_judged_by_the_nvd_ranges(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [[null, '9.0', null]], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]];
+        $item = ['Name' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        $this->assertCount(1, SecurityCves::affecting([$cve], $item, 'wilma', 'linuxmint'), 'Mint: the Ubuntu data is not its');
+        $this->assertCount(1, SecurityCves::affecting([$cve], ['Origin' => 'Debian'] + $item, 'bookworm', 'debian'), 'no Debian data: the NVD decides');
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '9.1-1'] + $item, 'wilma', 'linuxmint'));
+        $this->assertSame('bookworm', SecurityCves::release(['Id' => 'debian', 'Version' => '12']));
+        $this->assertSame('trixie', SecurityCves::release(['Id' => 'debian', 'Version' => '13', 'Codename' => null]));
+    }
+
+    public function test_the_signed_kernel_is_judged_by_the_tracker_of_the_unsigned_one(): void
+    {
+        $this->assertSame('linux', SecurityCves::trackerSource('linux-signed'));
+        $this->assertSame('linux', SecurityCves::trackerSource('linux-signed-amd64'));
+        $this->assertSame('linux-aws', SecurityCves::trackerSource('linux-signed-aws'));
+        $this->assertSame('linux-aws', SecurityCves::trackerSource('Linux-AWS'));
+        $this->assertSame('openssl', SecurityCves::trackerSource('openssl'));
+
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['linux' => ['jammy' => ['released', '5.15.0-130.140']]]];
+        $kernel = ['Name' => 'linux-image-5.15.0-120-generic', 'Version' => '5.15.0-120.130', 'SourcePackage' => 'linux-signed', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+        $this->assertCount(1, SecurityCves::affecting([$cve], $kernel, 'jammy', 'ubuntu'));
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '5.15.0-130.140'] + $kernel, 'jammy', 'ubuntu'));
+    }
+
+    public function test_a_key_may_name_several_source_packages(): void
+    {
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['linux,linux-aws,linux-azure' => ['jammy' => ['needed', '']]]];
+        $kernel = fn (string $source) => ['Name' => 'linux-image-x', 'Version' => '5.15.0-1.1', 'SourcePackage' => $source, 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        foreach (['linux', 'linux-aws', 'linux-signed-azure'] as $source) {
+            $this->assertCount(1, SecurityCves::affecting([$cve], $kernel($source), 'jammy', 'ubuntu'), $source);
+            $this->assertCount(1, SecurityCves::affecting([$cve], $kernel($source), 'jammy', 'ubuntu', SecurityCves::index([$cve])), $source.' by the index');
+        }
+        $this->assertSame([], SecurityCves::affecting([$cve], $kernel('linux-gcp'), 'jammy', 'ubuntu'));
+    }
+
+    public function test_the_index_gives_a_package_only_the_cves_of_its_source_and_the_ones_with_ranges(): void
+    {
+        $cves = [
+            ['id' => 'CVE-A', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]],
+            ['id' => 'CVE-B', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['bar' => ['noble' => ['needed', '']]], 'debian' => ['foo' => ['bookworm' => ['needed', '']]]],
+            ['id' => 'CVE-C', 'severity' => 'low', 'ranges' => [[null, '9.0', null]]],
+        ];
+        $index = SecurityCves::index($cves);
+        $foo = ['Name' => 'libfoo1', 'SourcePackage' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        $ids = function (array $found) { $keys = array_keys($found); sort($keys); return $keys; };
+        $this->assertSame(['CVE-A', 'CVE-C'], $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'CVE-B is about bar on Ubuntu');
+        $this->assertSame($ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu')), $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'the index changes nothing but the cost');
+        $this->assertSame(['CVE-B', 'CVE-C'], $ids(SecurityCves::affecting($cves, ['Origin' => 'Debian'] + $foo, 'bookworm', 'debian', $index)));
+    }
+
     public function test_status_and_severity_of_a_finding_are_the_most_urgent_of_its_cves(): void
     {
         $affecting = [

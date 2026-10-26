@@ -80,6 +80,24 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], SecurityScanner::matches($rule, $items, ['release' => 'resolute']));
     }
 
+    public function test_the_kernel_image_and_its_headers_are_one_finding(): void
+    {
+        $cve = ['id' => 'CVE-2026-1', 'severity' => 'critical', 'ranges' => [], 'ubuntu' => ['linux' => ['jammy' => ['needed', '']]]];
+        $rule = $this->cveRule([$cve], '^linux-');
+        $rule['cves'] = [$cve];
+        $items = [
+            $this->deb('linux-image-5.15.0-198-generic', '5.15.0-198.208', 'linux-signed'),
+            $this->deb('linux-headers-5.15.0-198', '5.15.0-198.208', 'linux'),
+            $this->deb('linux-modules-5.15.0-198-generic', '5.15.0-198.208', 'linux'),
+        ];
+
+        $found = SecurityScanner::matches($rule, $items, ['release' => 'jammy', 'os' => 'ubuntu']);
+
+        $this->assertCount(1, $found);
+        $this->assertStringContainsString('linux-image-5.15.0-198-generic', array_values($found)[0]['item']['Packages']);
+        $this->assertStringContainsString('linux-headers-5.15.0-198', array_values($found)[0]['item']['Packages']);
+    }
+
     public function test_the_fingerprint_of_one_package_is_the_one_it_always_had(): void
     {
         $rule = $this->cveRule($this->cves(1, ['foo' => ['resolute' => ['needed', '']]]), '^foo');
@@ -191,6 +209,18 @@ class SecurityPoliciesTest extends TestCase
         $disk = array_values(SecurityScanner::matches($this->rule('posture.disk-encryption'), [['DiskEncrypted' => false, 'UnencryptedMounts' => '/, /home']]));
         $this->assertStringContainsString('/, /home', $disk[0]['message']);
         $this->assertSame([], SecurityScanner::matches($this->rule('posture.disk-encryption'), [['DiskEncrypted' => true]]));
+    }
+
+    public function test_a_rule_of_a_tracker_needs_no_when(): void
+    {
+        $select = ['field' => 'SourcePackage', 'op' => 'in', 'value' => ['foo']];
+        $rule = ['key' => 'org.distro-ubuntu-01', 'name' => 'Ubuntu: known vulnerabilities', 'severity' => 'high', 'platform' => 'linux', 'source' => 'software',
+            'select' => $select, 'cves' => [['id' => 'CVE-2026-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]]]];
+
+        $this->assertSame([], SecurityRules::errors($rule));
+        $found = SecurityScanner::matches($rule, [$this->deb('libfoo1', '1.0-1', 'foo'), $this->deb('bar', '1.0-1')], ['release' => 'noble', 'os' => 'ubuntu']);
+        $this->assertCount(1, $found);
+        $this->assertSame('high', array_values($found)[0]['severity']);
     }
 
     public function test_every_bundled_rule_is_valid(): void
