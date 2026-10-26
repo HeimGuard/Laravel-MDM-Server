@@ -34,7 +34,13 @@ trait RemediatesFindings
         $finding = $this->findingForRemediation($id);
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
-        $request = "Remediate this security finding.\nRule: {$rule?->name}\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
+        $details = is_array($finding->details) ? $finding->details : [];
+        $request = "Remediate this security finding.\nRule: {$rule?->name}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
+            // What the scanner found out about it: where the software comes from, what can be done about the CVEs (a fix to install, none yet).
+            .(filled($details['Status'] ?? null) ? "\nStatus of the CVEs: {$details['Status']}" : '')
+            .(filled($details['Cves'] ?? null) ? "\nCVEs: ".mb_strimwidth((string) $details['Cves'], 0, 600, '…') : '')
+            .(filled($details['Channel'] ?? null) ? "\nSnap channel: {$details['Channel']}" : '')
+            .(filled($details['Origin'] ?? null) ? "\nPackage origin: {$details['Origin']}" : '')
             .($finding->remediation ? "\nHint: {$finding->remediation}" : '')
             // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
             .($rule && $rule->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($rule->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
@@ -46,7 +52,7 @@ trait RemediatesFindings
             $request .= "\n\nOther open findings on the same device:\n".$related->map(fn ($other) => '- ['.$other->severity.'] '.mb_strimwidth(preg_replace('/\s+/', ' ', ($other->rule?->name ?? '').': '.$other->message), 0, 250, '…'))->implode("\n")
                 ."\n\nOne script has to fix the finding above together with every one of these that the same action resolves: update the whole product or package family (all php packages, not one module), not a single package, and refresh the package index first. Leave out the findings it cannot fix.";
         }
-        $request .= "\nThe detection exits 0 when the findings it covers are fixed and 1 when any of them is still there.";
+        $request .= "\nThe detection exits 0 only when the findings it covers are gone (the software is fixed or removed) and 1 as long as any of them is still there: an update that cannot be installed, or none to be had in the channel, is not a fix, so then it exits 1 and says why. When no fix exists, the remediation applies the mitigation of the advisory or the hint, or changes nothing and says what a person has to decide.";
 
         // The script written for this rule before (for this platform) is updated, not copied: one script per rule.
         $existing = $rule ? Script::query()->where('security_rule_id', $rule->id)
