@@ -1,14 +1,36 @@
 [
     {
         "key": "software.remote-access",
-        "name": "Remote access tool",
-        "description": "Remote access tools are a common way in: support scams, attackers who keep access after a break-in.",
+        "name": "Remote access tool installed",
+        "description": "Remote access tools are a common way in: support scams, attackers who keep access after a break-in. Low when it is installed and does not run, medium when it runs as a service or daemon, high when it also is out of date or has no source of updates.",
+        "severity": "low",
+        "platform": "any",
+        "source": "software",
+        "when": {"all": [{"field": "Name", "op": "matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"field": "Running", "op": "ne", "value": true}]},
+        "message": "{Name} {Version} is installed",
+        "remediation": "Uninstall it unless it is used on purpose; otherwise keep it updated and protected by a password or 2FA."
+    },
+    {
+        "key": "software.remote-access-running",
+        "name": "Remote access tool running",
+        "description": "Remote access tools are a common way in: support scams, attackers who keep access after a break-in. Low when it is installed and does not run, medium when it runs as a service or daemon, high when it also is out of date or has no source of updates.",
         "severity": "medium",
         "platform": "any",
         "source": "software",
-        "when": {"field": "Name", "op": "matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"},
-        "message": "{Name} {Version} is installed",
-        "remediation": "Uninstall it unless it is used on purpose; otherwise keep it updated and protected by a password or 2FA."
+        "when": {"all": [{"field": "Name", "op": "matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"field": "Running", "op": "true"}, {"not": {"any": [{"field": "UpdateAvailable", "op": "true"}, {"field": "NoUpdateSource", "op": "true"}]}}]},
+        "message": "{Name} {Version} runs (user {RunUser}), listens on the network: {Listening}, update source: {Origin}",
+        "remediation": "Stop and uninstall it unless it is used on purpose; otherwise keep it updated, protected by a password or 2FA and allowed only from known addresses."
+    },
+    {
+        "key": "software.remote-access-running-outdated",
+        "name": "Remote access tool running, out of date",
+        "description": "Remote access tools are a common way in: support scams, attackers who keep access after a break-in. Low when it is installed and does not run, medium when it runs as a service or daemon, high when it also is out of date or has no source of updates.",
+        "severity": "high",
+        "platform": "any",
+        "source": "software",
+        "when": {"all": [{"field": "Name", "op": "matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"field": "Running", "op": "true"}, {"any": [{"field": "UpdateAvailable", "op": "true"}, {"field": "NoUpdateSource", "op": "true"}]}]},
+        "message": "{Name} {Version} runs (user {RunUser}), listens on the network: {Listening}, update source: {Origin} (out of date or without a source of updates)",
+        "remediation": "Update it now (a repository with its updates, or a new version from the vendor) or stop and uninstall it unless it is used on purpose."
     },
     {
         "key": "software.offensive-tools",
@@ -24,12 +46,14 @@
     {
         "key": "software.hacking-tools",
         "name": "Network or password cracking tool",
-        "description": "Legitimate for administrators and security work, suspicious elsewhere.",
-        "severity": "low",
+        "description": "Legitimate for administrators and security work, suspicious elsewhere. The packages of one tool are one finding; devices tagged developer, admin or security are allowed to have them (edit allow_tags to change that). netcat-openbsd is part of a base Ubuntu installation and is not reported.",
+        "severity": "info",
         "platform": "any",
         "source": "software",
-        "when": {"field": "Name", "op": "matches", "value": "^(nmap|zenmap|wireshark|hashcat|john|john the ripper|hydra|thc-hydra|aircrack-ng|sqlmap|burp ?suite|cain|ettercap|netcat|ncat|masscan)\\b"},
-        "message": "{Name} {Version} is installed"
+        "when": {"field": "Name", "op": "matches", "value": "^(nmap|zenmap|wireshark|tshark|hashcat|john|john the ripper|hydra|thc-hydra|aircrack-ng|sqlmap|burp ?suite|cain|ettercap|netcat(?!-openbsd)|ncat|masscan)\\b"},
+        "group": {"field": "Name", "pattern": "^(nmap|zenmap|wireshark|tshark|hashcat|john the ripper|john|thc-hydra|hydra|aircrack-ng|sqlmap|burp ?suite|cain|ettercap|netcat|ncat|masscan)", "names": {"zenmap": "nmap", "ncat": "nmap", "tshark": "wireshark", "john the ripper": "john", "thc-hydra": "hydra"}},
+        "allow_tags": ["developer", "admin", "security"],
+        "message": "{Group}: {Packages} installed"
     },
     {
         "key": "software.p2p",
@@ -302,12 +326,13 @@
     {
         "key": "posture.firewall-linux",
         "name": "No firewall",
-        "description": "No active ufw, firewalld or nftables / iptables rules.",
+        "description": "No active firewall: ufw (ufw status), firewalld, or an nftables / iptables chain on the input hook with a drop / reject policy or rules. The rules Docker adds (DOCKER*, FORWARD) do not count.",
         "severity": "low",
         "platform": "linux",
         "source": "posture",
         "when": {"field": "FirewallEnabled", "op": "false"},
-        "message": "No firewall is active"
+        "message": "No firewall is active: {FirewallDetail}",
+        "remediation": "Turn one on, e.g. sudo ufw enable (ufw; allow ssh first: sudo ufw allow OpenSSH), sudo systemctl enable --now firewalld, or load nftables rules with a drop policy on the input hook."
     },
     {
         "key": "posture.antivirus",
@@ -334,12 +359,12 @@
     {
         "key": "posture.disk-encryption",
         "name": "System disk is not encrypted",
-        "description": "A lost or stolen device gives away all its data.",
+        "description": "A lost or stolen device gives away all its data. On Linux the root file system (and /home when it is separate) is encrypted when dm-crypt / LUKS is somewhere under it (also LVM on LUKS and LUKS on LVM).",
         "severity": "medium",
         "platform": "any",
         "source": "posture",
         "when": {"field": "DiskEncrypted", "op": "false"},
-        "message": "The system disk is not encrypted (BitLocker / LUKS)",
+        "message": "Not encrypted (BitLocker / LUKS): {UnencryptedMounts}",
         "remediation": "Turn on BitLocker (Windows) or use LUKS for new Linux installations."
     },
     {
@@ -669,5 +694,38 @@
         "when": {"field": "Banner", "op": "matches", "value": "dropbear_201[0-7]|OpenSSH_[1-6]\\."},
         "message": "Outdated SSH server on port {Port}: {Banner}",
         "remediation": "Update the SSH server to a current release."
+    },
+    {
+        "key": "software.no-update-source",
+        "name": "Package without a source of updates",
+        "description": "The package is not from any active repository (it was installed from a .deb file, or its repository is gone), so apt never updates it.",
+        "severity": "low",
+        "platform": "linux",
+        "source": "software",
+        "when": {"all": [{"field": "Source", "op": "eq", "value": "dpkg"}, {"field": "NoUpdateSource", "op": "true"}, {"field": "Name", "op": "not_matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"not": {"all": [{"field": "Running", "op": "true"}, {"field": "Listening", "op": "true"}, {"field": "RunUser", "op": "eq", "value": "root"}]}}]},
+        "message": "{Name} {Version} has no source of updates",
+        "remediation": "Add the repository of the vendor (so that apt updates it), install a current version by hand, or uninstall it."
+    },
+    {
+        "key": "software.no-update-source-service",
+        "name": "Network service without a source of updates",
+        "description": "A service that listens on the network, runs as root and is not from any active repository: nothing updates it.",
+        "severity": "medium",
+        "platform": "linux",
+        "source": "software",
+        "when": {"all": [{"field": "Source", "op": "eq", "value": "dpkg"}, {"field": "NoUpdateSource", "op": "true"}, {"field": "Name", "op": "not_matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"field": "Running", "op": "true"}, {"field": "Listening", "op": "true"}, {"field": "RunUser", "op": "eq", "value": "root"}]},
+        "message": "{Name} {Version} runs as root, listens on the network and has no source of updates",
+        "remediation": "Add the repository of the vendor (so that apt updates it), install a current version by hand, or stop and uninstall it."
+    },
+    {
+        "key": "posture.apt-update-failed",
+        "name": "apt update fails",
+        "description": "apt-get update ended with an error, so the package lists are out of date and the vulnerabilities (and updates) of this device are judged on old data.",
+        "severity": "high",
+        "platform": "linux",
+        "source": "posture",
+        "when": {"field": "AptUpdateOk", "op": "false"},
+        "message": "apt-get update fails: {AptUpdateSummary}",
+        "remediation": "Fix or remove the repositories named in the finding, then run sudo apt update."
     }
 ]

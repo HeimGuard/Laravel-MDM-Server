@@ -479,7 +479,8 @@ class SecurityScannerTest extends TestCase
         // Age of Empires is no attack framework, 7-Zip 24.09 is fixed, MySQL listens on loopback only.
         $finding = SecurityFinding::query()->whereHas('rule', fn ($q) => $q->where('key', 'software.remote-access'))->first();
         $this->assertSame('AnyDesk 8.0.9 is installed', $finding->message);
-        $this->assertSame('medium', $finding->severity);
+        // Installed and not known to run: low (it is medium when it runs as a service, high when that one is out of date).
+        $this->assertSame('low', $finding->severity);
         $this->assertSame('203.0.113.7', SecurityFinding::query()->whereHas('rule', fn ($q) => $q->where('key', 'events.brute-force'))->first()->details['Source']);
         // Events of a known type are kept for the timeline.
         $this->assertSame(2, SecurityEvent::query()->where('device_id', $device->id)->count());

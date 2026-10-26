@@ -40,6 +40,55 @@ class SecurityScanner
         return SecurityParsers::policy($parsers);
     }
 
+    /** Settings (days; 0 is off): an acknowledged finding is open again after this long, a device that has not reported for this long has stale findings. */
+    public const ACK_DAYS_SETTING = 'mdm.security_ack_days';
+
+    public const STALE_DAYS_SETTING = 'mdm.security_stale_days';
+
+    /** The days of the setting of the portal, else of the environment (MDM_SECURITY_ACK_DAYS, MDM_SECURITY_STALE_DAYS). */
+    public static function ackDays(): int
+    {
+        $value = Setting::query()->whereNull('settable_id')->where('index', self::ACK_DAYS_SETTING)->value('value');
+
+        return max(0, (int) ($value ?? config('mdm.security_ack_days', 0)));
+    }
+
+    public static function staleDays(): int
+    {
+        $value = Setting::query()->whereNull('settable_id')->where('index', self::STALE_DAYS_SETTING)->value('value');
+
+        return max(0, (int) ($value ?? config('mdm.security_stale_days', 14)));
+    }
+
+    /**
+     * Housekeeping of the findings of the inventories (daily): acknowledged ones that are older than the expiry open again,
+     * the findings of a rule that is off (or not for the platform of the device) are resolved, and the findings of a device
+     * that has not reported for the stale days are marked stale (a report that finds them again makes them current).
+     *
+     * @return array{reopened: int, resolved: int, stale: int}
+     */
+    public static function sweep(): array
+    {
+        $result = ['reopened' => 0, 'resolved' => 0, 'stale' => 0];
+        $inventory = SecurityFinding::query()->open()->whereNotNull('device_id');
+        if (($days = self::ackDays()) > 0) {
+            $result['reopened'] = (clone $inventory)->whereNotNull('acknowledged_at')->where('acknowledged_at', '<', now()->subDays($days))
+                ->whereHas('rule', fn ($rule) => $rule->where('source', '!=', 'events'))
+                ->update(['acknowledged_at' => null, 'acknowledged_by' => null]);
+        }
+        // What no scan will look at again: the rule is off, or is not for the platform of the device.
+        (clone $inventory)->with(['rule', 'device'])->chunkById(500, function ($findings) use (&$result) {
+            $result['resolved'] += self::resolve($findings->filter(fn (SecurityFinding $finding) => $finding->rule !== null && $finding->device !== null && $finding->rule->source !== 'events'
+                && (! $finding->rule->enabled || ! $finding->rule->appliesTo($finding->device))));
+        });
+        if (($days = self::staleDays()) > 0) {
+            $silent = SecurityInventory::query()->where('collected_at', '<', now()->subDays($days))->pluck('device_id');
+            $result['stale'] = (clone $inventory)->whereIn('device_id', $silent)->whereNull('stale_at')->update(['stale_at' => now()]);
+        }
+
+        return $result;
+    }
+
     /** The portal setting that turns the logs of all agents off (system admins, Security page). */
     public const LOGS_SETTING = 'mdm.security_logs';
 
@@ -256,6 +305,8 @@ class SecurityScanner
             return $counts;
         }
 
+        // The device reports again: what was stale is current (or resolved below).
+        SecurityFinding::query()->where('device_id', $device->id)->whereNotNull('stale_at')->update(['stale_at' => null]);
         $states = $inventory->states ?? [];
         $scanned = $inventory->scanned ?? [];
         $previous = ($scanned['full_at'] ?? 0) > time() - self::FULL_SCAN_AFTER ? ($scanned['rules'] ?? []) : [];
@@ -263,7 +314,7 @@ class SecurityScanner
         $open = null;
         $platform = $device->platform;
         foreach (SecurityRule::scanPlan() as $plan) {
-            $active = $plan['enabled'] && ($plan['platform'] === 'any' || $plan['platform'] === $platform);
+            $active = $plan['enabled'] && ($plan['platform'] === 'any' || $plan['platform'] === $platform) && ! self::allowed($plan['rule'], $device);
             if ($plan['event']) {
                 if ($active && $events !== []) {
                     $rule = $plan['rule'];
@@ -291,7 +342,7 @@ class SecurityScanner
                 $change = $changes[$rule->source] ?? null;
                 $incremental = $before !== null && $before[0] === $mark[0] && $change !== null && ! $change['full']
                     && $change['base'] === $before[1] && $change['state'] === $mark[1]
-                    && ! isset($rule->definition['threshold']) && $rule->source !== 'posture';
+                    && ! isset($rule->definition['threshold']) && ! isset($rule->definition['cves']) && ! isset($rule->definition['group']) && $rule->source !== 'posture';
 
                 return $incremental
                     ? self::scanChanged($device, $rule, $findings, $change)
@@ -313,6 +364,18 @@ class SecurityScanner
         }
 
         return $counts;
+    }
+
+    /** Whether the device is allowed to have what the rule looks for (its role: a tag of "allow_tags", e.g. developer). */
+    private static function allowed(SecurityRule $rule, Device $device): bool
+    {
+        foreach ($rule->definition['allow_tags'] ?? [] as $tag) {
+            if ($device->hasTag((string) $tag)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return Collection<int, Collection<int, SecurityFinding>> the open findings of a device by rule */
@@ -485,19 +548,35 @@ class SecurityScanner
                 ->map(fn (SecurityEvent $event) => ['Type' => $event->type, 'Count' => $event->count, 'User' => $event->user, 'Source' => $event->source, 'Message' => $event->message, 'Last' => (string) $event->occurred_at])->all()
             : $inventory->items($definition['source']);
 
-        return array_map(fn ($match) => ['message' => $match['message'], 'item' => $match['item']], self::matches($definition, $items));
+        return array_map(fn ($match) => ['message' => $match['message'], 'item' => $match['item']], self::matches($definition, $items, self::context($device)));
+    }
+
+    /** What a rule needs to know of the device besides the list it looks at: the release of its distribution. */
+    private static function context(Device $device): array
+    {
+        $os = SecurityInventory::query()->where('device_id', $device->id)->first()?->items('os')[0] ?? null;
+
+        return ['release' => SecurityCves::release($os)];
     }
 
     /**
      * The findings of a rule in a list: one per matching item, or one for the whole list with
-     * "threshold". Each: fingerprint, message, item (the details).
+     * "threshold", or one per group of items ("group", and the packages of one source package
+     * with "cves"). Each: fingerprint, message, item (the details), and for a rule with "cves" the
+     * severity of its CVEs and "legacy", the fingerprints the packages of the group had when each was a finding.
      *
-     * @return array<string, array{fingerprint: string, message: string, item: array}>
+     * @param  array{release?: ?string}  $context
+     * @return array<string, array{fingerprint: string, message: string, item: array, severity?: string, legacy?: array<int, string>}>
      */
-    public static function matches(array $definition, array $items): array
+    public static function matches(array $definition, array $items, array $context = []): array
     {
+        if (($definition['source'] ?? null) === 'posture') {
+            // A failed apt-get update: the repositories that are the problem and what to do about them (AptUpdate).
+            $items = array_map(fn ($item) => is_array($item) && ($item['AptUpdateOk'] ?? null) === false ? $item + AptUpdate::fields($item['AptUpdateErrors'] ?? null) : $item, $items);
+        }
         $matching = SecurityRules::matching($definition, $items);
-        $template = $definition['message'] ?? $definition['name'];
+        // A rule with "cves" says what it found by itself (the "message" of the feed counts the CVEs for servers that do not judge them one by one).
+        $template = isset($definition['cves']) ? '{Packages}: {CveCount} CVEs ({Status}): {Cves}' : ($definition['message'] ?? $definition['name']);
         $found = [];
 
         if (isset($definition['threshold'])) {
@@ -515,6 +594,10 @@ class SecurityScanner
             ]];
         }
 
+        if (isset($definition['cves']) || isset($definition['group'])) {
+            return self::matchGroups($definition, $matching, $template, $context);
+        }
+
         foreach ($matching as $item) {
             $fingerprint = SecurityRules::fingerprint($definition, $item);
             if (isset($found[$fingerprint])) {
@@ -529,10 +612,102 @@ class SecurityScanner
         return $found;
     }
 
+    /**
+     * Findings of groups of packages: the binary packages of one source package (libsoup-3.0-0 and libsoup-3.0-common
+     * are libsoup3) with the CVEs that affect them (a rule with "cves": none left, no finding), or the packages of one
+     * tool (nmap, nmap-common, zenmap) by the first group of the pattern of "group". The fingerprint of a group of one
+     * package is the one it always had, so what was acknowledged stays acknowledged.
+     *
+     * @param  array<int, array>  $matching
+     * @return array<string, array>
+     */
+    private static function matchGroups(array $definition, array $matching, string $template, array $context): array
+    {
+        $groups = [];
+        foreach ($matching as $item) {
+            $affecting = [];
+            if (isset($definition['cves'])) {
+                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null);
+                if ($affecting === []) {
+                    continue;
+                }
+            }
+            $group = isset($definition['group']) ? self::groupName($definition['group'], $item) : null;
+            $name = $group ?? (strtolower((string) ($item['Source'] ?? '')) === 'dpkg' && ($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? ''));
+            $fingerprint = hash('sha256', implode("\x1f", [$definition['key'], mb_strtolower((string) $name), mb_strtolower((string) ($group !== null ? '' : ($item['Source'] ?? '')))]));
+            $groups[$fingerprint]['items'][] = $item;
+            $groups[$fingerprint]['legacy'][] = SecurityRules::fingerprint($definition, $item);
+            $groups[$fingerprint]['group'] = $group;
+            foreach ($affecting as $id => $cve) {
+                $known = $groups[$fingerprint]['cves'][$id] ?? null;
+                if ($known === null || array_search($cve['status'], array_keys(SecurityCves::STATUSES)) < array_search($known['status'], array_keys(SecurityCves::STATUSES))) {
+                    $groups[$fingerprint]['cves'][$id] = $cve;
+                }
+            }
+        }
+
+        $found = [];
+        foreach ($groups as $fingerprint => $group) {
+            $items = $group['items'];
+            $item = $items[0];
+            $item['Packages'] = implode(', ', array_unique(array_map(fn ($one) => trim(($one['Name'] ?? '').' '.($one['Version'] ?? '')), $items)));
+            $item['PackageNames'] = implode(', ', array_unique(array_map(fn ($one) => (string) ($one['Name'] ?? ''), $items)));
+            if ($group['group'] !== null) {
+                $item['Group'] = $group['group'];
+            }
+            $match = ['fingerprint' => $fingerprint, 'legacy' => array_values(array_diff(array_unique($group['legacy']), [$fingerprint]))];
+            if (isset($group['cves'])) {
+                $cves = $group['cves'];
+                ksort($cves);
+                $item['CveCount'] = count($cves);
+                $item['Cves'] = self::fit(array_keys($cves), 600);
+                $item['Status'] = SecurityCves::STATUSES[SecurityCves::status($cves)] ?? '';
+                $item['Remediation'] = SecurityCves::remediation($items, $cves);
+                $item['Severity'] = $match['severity'] = SecurityCves::severity($cves, $definition['severity'] ?? 'medium');
+            }
+            $found[$fingerprint] = $match + ['message' => SecurityRules::render($template, $item), 'item' => $item];
+            if (count($found) >= self::MAX_FINDINGS_PER_RULE) {
+                break;
+            }
+        }
+
+        return $found;
+    }
+
+    /** The group of an item by the first group of the pattern on its field (lower case), null when it does not match. */
+    private static function groupName(array $group, array $item): ?string
+    {
+        $regex = SecurityRules::regex($group['pattern']);
+        if ($regex !== null && preg_match($regex, (string) SecurityRules::field($item, $group['field']), $m)) {
+            $name = mb_strtolower($m[1] ?? $m[0]);
+
+            // "names" puts tools of one family together (zenmap and ncat are nmap).
+            return $group['names'][$name] ?? $name;
+        }
+
+        return mb_strtolower((string) ($item['Name'] ?? ''));
+    }
+
+    /** @param  array<int, string>  $ids  as many ids as fit in $limit characters, then "and n more" */
+    private static function fit(array $ids, int $limit): string
+    {
+        $shown = [];
+        $length = 0;
+        foreach ($ids as $id) {
+            if ($length + strlen($id) + 2 > $limit) {
+                break;
+            }
+            $shown[] = $id;
+            $length += strlen($id) + 2;
+        }
+
+        return implode(', ', $shown).(count($shown) < count($ids) ? ' and '.(count($ids) - count($shown)).' more' : '');
+    }
+
     /** @param Collection<int, SecurityFinding> $open */
     private static function scanInventory(Device $device, SecurityRule $rule, Collection $open, array $items): array
     {
-        $found = self::matches($rule->definition, $items);
+        $found = self::matches($rule->definition, $items, self::context($device));
         $byFingerprint = $open->keyBy('fingerprint');
 
         $opened = self::write($device, $rule, $found, $byFingerprint);
@@ -578,14 +753,15 @@ class SecurityScanner
         $rows = [];
         DB::transaction(function () use ($device, $rule, $found, $byFingerprint, $room, &$rows) {
             foreach ($found as $fingerprint => $match) {
-                $finding = $byFingerprint->get($fingerprint);
+                $finding = $byFingerprint->get($fingerprint) ?? self::adopt($byFingerprint, $fingerprint, $match['legacy'] ?? []);
+                $severity = $match['severity'] ?? $rule->severity;
                 if ($finding === null) {
                     if ($room === null || count($rows) < $room) {
                         $rows[] = [
                             'device_id' => $device->id,
                             'security_rule_id' => $rule->id,
                             'fingerprint' => $fingerprint,
-                            'severity' => $rule->severity,
+                            'severity' => $severity,
                             'message' => self::message($match),
                             'details' => json_encode($match['item'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                             'first_seen_at' => now(),
@@ -597,7 +773,11 @@ class SecurityScanner
 
                     continue;
                 }
-                $fresh = ['message' => self::message($match), 'details' => $match['item'], 'severity' => $rule->severity];
+                $fresh = ['message' => self::message($match), 'details' => $match['item'], 'severity' => $severity];
+                // Acknowledged, and now worse (a more severe CVE, the program runs as a service): it needs attention again.
+                if ($finding->acknowledged_at !== null && (SecurityRules::SEVERITIES[$severity] ?? 9) < (SecurityRules::SEVERITIES[$finding->severity] ?? 9)) {
+                    $fresh += ['acknowledged_at' => null, 'acknowledged_by' => null];
+                }
                 if ($finding->message !== $fresh['message'] || $finding->details !== $fresh['details'] || $finding->severity !== $fresh['severity'] || $finding->last_seen_at->lt(now()->subHour())) {
                     $finding->update($fresh + ['last_seen_at' => now()]);
                 }
@@ -608,6 +788,28 @@ class SecurityScanner
         });
 
         return count($rows);
+    }
+
+    /**
+     * A group of packages that were findings one by one (before the findings were grouped by source package) takes over
+     * the one of them that was acknowledged (else the oldest), so acknowledging and the history stay; the others are
+     * not in the new list of findings and are resolved with the rest of what the rule no longer finds.
+     *
+     * @param  Collection<string, SecurityFinding>  $byFingerprint
+     * @param  array<int, string>  $legacy
+     */
+    private static function adopt(Collection $byFingerprint, string $fingerprint, array $legacy): ?SecurityFinding
+    {
+        $old = collect($legacy)->map(fn ($fp) => $byFingerprint->get($fp))->filter()
+            ->sortBy([fn ($a, $b) => ($b->acknowledged_at !== null) <=> ($a->acknowledged_at !== null), fn ($a, $b) => $a->id <=> $b->id])->first();
+        if ($old === null) {
+            return null;
+        }
+        $old->update(['fingerprint' => $fingerprint]);
+        $byFingerprint->forget($legacy);
+        $byFingerprint->put($fingerprint, $old);
+
+        return $old;
     }
 
     /**

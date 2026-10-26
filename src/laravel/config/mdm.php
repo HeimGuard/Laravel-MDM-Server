@@ -39,6 +39,9 @@ return [
     // rules/*.json and parsers/*.json, at a branch or tag. Once a day by a job; empty for none.
     'security_feed_url' => env('MDM_SECURITY_FEED_URL'),
     'security_feed_ref' => env('MDM_SECURITY_FEED_REF', 'main'),
+    // Days after which an acknowledged finding of the inventory is open again (0: never) and after which a device that has not reported has stale findings (0: never).
+    'security_ack_days' => (int) env('MDM_SECURITY_ACK_DAYS', 0),
+    'security_stale_days' => (int) env('MDM_SECURITY_STALE_DAYS', 14),
 
     // AI for writing remediation scripts from a description (the AI button in the script form):
     // anthropic (Claude) or openai, with its API key; without a key the button is off. The model
