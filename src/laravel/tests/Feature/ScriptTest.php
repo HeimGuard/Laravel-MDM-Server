@@ -434,18 +434,19 @@ class ScriptTest extends TestCase
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'LXD is affected', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
-        $answer = fn (string $name, string $remediation) => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
+        $answer = fn (string $name, string $remediation) => ['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
             'name' => $name, 'description' => 'Updates LXD.', 'platform' => 'linux', 'timeout' => 60,
             'detection' => "if (-not (Test-Path /x)) { exit 1 }\nexit 0", 'remediation' => $remediation, 'manual_remediation' => false,
-        ])]]]);
+        ])]]];
 
-        Http::fake(['api.anthropic.com/*' => $answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd')]);
+        // Two answers one after the other (a later Http::fake would not replace the first one).
+        Http::fake(['api.anthropic.com/*' => Http::sequence()->push($answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd'))
+            ->push($answer('LXD (Snap) aktualisieren', 'snap refresh lxd --channel=5.21/stable'))]);
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame(1, $script->version);
 
         // Another language or another answer of the AI: the same script, its name stays, the code is a new version.
-        Http::fake(['api.anthropic.com/*' => $answer('LXD (Snap) aktualisieren', 'snap refresh lxd --channel=5.21/stable')]);
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
 
         $script = Script::query()->where('security_rule_id', $rule->id)->sole();
