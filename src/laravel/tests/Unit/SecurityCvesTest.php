@@ -200,6 +200,36 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('trixie', SecurityCves::release(['Id' => 'debian', 'Version' => '13', 'Codename' => null]));
     }
 
+    public function test_the_signed_kernel_is_judged_by_the_tracker_of_the_unsigned_one(): void
+    {
+        $this->assertSame('linux', SecurityCves::trackerSource('linux-signed'));
+        $this->assertSame('linux', SecurityCves::trackerSource('linux-signed-amd64'));
+        $this->assertSame('linux-aws', SecurityCves::trackerSource('linux-signed-aws'));
+        $this->assertSame('linux-aws', SecurityCves::trackerSource('Linux-AWS'));
+        $this->assertSame('openssl', SecurityCves::trackerSource('openssl'));
+
+        $cve = ['id' => 'CVE-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['linux' => ['jammy' => ['released', '5.15.0-130.140']]]];
+        $kernel = ['Name' => 'linux-image-5.15.0-120-generic', 'Version' => '5.15.0-120.130', 'SourcePackage' => 'linux-signed', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+        $this->assertCount(1, SecurityCves::affecting([$cve], $kernel, 'jammy', 'ubuntu'));
+        $this->assertSame([], SecurityCves::affecting([$cve], ['Version' => '5.15.0-130.140'] + $kernel, 'jammy', 'ubuntu'));
+    }
+
+    public function test_the_index_gives_a_package_only_the_cves_of_its_source_and_the_ones_with_ranges(): void
+    {
+        $cves = [
+            ['id' => 'CVE-A', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]],
+            ['id' => 'CVE-B', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['bar' => ['noble' => ['needed', '']]], 'debian' => ['foo' => ['bookworm' => ['needed', '']]]],
+            ['id' => 'CVE-C', 'severity' => 'low', 'ranges' => [[null, '9.0', null]]],
+        ];
+        $index = SecurityCves::index($cves);
+        $foo = ['Name' => 'libfoo1', 'SourcePackage' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+
+        $ids = function (array $found) { $keys = array_keys($found); sort($keys); return $keys; };
+        $this->assertSame(['CVE-A', 'CVE-C'], $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'CVE-B is about bar on Ubuntu');
+        $this->assertSame($ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu')), $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'the index changes nothing but the cost');
+        $this->assertSame(['CVE-B', 'CVE-C'], $ids(SecurityCves::affecting($cves, ['Origin' => 'Debian'] + $foo, 'bookworm', 'debian', $index)));
+    }
+
     public function test_status_and_severity_of_a_finding_are_the_most_urgent_of_its_cves(): void
     {
         $affecting = [

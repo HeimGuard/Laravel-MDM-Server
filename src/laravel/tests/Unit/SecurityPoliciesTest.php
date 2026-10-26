@@ -193,6 +193,18 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], SecurityScanner::matches($this->rule('posture.disk-encryption'), [['DiskEncrypted' => true]]));
     }
 
+    public function test_a_rule_of_a_tracker_needs_no_when(): void
+    {
+        $select = ['field' => 'SourcePackage', 'op' => 'in', 'value' => ['foo']];
+        $rule = ['key' => 'org.distro-ubuntu-01', 'name' => 'Ubuntu: known vulnerabilities', 'severity' => 'high', 'platform' => 'linux', 'source' => 'software',
+            'select' => $select, 'cves' => [['id' => 'CVE-2026-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]]]];
+
+        $this->assertSame([], SecurityRules::errors($rule));
+        $found = SecurityScanner::matches($rule, [$this->deb('libfoo1', '1.0-1', 'foo'), $this->deb('bar', '1.0-1')], ['release' => 'noble', 'os' => 'ubuntu']);
+        $this->assertCount(1, $found);
+        $this->assertSame('high', array_values($found)[0]['severity']);
+    }
+
     public function test_every_bundled_rule_is_valid(): void
     {
         foreach (json_decode(file_get_contents(__DIR__.'/../../resources/security/rules.json'), true) as $rule) {

@@ -246,9 +246,10 @@ class SecurityRules
             || array_diff($rule['unseen_by'], ['User', 'Source']) !== [] || count(array_unique($rule['unseen_by'])) !== count($rule['unseen_by']))) {
             $errors[] = __('unseen_by: a list of User and / or Source, with unseen_days.');
         }
-        if (! array_key_exists('when', $rule)) {
+        // A rule that names its packages in "select" and its CVEs in "cves" has no "when": only servers that know them read it.
+        if (! array_key_exists('when', $rule) && ! (isset($rule['select'], $rule['cves']) && is_array($rule['cves']))) {
             $errors[] = __('when: the conditions are missing.');
-        } else {
+        } elseif (array_key_exists('when', $rule)) {
             $count = 0;
             self::conditionErrors($rule['when'], 'when', 1, $count, $errors);
         }

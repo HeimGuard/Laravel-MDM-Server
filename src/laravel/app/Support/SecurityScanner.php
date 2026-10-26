@@ -626,10 +626,11 @@ class SecurityScanner
     private static function matchGroups(array $definition, array $matching, string $template, array $context): array
     {
         $groups = [];
+        $index = isset($definition['cves']) ? SecurityCves::index($definition['cves']) : null;
         foreach ($matching as $item) {
             $affecting = [];
             if (isset($definition['cves'])) {
-                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null);
+                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null, $index);
                 if ($affecting === []) {
                     continue;
                 }

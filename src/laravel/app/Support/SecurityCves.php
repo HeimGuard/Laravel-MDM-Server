@@ -60,14 +60,52 @@ class SecurityCves
         };
     }
 
+    /** The name a tracker knows a source package by: the signed kernel packages are built from the unsigned one (linux-signed-aws is linux-aws). */
+    public static function trackerSource(string $source): string
+    {
+        return preg_replace('/^linux-signed(?:-(?:amd64|arm64|i386))?/', 'linux', strtolower(trim($source))) ?? $source;
+    }
+
+    /**
+     * The CVEs of a rule by what they are about, so that a rule of thousands of CVEs of a tracker (each about a few source
+     * packages, no ranges) is not evaluated for every package: the ones with ranges are for every package, the others for the
+     * source packages named in their tracker data.
+     *
+     * @param  array<int, array>  $cves
+     * @return array{generic: array<int, array>, by: array<string, array<int, array>>}
+     */
+    public static function index(array $cves): array
+    {
+        $index = ['generic' => [], 'by' => []];
+        foreach ($cves as $cve) {
+            if (! empty($cve['ranges'])) {
+                $index['generic'][] = $cve;
+
+                continue;
+            }
+            foreach (['ubuntu', 'debian'] as $tracker) {
+                foreach (array_keys($cve[$tracker] ?? []) as $source) {
+                    // By id: a CVE that both trackers name the source of is one entry.
+                    $index['by'][self::trackerSource((string) $source)][$cve['id'] ?? count($index['by'])] = $cve;
+                }
+            }
+        }
+
+        return $index;
+    }
+
     /**
      * The CVEs of a rule that affect an item.
      *
      * @param  array<int, array>  $cves
      * @return array<string, array{id: string, severity: string, status: string, fixed: ?string}> by CVE id
      */
-    public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null): array
+    public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null, ?array $index = null): array
     {
+        if ($index !== null) {
+            $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? '')));
+            $cves = [...$index['generic'], ...array_values($index['by'][$source] ?? [])];
+        }
         $found = [];
         $dpkg = strtolower((string) ($item['Source'] ?? '')) === 'dpkg';
         $changelog = strtolower((string) ($item['FixedCves'] ?? ''));
@@ -93,7 +131,7 @@ class SecurityCves
         $version = trim((string) ($item['Version'] ?? ''));
         $candidate = trim((string) ($item['Candidate'] ?? ''));
         $origin = strtolower(trim((string) ($item['Origin'] ?? '')));
-        $source = strtolower(trim((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? ''))));
+        $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? '')));
         $distribution = in_array($origin, ['', 'ubuntu', 'debian'], true);
 
         $trackerKey = self::trackerOf($osId);
@@ -167,7 +205,7 @@ class SecurityCves
     private static function tracker(array $sources, string $source): ?array
     {
         foreach ($sources as $name => $releases) {
-            if (strtolower((string) $name) === $source && is_array($releases) && $releases !== []) {
+            if (self::trackerSource((string) $name) === $source && is_array($releases) && $releases !== []) {
                 return array_change_key_case($releases);
             }
         }
