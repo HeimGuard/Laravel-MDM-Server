@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.27.0'
+$AgentVersion = '1.28.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1080,6 +1080,156 @@ function Get-DpkgFixedCves {
     return $null
 }
 
+function Get-AptPolicy {
+    # What `apt-cache policy` says of every package: the Candidate (the version apt would install) and the Origin of the
+    # installed version ('Ubuntu', 'Debian', the host of another repository, or 'dpkg/status' when no active repository
+    # has it: it was installed from a file, or its repository is gone). {name = @{ Candidate; Origin }}.
+    $env:LC_ALL = 'C'
+    $map = @{}
+    $name = $null
+    $installed = $null
+    $current = $null
+    $origin = $null
+    $flush = {
+        if ($name -and $installed -and $installed -ne '(none)') {
+            $map[$name] = @{ Candidate = $candidate; Origin = if ($origin) { $origin } else { 'dpkg/status' } }
+        }
+    }
+    $candidate = $null
+    foreach ($line in @(apt-cache policy 2>$null)) {
+        if ($line -match '^(\S.*):\s*$') {
+            & $flush
+            $name = $Matches[1]; $installed = $null; $candidate = $null; $current = $null; $origin = $null
+        } elseif ($line -match '^\s+Installed:\s*(\S+)') { $installed = $Matches[1]
+        } elseif ($line -match '^\s+Candidate:\s*(\S+)') { $candidate = if ($Matches[1] -eq '(none)') { $null } else { $Matches[1] }
+        } elseif ($line -match '^\s+(\*\*\*\s+)?(\S+)\s+\d+\s*$') { $current = if ($Matches[1]) { $Matches[2] } else { $null }
+        } elseif ($current -and -not $origin -and $line -match '^\s+\d+\s+(https?://\S+|file:\S+|cdrom:\S+)') {
+            $url = $Matches[1].ToLowerInvariant()
+            $origin = if ($url -match 'ubuntu') { 'Ubuntu' } elseif ($url -match 'debian') { 'Debian' } elseif ($url -match '^https?://([^/:]+)') { $Matches[1] } else { 'local' }
+        }
+    }
+    & $flush
+    return $map
+}
+
+function Get-LinuxFirewall {
+    # Whether a firewall is active and what is installed, from every tool: ufw, firewalld, nftables and iptables. Active means
+    # ufw / firewalld running, or a chain on the input hook with a drop / reject policy or rules (the chains and rules of Docker,
+    # DOCKER* and FORWARD, do not count). Returns @{ Enabled = $true | $false | $null; Detail = text with how to turn it on }.
+    $active = @()
+    $installed = @()
+    if (Get-Command -Name ufw -CommandType Application -ErrorAction SilentlyContinue) {
+        if ("$(ufw status 2>$null)" -match 'Status: active') { $active += 'ufw' } else { $installed += 'ufw is installed but inactive: sudo ufw enable' }
+    }
+    if (Get-Command -Name firewall-cmd -CommandType Application -ErrorAction SilentlyContinue) {
+        if ("$(firewall-cmd --state 2>$null)".Trim() -eq 'running') { $active += 'firewalld' } else { $installed += 'firewalld is installed but not running: sudo systemctl enable --now firewalld' }
+    }
+    $checked = $false
+    if (Get-Command -Name nft -CommandType Application -ErrorAction SilentlyContinue) {
+        $ruleset = "$(nft list ruleset 2>$null)"
+        if ($LASTEXITCODE -eq 0) {
+            $checked = $true
+            foreach ($chain in [regex]::Matches($ruleset, '(?s)chain\s+(\S+)\s*\{([^{}]*)\}')) {
+                if ($chain.Groups[1].Value -match '^(DOCKER|docker)') { continue }
+                $body = $chain.Groups[2].Value
+                if ($body -match 'hook\s+input' -and $body -match 'policy\s+(drop|reject)|\s(drop|reject)\b') { $active += 'nftables'; break }
+            }
+            if ($active -notcontains 'nftables') { $installed += 'nftables is installed without a drop policy or rules on the input hook: write them in /etc/nftables.conf and sudo systemctl enable --now nftables' }
+        }
+    }
+    if ($active -notcontains 'nftables' -and (Get-Command -Name iptables -CommandType Application -ErrorAction SilentlyContinue)) {
+        # Only the INPUT chain: Docker's own chains and FORWARD are not a firewall of the device.
+        $rules = @(iptables -S INPUT 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            $checked = $true
+            if ($rules -match '^-P INPUT (DROP|REJECT)|^-A INPUT .*-j (DROP|REJECT)') { $active += 'iptables' } else { $installed += 'iptables has no drop / reject policy or rule on INPUT' }
+        }
+    }
+    if ($active.Count -gt 0) { return @{ Enabled = $true; Detail = "active: $($active -join ', ')" } }
+    if ($installed.Count -eq 0 -and -not $checked) { return @{ Enabled = $null; Detail = $null } }
+    $detail = if ($installed.Count -gt 0) { $installed -join '; ' } else { 'no ufw, firewalld, nftables or iptables is installed: sudo apt install ufw && sudo ufw enable' }
+    return @{ Enabled = $false; Detail = $detail }
+}
+
+function Test-LinuxDeviceEncrypted {
+    # Whether dm-crypt / LUKS is somewhere under the device (a partition of a LUKS device, LVM on LUKS, LUKS on LVM):
+    # lsblk -s walks from the device down to its parents; without lsblk the same is read from sysfs.
+    param ([string]$Device)
+
+    if (Get-Command -Name lsblk -CommandType Application -ErrorAction SilentlyContinue) {
+        $types = @(lsblk -s -n -o TYPE $Device 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $types.Count -gt 0) { return [bool]($types -match 'crypt') }
+    }
+    $walk = $null
+    $walk = {
+        param ([string]$Name, [int]$Depth)
+        if ($Depth -gt 8 -or -not $Name) { return $false }
+        $uuid = "$(Get-Content -Path "/sys/class/block/$Name/dm/uuid" -ErrorAction SilentlyContinue)"
+        if ($uuid -like 'CRYPT-*') { return $true }
+        foreach ($slave in @(Get-ChildItem -Path "/sys/class/block/$Name/slaves" -ErrorAction SilentlyContinue)) {
+            if (& $walk $slave.Name ($Depth + 1)) { return $true }
+        }
+        # A partition: its disk is the parent directory in sysfs.
+        $real = "$(readlink -f "/sys/class/block/$Name" 2>$null)"
+        if ($real -match '/block/[^/]+/[^/]+$') { return [bool](& $walk (Split-Path -Leaf (Split-Path -Parent $real)) ($Depth + 1)) }
+        return $false
+    }
+    $resolved = "$(readlink -f $Device 2>$null)"
+    if (-not $resolved) { return $null }
+    return [bool](& $walk (Split-Path -Leaf $resolved) 0)
+}
+
+function Get-LinuxUnencryptedMounts {
+    # The mount points among / and /home (when it is a mount of its own) that are not on an encrypted device, $null when it cannot be told.
+    $points = @('/')
+    if ("$(findmnt -n -o TARGET --target /home 2>$null)".Trim() -eq '/home') { $points += '/home' }
+    $unencrypted = @()
+    $known = 0
+    foreach ($point in $points) {
+        $device = "$(findmnt -n -o SOURCE $point 2>$null)".Trim() -replace '\[.*\]$', ''
+        if (-not $device.StartsWith('/dev/')) { continue }
+        $encrypted = Test-LinuxDeviceEncrypted -Device $device
+        if ($null -eq $encrypted) { continue }
+        $known++
+        if (-not $encrypted) { $unencrypted += $point }
+    }
+    if ($known -eq 0) { return $null }
+    return , $unencrypted
+}
+
+function Get-AptUpdateState {
+    # What the last apt-get update of the agent said (written by Get-AptUpdates): @{ Ok; Errors }, $null when it did not run yet.
+    param ([string]$Path)
+
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        $state = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -eq $state.ok) { return $null }
+        return @{ Ok = [bool]$state.ok; Errors = "$($state.errors)" }
+    }
+    catch { return $null }
+}
+
+function Add-SecuritySoftwareContext {
+    # Whether a remote access tool or a package without a source of updates is running, as whom and whether it listens on the
+    # network: the processes and listening ports it matches by the first word of its name. Only these items get the fields (Running,
+    # RunUser, Listening), so the other items, and their hashes, do not change.
+    param ($Software, $Processes, $Listening)
+
+    $remote = '\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\b'
+    foreach ($item in @($Software)) {
+        if (-not ($item.Name -match $remote -or $item.NoUpdateSource)) { continue }
+        $token = if ("$($item.Name)".ToLowerInvariant() -match '^[a-z0-9]+') { $Matches[0] } else { '' }
+        if ($token.Length -lt 4) { continue }
+        $running = @(@($Processes) | Where-Object { "$($_.Name)$($_.Path)".ToLowerInvariant().Contains($token) })
+        $ports = @(@($Listening) | Where-Object { "$($_.Process)$($_.Path)".ToLowerInvariant().Contains($token) -and "$($_.Address)" -notmatch '^(127\.|::1$|localhost)' })
+        $users = @($running | ForEach-Object { "$($_.User)" } | Where-Object { $_ } | Select-Object -Unique | Select-Object -First 3)
+        $item | Add-Member -NotePropertyName Running -NotePropertyValue ($running.Count -gt 0) -Force
+        $item | Add-Member -NotePropertyName RunUser -NotePropertyValue $(if ($users) { $users -join ', ' } else { $null }) -Force
+        $item | Add-Member -NotePropertyName Listening -NotePropertyValue ($ports.Count -gt 0) -Force
+    }
+}
+
 function Get-SecuritySoftware {
     param (
         [bool]$OnLinux,
@@ -1094,6 +1244,8 @@ function Get-SecuritySoftware {
                 try { foreach ($property in (Get-Content -Path $CachePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties) { $cves[$property.Name] = "$($property.Value)" } } catch { }
             }
             $used = @{}
+            $policy = @{}
+            try { $policy = Get-AptPolicy } catch { }
             $dpkg = @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\t${source:Package}\n' 2>$null | ForEach-Object {
                 $parts = $_ -split "`t"
                 if ($parts.Count -ge 4 -and $parts[0] -like 'i*') {
@@ -1103,7 +1255,20 @@ function Get-SecuritySoftware {
                     # The source package of a binary one (libssl3t64 is openssl, libglib2.0-0t64 is glib2.0): what a
                     # distribution's security tracker is about. Only when it is not the package's own name.
                     $sourcePackage = if ($parts.Count -ge 5 -and $parts[4] -and $parts[4] -ne $parts[1]) { ConvertTo-SecurityText $parts[4] 200 } else { $null }
-                    [PSCustomObject]@{ Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg'; FixedCves = if ($used[$key]) { $used[$key] } else { $null }; SourcePackage = $sourcePackage }
+                    # The candidate (only when it is another version than the installed one) and where the package comes from (apt-cache policy).
+                    $entry = $policy[$parts[1]]
+                    $candidate = if ($entry -and $entry.Candidate -and $entry.Candidate -ne $parts[2]) { $entry.Candidate } else { $null }
+                    $newer = $false
+                    if ($candidate) { dpkg --compare-versions $candidate gt $parts[2] 2>$null; $newer = $LASTEXITCODE -eq 0 }
+                    [PSCustomObject]@{
+                        Name = $parts[1]; Version = $parts[2]; Publisher = ConvertTo-SecurityText $parts[3] 200; Source = 'dpkg'
+                        FixedCves = if ($used[$key]) { $used[$key] } else { $null }; SourcePackage = $sourcePackage
+                        Candidate = if ($newer) { $candidate } else { $null }
+                        Origin = if ($entry) { $entry.Origin } else { $null }
+                        UpdateAvailable = if ($entry) { $newer } else { $null }
+                        NoUpdateSource = if ($entry) { $entry.Origin -eq 'dpkg/status' } else { $null }
+                        Running = $null; RunUser = $null; Listening = $null
+                    }
                 }
             })
             # Only the installed versions stay in the cache.
@@ -1118,7 +1283,7 @@ function Get-SecuritySoftware {
         if (Get-Command -Name snap -CommandType Application -ErrorAction SilentlyContinue) {
             snap list 2>$null | Select-Object -Skip 1 | ForEach-Object {
                 $parts = $_.Trim() -split '\s+'
-                if ($parts.Count -ge 2) { [PSCustomObject]@{ Name = $parts[0]; Version = $parts[1]; Publisher = if ($parts.Count -ge 5) { $parts[4] } else { $null }; Source = 'snap' } }
+                if ($parts.Count -ge 2) { [PSCustomObject]@{ Name = $parts[0]; Version = $parts[1]; Publisher = if ($parts.Count -ge 5) { $parts[4] } else { $null }; Source = 'snap'; Channel = if ($parts.Count -ge 4) { $parts[3] } else { $null } } }
             }
         }
         if (Get-Command -Name flatpak -CommandType Application -ErrorAction SilentlyContinue) {
@@ -1357,6 +1522,8 @@ function Get-SecurityOs {
             Name    = ConvertTo-SecurityText $osRelease['PRETTY_NAME'] 300
             Version = ConvertTo-SecurityText $osRelease['VERSION_ID'] 100
             Kernel  = ConvertTo-SecurityText "$(uname -r 2>$null)" 100
+            # The release (noble, resolute): what the security tracker of the distribution is organised by.
+            Codename = ConvertTo-SecurityText $osRelease['VERSION_CODENAME'] 50
         }
         return
     }
@@ -1364,7 +1531,7 @@ function Get-SecurityOs {
     $revision = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name UBR -ErrorAction Stop).UBR
     # The revision is missing on very old systems: the build alone would say less than it seems to.
     if ("$($os.Version)" -match '^\d+\.\d+\.\d+$' -and "$revision" -match '^\d+$') {
-        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null }
+        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null; Codename = $null }
     }
 }
 
@@ -1416,34 +1583,29 @@ function Get-SecurityAdmins {
 function Get-SecurityPosture {
     param (
         [bool]$OnLinux,
-        [bool]$InContainer
+        [bool]$InContainer,
+        # What the last apt-get update of the agent said (Get-AptUpdates writes it).
+        [string]$AptStatePath = ''
     )
 
     $posture = @{}
     if ($OnLinux) {
-        $firewall = $null
-        if (Get-Command -Name ufw -CommandType Application -ErrorAction SilentlyContinue) {
-            $firewall = "$(ufw status 2>$null)" -match 'Status: active'
-        }
-        if (-not $firewall -and (Get-Command -Name firewall-cmd -CommandType Application -ErrorAction SilentlyContinue)) {
-            $firewall = "$(firewall-cmd --state 2>$null)".Trim() -eq 'running'
-        }
-        if (-not $firewall -and (Get-Command -Name iptables -CommandType Application -ErrorAction SilentlyContinue)) {
-            # A policy or a rule that drops or rejects incoming traffic (iptables-nft also shows nftables).
-            $rules = @(iptables -S INPUT 2>$null)
-            if ($LASTEXITCODE -eq 0) { $firewall = [bool]($rules -match '^-P INPUT (DROP|REJECT)|-j (DROP|REJECT)') }
-        }
-        if (-not $firewall -and (Get-Command -Name nft -CommandType Application -ErrorAction SilentlyContinue)) {
-            $ruleset = "$(nft list ruleset 2>$null)"
-            if ($LASTEXITCODE -eq 0) { $firewall = $ruleset -match 'hook input[^}]*(policy drop|\sdrop|\sreject)' }
-        }
-        $posture.FirewallEnabled = if ($InContainer) { $null } else { $firewall }
-        if (-not $InContainer -and (Get-Command -Name findmnt -CommandType Application -ErrorAction SilentlyContinue)) {
-            $root = "$(findmnt -n -o SOURCE / 2>$null)".Trim() -replace '\[.*\]$', ''
-            if ($root -and (Get-Command -Name lsblk -CommandType Application -ErrorAction SilentlyContinue)) {
-                $types = @(lsblk -s -n -o TYPE $root 2>$null)
-                if ($LASTEXITCODE -eq 0) { $posture.DiskEncrypted = [bool]($types -match 'crypt') }
+        if (-not $InContainer) {
+            $firewall = Get-LinuxFirewall
+            $posture.FirewallEnabled = $firewall.Enabled
+            $posture.FirewallDetail = $firewall.Detail
+            if (Get-Command -Name findmnt -CommandType Application -ErrorAction SilentlyContinue) {
+                $unencrypted = Get-LinuxUnencryptedMounts
+                if ($null -ne $unencrypted) {
+                    $posture.DiskEncrypted = @($unencrypted).Count -eq 0
+                    if (@($unencrypted).Count -gt 0) { $posture.UnencryptedMounts = @($unencrypted) -join ', ' }
+                }
             }
+        }
+        $apt = Get-AptUpdateState -Path $AptStatePath
+        if ($apt) {
+            $posture.AptUpdateOk = $apt.Ok
+            if (-not $apt.Ok) { $posture.AptUpdateErrors = $apt.Errors }
         }
         $efi = @(Get-ChildItem -Path '/sys/firmware/efi/efivars/SecureBoot-*' -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($efi) {
@@ -1515,7 +1677,10 @@ function Get-SecurityPosture {
 
     try {
         $volume = Get-CimInstance -Namespace root/cimv2/Security/MicrosoftVolumeEncryption -ClassName Win32_EncryptableVolume -Filter "DriveLetter = '$env:SystemDrive'" -ErrorAction Stop
-        if ($volume) { $posture.DiskEncrypted = [int]$volume.ProtectionStatus -eq 1 }
+        if ($volume) {
+            $posture.DiskEncrypted = [int]$volume.ProtectionStatus -eq 1
+            if (-not $posture.DiskEncrypted) { $posture.UnencryptedMounts = "$env:SystemDrive" }
+        }
     }
     catch { }
     try { $posture.SecureBoot = [bool](Confirm-SecureBootUEFI -ErrorAction Stop) } catch { }
@@ -1704,7 +1869,8 @@ function Get-SecurityInventory {
         [bool]$SendLogs = $false,
         # The collection policy of the server and the positions of the logs (JSON), see Get-SecurityLogs.
         [string]$PolicyJson = '',
-        [string]$CursorsJson = ''
+        [string]$CursorsJson = '',
+        [string]$AptStatePath = ''
     )
 
     $inventory = @{}
@@ -1715,7 +1881,8 @@ function Get-SecurityInventory {
     try { $inventory['startup'] = @(Get-SecurityStartup -OnLinux $OnLinux | Select-Object -First 500) } catch { }
     try { $inventory['admins'] = @(Get-SecurityAdmins -OnLinux $OnLinux | Select-Object -First 200) } catch { }
     try { $inventory['os'] = @(Get-SecurityOs -OnLinux $OnLinux | Select-Object -First 1) } catch { }
-    try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer } catch { }
+    try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer -AptStatePath $AptStatePath } catch { }
+    try { Add-SecuritySoftwareContext -Software $inventory['software'] -Processes $inventory['processes'] -Listening $inventory['listening'] } catch { }
     $records = @()
     $moved = @{}
     if ($SendLogs -and $PolicyJson) {
@@ -2351,7 +2518,20 @@ function Get-PowerShellReleaseUpdate {
     catch { }
 }
 
+function Save-AptUpdateState {
+    # The result of apt-get update for the security inventory (a failed update makes its CVE findings uncertain): the error lines
+    # only; notices (a repository without an architecture such as i386) are no errors.
+    param ([string]$Path, [int]$ExitCode, $Output)
+
+    if (-not $Path) { return }
+    $errors = @(@($Output) | Where-Object { "$_" -match '^(E:|W:|Err:)' -and "$_" -notmatch "doesn't support architecture" })
+    $text = ($errors -join "`n")
+    if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
+    try { @{ at = (Get-Date).ToString('o'); ok = ($ExitCode -eq 0); errors = $text } | ConvertTo-Json -Compress | Set-Content -Path $Path -Encoding UTF8 } catch { }
+}
+
 function Get-AptUpdates {
+    param ([string]$StatePath = '')
     # The apt cache is refreshed first (apt-get update), a stale cache is the reason updates were
     # missed. When the refresh fails this throws, so the caller never reports "0 updates" from an old
     # cache. "apt list --upgradable" also lists packages apt will not install now, so a simulated
@@ -2359,6 +2539,7 @@ function Get-AptUpdates {
     # or held back.
     $env:DEBIAN_FRONTEND = 'noninteractive'
     $refresh = @(apt-get -o DPkg::Lock::Timeout=600 -q update 2>&1 | ForEach-Object { "$_" })
+    Save-AptUpdateState -Path $StatePath -ExitCode $LASTEXITCODE -Output $refresh
     if ($LASTEXITCODE) { throw "apt-get update failed (exit $LASTEXITCODE): $((@($refresh) | Select-Object -Last 2) -join ' | ')" }
     $simulation = @(apt-get -s -q -o Debug::NoLocking=1 --with-new-pkgs upgrade 2>$null)
     if ($LASTEXITCODE) { throw "apt-get -s upgrade failed (exit $LASTEXITCODE)" }
@@ -3616,14 +3797,14 @@ function Start-AgentJob {
 
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
-    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux -ScriptBlock {
-        param ($OnLinux)
+    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
+        param ($OnLinux, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         $data = @{}
         try { $data['module_updates'] = @(Invoke-PowerShellModules -OnLinux $OnLinux | Where-Object { $_.Version }) } catch { }
         $packages = @()
         if ($OnLinux) {
-            try { $data['os_updates'] = @(Get-AptUpdates) } catch { $data['os_updates_error'] = $_.Exception.Message }
+            try { $data['os_updates'] = @(Get-AptUpdates -StatePath $AptStatePath) } catch { $data['os_updates_error'] = $_.Exception.Message }
             try { $packages += @(Get-FlatpakUpdates) } catch { }
             try { $packages += @(Get-SnapUpdates) } catch { }
         } else {
@@ -3673,10 +3854,10 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json" -ScriptBlock {
-        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath)
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
-        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson
+        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
     }
 }
 
@@ -3727,13 +3908,13 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
     admins    = @('Name', 'Source', 'Enabled')
-    os        = @('Name', 'Version', 'Id', 'Kernel')
-    posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate')
+    os        = @('Name', 'Version', 'Id', 'Kernel', 'Codename')
+    posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors')
 }
 $SecurityKeyFields = @{
     software  = @('Name', 'Source')
@@ -3764,10 +3945,12 @@ function Get-SecurityItemKey ([string]$Source, $Item) {
 
 function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
-    # FixedCves and SourcePackage count only when they are set, so the hashes of the items without them stay what they were.
+    # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
+    # hashes of the items without them stay what they were.
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
-        if ($field -in 'FixedCves', 'SourcePackage' -and $value -eq '') { continue }
+        if ($field -in $optional -and $value -eq '') { continue }
         $value
     }
     return Get-SecurityShortHash ($parts -join [string][char]0x1f)

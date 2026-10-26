@@ -30,8 +30,8 @@ class SecurityInventory extends Model
     /** Texts are cut to this many characters (command lines are long). */
     private const MAX_TEXT = 1000;
 
-    /** Fields that may be longer: the CVE ids of a package changelog. */
-    private const MAX_TEXT_OF = ['FixedCves' => 4000];
+    /** Fields that may be longer: the CVE ids of a package changelog, the errors of apt-get update. */
+    private const MAX_TEXT_OF = ['FixedCves' => 4000, 'AptUpdateErrors' => 2000];
 
     protected $fillable = ['device_id', 'states', 'scanned', 'collected_at'];
 
@@ -112,7 +112,7 @@ class SecurityInventory extends Model
         $parts = [];
         foreach (SecurityRules::SOURCES[$source]['fields'] as $field) {
             $value = self::canon($item[$field] ?? null);
-            if (in_array($field, ['FixedCves', 'SourcePackage'], true) && $value === '') {
+            if (in_array($field, SecurityRules::OPTIONAL_FIELDS, true) && $value === '') {
                 continue;
             }
             $parts[] = $value;

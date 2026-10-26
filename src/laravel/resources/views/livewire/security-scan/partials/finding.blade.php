@@ -20,8 +20,8 @@
             @endif
         </div>
         <div class="small text-break mt-1">{{ $finding->message }}</div>
-        @if ($finding->rule?->definition['remediation'] ?? null)
-            <div class="small text-muted mt-1"><i class="fas fa-wrench me-1"></i>{{ $finding->rule->definition['remediation'] }}</div>
+        @if ($finding->remediation)
+            <div class="small text-muted mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
         @endif
         @if ($finding->rule?->urls)
             <div class="mt-1">@foreach ($finding->rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>

@@ -64,7 +64,7 @@ class SecurityExport
         if ($finding->acknowledged_at) {
             $out[] = '- **Acknowledged:** '.$finding->acknowledged_at->toDateTimeString().' by '.self::line($finding->acknowledger?->name ?? '?');
         }
-        if ($hint = $rule?->definition['remediation'] ?? null) {
+        if ($hint = $finding->remediation) {
             $out[] = '- **Remediation:** '.self::line($hint);
         }
         foreach ($rule?->urls ?? [] as $link) {

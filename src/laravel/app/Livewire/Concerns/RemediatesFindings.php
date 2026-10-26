@@ -34,7 +34,7 @@ trait RemediatesFindings
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
         $request = "Remediate this security finding.\nRule: {$rule?->name}\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
-            .($rule?->definition['remediation'] ?? null ? "\nHint: {$rule->definition['remediation']}" : '')
+            .($finding->remediation ? "\nHint: {$finding->remediation}" : '')
             // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
             .($rule && $rule->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($rule->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
             .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '')

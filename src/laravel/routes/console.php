@@ -24,6 +24,9 @@ Schedule::call(fn () => App\Support\AlertEvaluator::run())->everyMinute()->name(
 // The rules of the security rules feed (MDM_SECURITY_FEED_URL), once a day when one is set.
 Schedule::job(new SyncSecurityFeed)->dailyAt('03:17')->name('mdm:security-feed')->when(fn () => SecurityFeed::enabled());
 
+// Findings: acknowledged ones expire (when set), the ones of a rule that is gone are resolved, silent devices' ones are stale.
+Schedule::call(fn () => App\Support\SecurityScanner::sweep())->dailyAt('03:47')->name('mdm:security-sweep');
+
 // Creates the server signing key when it does not exist yet and shows its fingerprint.
 Artisan::command('mdm:signing-key', function () {
     $this->info('Signing key: '.App\Support\Signing::keyPath());

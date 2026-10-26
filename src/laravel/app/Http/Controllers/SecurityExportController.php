@@ -18,7 +18,7 @@ class SecurityExportController extends Controller
     {
         $data = $request->validate([
             'device' => ['nullable', 'integer', 'exists:devices,id'],
-            'status' => ['nullable', 'in:open,acknowledged,resolved,unresolved'],
+            'status' => ['nullable', 'in:open,acknowledged,resolved,unresolved,stale'],
             'severity' => ['nullable', 'string', 'max:16'],
             'search' => ['nullable', 'string', 'max:200'],
         ]);

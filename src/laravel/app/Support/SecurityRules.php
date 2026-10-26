@@ -37,6 +37,15 @@ class SecurityRules
     public const PLATFORMS = ['any', 'windows', 'linux'];
 
     /**
+     * Fields that older agents do not send: they count in the hash of an item only when they are set, so the hashes of
+     * the items without them stay the ones those agents compute (Get-SecurityItemHash in app.ps1 does the same).
+     */
+    public const OPTIONAL_FIELDS = [
+        'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening',
+        'Codename', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
+    ];
+
+    /**
      * What the agent reports (agents 1.17.0+), with the fields of an item and the ones that tell
      * two items apart (one finding each). Posture is one item: settings of the device.
      * Events are what happened since the previous collection (a SIEM in small): their findings
@@ -47,7 +56,10 @@ class SecurityRules
             'label' => 'Installed software',
             // FixedCves (agents 1.23.0+, dpkg): ",CVE-2026-1,CVE-2026-2," the changelog of the package names, see itemHash.
             // SourcePackage (agents 1.24.0+, dpkg): the source package when it is not the package itself (libssl3t64: openssl).
-            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage'],
+            // Candidate (the version apt would install), Origin (the repository: Ubuntu, Debian, ... or dpkg/status for none), Channel (snap),
+            // UpdateAvailable / NoUpdateSource (what these say), Running / RunUser / Listening (the program is a running process, its
+            // user, it listens on the network; agents 1.28.0+, remote access tools and packages without a source only).
+            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening'],
             'key' => ['Name', 'Source'],
         ],
         'processes' => [
@@ -74,7 +86,7 @@ class SecurityRules
             'label' => 'Operating system',
             // Agents 1.27.0+: Id windows or the ID of /etc/os-release (ubuntu), Name the caption (PRETTY_NAME), Version the build of
             // Windows with its revision (10.0.19045.5555) or VERSION_ID (26.04), Kernel on Linux. One item.
-            'fields' => ['Name', 'Version', 'Id', 'Kernel'],
+            'fields' => ['Name', 'Version', 'Id', 'Kernel', 'Codename'],
             'key' => ['Id'],
         ],
         'posture' => [
@@ -83,6 +95,8 @@ class SecurityRules
                 'FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection',
                 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled',
                 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate',
+                // Agents 1.28.0+: the firewall that is on (or the ones installed and off), the mount points that are not encrypted, the result of apt-get update.
+                'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
             ],
             'key' => [],
         ],
@@ -159,6 +173,27 @@ class SecurityRules
         return $urls;
     }
 
+    /** At most this many CVEs in a rule. */
+    public const MAX_CVES = 3000;
+
+    /** @param  mixed  $cves  [{id, severity, ranges: [[start, end_excl, end_incl]], ubuntu: {source: {release: [status, fixed version]}}}] */
+    private static function cvesValid(mixed $cves): bool
+    {
+        if (! is_array($cves) || ! array_is_list($cves) || $cves === [] || count($cves) > self::MAX_CVES) {
+            return false;
+        }
+        foreach ($cves as $cve) {
+            if (! is_array($cve) || ! is_string($cve['id'] ?? null) || ! preg_match('/^CVE-\d{4}-\d+$/', $cve['id'])
+                || (isset($cve['severity']) && ! isset(self::SEVERITIES[$cve['severity']]))
+                || (isset($cve['ranges']) && (! is_array($cve['ranges']) || ! array_is_list($cve['ranges'])))
+                || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu']))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** Nesting deeper than this is refused (a rule is read on every report). */
     private const MAX_DEPTH = 6;
 
@@ -216,6 +251,21 @@ class SecurityRules
         } else {
             $count = 0;
             self::conditionErrors($rule['when'], 'when', 1, $count, $errors);
+        }
+        if (isset($rule['select'])) {
+            $count = 0;
+            self::conditionErrors($rule['select'], 'select', 1, $count, $errors);
+        }
+        if (isset($rule['cves']) && ! self::cvesValid($rule['cves'])) {
+            $errors[] = __('cves: a list of up to :count CVEs (id, severity, ranges, ubuntu).', ['count' => self::MAX_CVES]);
+        }
+        if (isset($rule['group']) && (($rule['source'] ?? null) !== 'software' || ! is_array($rule['group']) || ! is_string($rule['group']['field'] ?? null)
+            || ! is_string($rule['group']['pattern'] ?? null) || self::regex($rule['group']['pattern']) === null
+            || (isset($rule['group']['names']) && (! is_array($rule['group']['names']) || count(array_filter($rule['group']['names'], fn ($name) => ! is_string($name))) > 0)))) {
+            $errors[] = __('group: on rules of the software source, an object with a field and a pattern (its first group names the group).');
+        }
+        if (isset($rule['allow_tags']) && (! is_array($rule['allow_tags']) || ! array_is_list($rule['allow_tags']) || count(array_filter($rule['allow_tags'], fn ($tag) => ! is_string($tag))) > 0 || count($rule['allow_tags']) > 20)) {
+            $errors[] = __('allow_tags: a list of up to 20 device tags that are allowed to have it.');
         }
 
         return $errors;
@@ -362,7 +412,11 @@ class SecurityRules
      */
     public static function matching(array $rule, array $items): array
     {
-        return array_values(array_filter($items, fn ($item) => is_array($item) && self::test($rule['when'], $item)));
+        // A rule with "cves" says which packages it is about in "select" (the "when" next to it is for servers that do
+        // not know "cves": it is the same with the versions, and the CVEs are evaluated one by one, see SecurityCves).
+        $when = isset($rule['cves'], $rule['select']) ? $rule['select'] : $rule['when'];
+
+        return array_values(array_filter($items, fn ($item) => is_array($item) && self::test($when, $item)));
     }
 
     /** What tells the item apart from the other items of its source (one finding per item). */
@@ -490,7 +544,7 @@ class SecurityRules
      * Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045"): only the leading numbers count,
      * a missing part is 0 ("8.5" is "8.5.0"), so "7.1.2-31" is "7.1.2" - write such a bound as "7.1.2.31".
      */
-    private static function versionOrder(mixed $actual, mixed $expected): ?int
+    public static function versionOrder(mixed $actual, mixed $expected): ?int
     {
         $a = self::version($actual);
         $b = self::version($expected);
@@ -498,83 +552,20 @@ class SecurityRules
         return $a === null || $b === null ? null : self::compareNumbers(explode('.', $a), explode('.', $b));
     }
 
-    /**
-     * Debian package versions ("[epoch:]upstream[-revision]") in the order of dpkg, so "8.2512.0-1ubuntu4.2" is
-     * after "8.2512.0-1ubuntu4.1" and "1.0~rc1" before "1.0".
-     */
+    /** Debian package versions in the order of dpkg (see DpkgVersion), null when one of them is empty. */
     private static function dpkgOrder(mixed $actual, mixed $expected): ?int
     {
         if (! is_scalar($actual) || ! is_scalar($expected) || trim((string) $actual) === '' || trim((string) $expected) === '') {
             return null;
         }
-        [$epochA, $upstreamA, $revisionA] = self::dpkgParts(trim((string) $actual));
-        [$epochB, $upstreamB, $revisionB] = self::dpkgParts(trim((string) $expected));
 
-        return self::compareNumbers([$epochA], [$epochB]) ?: self::dpkgCompareString($upstreamA, $upstreamB) ?: self::dpkgCompareString($revisionA, $revisionB);
+        return DpkgVersion::compare((string) $actual, (string) $expected);
     }
 
     /** @param  array<int, string>  $a @param  array<int, string>  $b */
     private static function compareNumbers(array $a, array $b): int
     {
-        for ($i = 0, $n = max(count($a), count($b)); $i < $n; $i++) {
-            $x = ltrim($a[$i] ?? '0', '0');
-            $y = ltrim($b[$i] ?? '0', '0');
-            if ($x !== $y) {
-                return strlen($x) <=> strlen($y) ?: strcmp($x, $y);
-            }
-        }
-
-        return 0;
-    }
-
-    /** @return array{0: string, 1: string, 2: string} epoch, upstream version and Debian revision */
-    private static function dpkgParts(string $version): array
-    {
-        $epoch = '0';
-        if (preg_match('/^(\d+):(.*)$/s', $version, $m)) {
-            [$epoch, $version] = [$m[1], $m[2]];
-        }
-        $dash = strrpos($version, '-');
-
-        return $dash === false ? [$epoch, $version, ''] : [$epoch, substr($version, 0, $dash), substr($version, $dash + 1)];
-    }
-
-    /** dpkg's verrevcmp: letters sort before other characters, "~" before everything, digit runs by number. */
-    private static function dpkgCompareString(string $a, string $b): int
-    {
-        $order = function (string $s, int $i): int {
-            $c = $s[$i] ?? '';
-            if ($c === '' || ctype_digit($c)) {
-                return 0;
-            }
-
-            return ctype_alpha($c) ? ord($c) : ($c === '~' ? -1 : ord($c) + 256);
-        };
-        $i = $j = 0;
-        while ($i < strlen($a) || $j < strlen($b)) {
-            while (($i < strlen($a) && ! ctype_digit($a[$i])) || ($j < strlen($b) && ! ctype_digit($b[$j]))) {
-                $diff = $order($a, $i) <=> $order($b, $j);
-                if ($diff !== 0) {
-                    return $diff;
-                }
-                $i++;
-                $j++;
-            }
-            $startA = $i;
-            $startB = $j;
-            while ($i < strlen($a) && ctype_digit($a[$i])) {
-                $i++;
-            }
-            while ($j < strlen($b) && ctype_digit($b[$j])) {
-                $j++;
-            }
-            $diff = self::compareNumbers([substr($a, $startA, $i - $startA)], [substr($b, $startB, $j - $startB)]);
-            if ($diff !== 0) {
-                return $diff;
-            }
-        }
-
-        return 0;
+        return DpkgVersion::compareNumbers($a, $b);
     }
 
     private static function version(mixed $value): ?string

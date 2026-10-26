@@ -24,7 +24,7 @@ class SecurityFinding extends Model
     protected $fillable = [
         'device_id', 'target_ip', 'target_mac', 'network', 'site',
         'security_rule_id', 'fingerprint', 'severity', 'message', 'details', 'occurrences',
-        'first_seen_at', 'last_seen_at', 'resolved_at', 'acknowledged_at', 'acknowledged_by',
+        'first_seen_at', 'last_seen_at', 'resolved_at', 'acknowledged_at', 'acknowledged_by', 'stale_at',
     ];
 
     protected $casts = [
@@ -34,6 +34,7 @@ class SecurityFinding extends Model
         'last_seen_at' => 'datetime',
         'resolved_at' => 'datetime',
         'acknowledged_at' => 'datetime',
+        'stale_at' => 'datetime',
     ];
 
     /** Open high and critical findings nobody acknowledged (the badge in the menu), counted once per request. */
@@ -80,10 +81,10 @@ class SecurityFinding extends Model
         return $query->whereNull('resolved_at');
     }
 
-    /** Open and not acknowledged: what needs attention. */
+    /** Open, not acknowledged and not stale: what needs attention. */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereNull('resolved_at')->whereNull('acknowledged_at');
+        return $query->whereNull('resolved_at')->whereNull('acknowledged_at')->whereNull('stale_at');
     }
 
     /**
@@ -96,6 +97,7 @@ class SecurityFinding extends Model
             'acknowledged' => $query->whereNotNull('acknowledged_at'),
             'resolved' => $query->whereNotNull('resolved_at')->whereNull('acknowledged_at'),
             'unresolved' => $query->whereNull('resolved_at'),
+            'stale' => $query->whereNull('resolved_at')->whereNotNull('stale_at'),
             default => $query->active(),
         };
         if (isset(SecurityRules::SEVERITIES[$severity])) {
@@ -127,6 +129,14 @@ class SecurityFinding extends Model
         return $query->whereIn('severity', array_keys(array_filter(SecurityRules::SEVERITIES, fn ($value) => $value <= $rank)));
     }
 
+    /** What to do: the finding's own advice (a CVE finding says it by where the package comes from), else the rule's. */
+    public function getRemediationAttribute(): ?string
+    {
+        $own = $this->details['Remediation'] ?? null;
+
+        return is_string($own) && $own !== '' ? $own : ($this->rule?->definition['remediation'] ?? null);
+    }
+
     public function getSeverityColorAttribute(): string
     {
         return SecurityRules::SEVERITY_COLORS[$this->severity] ?? 'secondary';
@@ -138,6 +148,7 @@ class SecurityFinding extends Model
             $this->resolved_at !== null && $this->acknowledged_at !== null => 'acknowledged',
             $this->resolved_at !== null => 'resolved',
             $this->acknowledged_at !== null => 'acknowledged',
+            $this->stale_at !== null => 'stale',
             default => 'open',
         };
     }
@@ -155,6 +166,6 @@ class SecurityFinding extends Model
     /** Open again (a finding of the inventory that is still there, or an event to look at again). */
     public function reopen(): void
     {
-        $this->update(['acknowledged_at' => null, 'acknowledged_by' => null, 'resolved_at' => $this->rule?->isEvent ? null : $this->resolved_at]);
+        $this->update(['stale_at' => null, 'acknowledged_at' => null, 'acknowledged_by' => null, 'resolved_at' => $this->rule?->isEvent ? null : $this->resolved_at]);
     }
 }

@@ -1014,5 +1014,8 @@
     "Last 7 days": "Últimos 7 días",
     "All (:days days)": "Todo (:days días)",
     "Search user, source or detail": "Buscar usuario, origen o detalle",
-    "Show more": "Mostrar más"
+    "Show more": "Mostrar más",
+    "cves: a list of up to :count CVEs (id, severity, ranges, ubuntu).": "cves: una lista de hasta :count CVE (id, severity, ranges, ubuntu).",
+    "group: on rules of the software source, an object with a field and a pattern (its first group names the group).": "group: en reglas de la fuente software, un objeto con un campo y un patrón (su primer grupo da nombre al grupo).",
+    "allow_tags: a list of up to 20 device tags that are allowed to have it.": "allow_tags: una lista de hasta 20 etiquetas de dispositivo que pueden tenerlo."
 }
