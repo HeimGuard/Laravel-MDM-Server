@@ -332,7 +332,7 @@
         "source": "posture",
         "when": {"field": "FirewallEnabled", "op": "false"},
         "message": "No firewall is active: {FirewallDetail}",
-        "remediation": "Turn one on, e.g. sudo ufw enable (ufw; allow ssh first: sudo ufw allow OpenSSH), sudo systemctl enable --now firewalld, or load nftables rules with a drop policy on the input hook."
+        "remediation": "Enable one, e.g. sudo ufw enable (ufw; allow ssh first: sudo ufw allow OpenSSH), sudo systemctl enable --now firewalld, or load nftables rules with a drop policy on the input hook."
     },
     {
         "key": "posture.antivirus",

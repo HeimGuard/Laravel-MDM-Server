@@ -262,7 +262,7 @@ class SecurityRules
         if (isset($rule['group']) && (($rule['source'] ?? null) !== 'software' || ! is_array($rule['group']) || ! is_string($rule['group']['field'] ?? null)
             || ! is_string($rule['group']['pattern'] ?? null) || self::regex($rule['group']['pattern']) === null
             || (isset($rule['group']['names']) && (! is_array($rule['group']['names']) || count(array_filter($rule['group']['names'], fn ($name) => ! is_string($name))) > 0)))) {
-            $errors[] = __('group: on rules of the software source, {"field": ..., "pattern": regular expression whose first group names the group}.');
+            $errors[] = __('group: on rules of the software source, an object with a field and a pattern (its first group names the group).');
         }
         if (isset($rule['allow_tags']) && (! is_array($rule['allow_tags']) || ! array_is_list($rule['allow_tags']) || count(array_filter($rule['allow_tags'], fn ($tag) => ! is_string($tag))) > 0 || count($rule['allow_tags']) > 20)) {
             $errors[] = __('allow_tags: a list of up to 20 device tags that are allowed to have it.');
