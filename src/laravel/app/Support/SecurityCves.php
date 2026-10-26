@@ -23,6 +23,7 @@ class SecurityCves
         'no_source' => 'no update source',
         'fix_via_pro' => 'fix available via Ubuntu Pro / ESM',
         'update_available' => 'update available',
+        'not_triaged' => 'not yet assessed by Ubuntu',
     ];
 
     /** The codename of an Ubuntu release by its VERSION_ID, for agents that do not send the codename. */
@@ -101,7 +102,8 @@ class SecurityCves
                     return ['status' => stripos($fixed, 'esm') !== false ? 'fix_via_pro' : 'update_available', 'fixed' => $fixed];
                 }
 
-                return ['status' => 'no_fix', 'fixed' => null];
+                // Ubuntu has not looked at it yet: no fix, but no word that the package is affected either.
+                return ['status' => $status === 'needs-triage' ? 'not_triaged' : 'no_fix', 'fixed' => null];
             }
         }
 
@@ -128,7 +130,19 @@ class SecurityCves
             return null;
         }
 
-        return ['status' => 'update_available', 'fixed' => self::fixedIn($cve['ranges'] ?? [], $version, $order)];
+        $fixed = self::fixedIn($cve['ranges'] ?? [], $version, $order);
+        // A snap follows a channel (5.0/stable): the agent says which version a refresh brings (Candidate). One that is not
+        // fixed, or none, means the channel has no fix - a newer track has (agents 1.28.0+ send the channel).
+        if (strtolower((string) ($item['Source'] ?? '')) === 'snap' && trim((string) ($item['Channel'] ?? '')) !== '') {
+            $candidate = trim((string) ($item['Candidate'] ?? ''));
+            if ($candidate !== '' && ! self::inRanges($cve['ranges'] ?? [], $candidate, $order)) {
+                return ['status' => 'update_available', 'fixed' => $fixed];
+            }
+
+            return ['status' => 'no_fix', 'fixed' => $fixed];
+        }
+
+        return ['status' => 'update_available', 'fixed' => $fixed];
     }
 
     /** The lines of the tracker for a source package (by name, without case), null when it says nothing of it. */
@@ -225,10 +239,17 @@ class SecurityCves
         if (in_array('no_source', $statuses, true)) {
             $lines[] = 'The package is not from any repository: download a newer version from the vendor (or add the vendor\'s repository so that it updates).';
         }
-        if (in_array('no_fix', $statuses, true)) {
+        if (in_array('no_fix', $statuses, true) && $source === 'snap') {
+            $name = (string) ($first['Name'] ?? '');
+            $lines[] = 'The channel of the snap ('.($first['Channel'] ?? '').') has no fixed version: switch to a newer track that has it (snap info '.$name.' lists them; sudo snap refresh '.$name.' --channel=<track>/stable), or remove the snap if it is not needed.';
+        } elseif (in_array('no_fix', $statuses, true)) {
             $line = 'The distribution or vendor has not released a fix yet: uninstall '.($names !== '' ? $names : 'it').' if it is not needed, use Ubuntu Pro if it covers the package, or restrict its use';
             $line .= preg_match('/magick/i', (string) ($first['SourcePackage'] ?? $first['Name'] ?? '')) ? ' (policy.xml of ImageMagick).' : '.';
             $lines[] = $line;
+        }
+
+        if ($statuses === ['not_triaged']) {
+            $lines[] = 'Ubuntu has not assessed whether this affects the package yet: nothing to do until it does, keep the system updated.';
         }
 
         return implode("\n", $lines);

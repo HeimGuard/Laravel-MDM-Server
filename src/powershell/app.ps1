@@ -1081,9 +1081,12 @@ function Get-DpkgFixedCves {
 }
 
 function Get-AptPolicy {
-    # What `apt-cache policy` says of every package: the Candidate (the version apt would install) and the Origin of the
+    # What `apt-cache policy <packages>` says of the packages (without names it lists only the repositories, not the packages):
+    # the Candidate (the version apt would install) and the Origin of the
     # installed version ('Ubuntu', 'Debian', the host of another repository, or 'dpkg/status' when no active repository
     # has it: it was installed from a file, or its repository is gone). {name = @{ Candidate; Origin }}.
+    param ([string[]]$Names)
+
     $env:LC_ALL = 'C'
     $map = @{}
     $name = $null
@@ -1096,7 +1099,12 @@ function Get-AptPolicy {
         }
     }
     $candidate = $null
-    foreach ($line in @(apt-cache policy 2>$null)) {
+    $lines = @()
+    # In chunks: the command line of a thousand packages would be long.
+    for ($i = 0; $i -lt @($Names).Count; $i += 200) {
+        $lines += @(apt-cache policy @(@($Names)[$i..([Math]::Min($i + 199, @($Names).Count - 1))]) 2>$null)
+    }
+    foreach ($line in $lines) {
         if ($line -match '^(\S.*):\s*$') {
             & $flush
             $name = $Matches[1]; $installed = $null; $candidate = $null; $current = $null; $origin = $null
@@ -1245,7 +1253,7 @@ function Get-SecuritySoftware {
             }
             $used = @{}
             $policy = @{}
-            try { $policy = Get-AptPolicy } catch { }
+            try { $policy = Get-AptPolicy -Names @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\n' 2>$null | ForEach-Object { $p = $_ -split "`t"; if ($p.Count -ge 2 -and $p[0] -like 'i*') { $p[1] } }) } catch { }
             $dpkg = @(dpkg-query -W -f '${db:Status-Abbrev}\t${Package}\t${Version}\t${Maintainer}\t${source:Package}\n' 2>$null | ForEach-Object {
                 $parts = $_ -split "`t"
                 if ($parts.Count -ge 4 -and $parts[0] -like 'i*') {
@@ -1281,9 +1289,23 @@ function Get-SecuritySoftware {
             }
         }
         if (Get-Command -Name snap -CommandType Application -ErrorAction SilentlyContinue) {
+            # The version a refresh would bring, in the channel the snap tracks (snap refresh --list: Name Version Rev Size Publisher Notes).
+            $refresh = @{}
+            foreach ($line in @(snap refresh --list 2>$null | Select-Object -Skip 1)) {
+                $parts = $line.Trim() -split '\s+'
+                if ($parts.Count -ge 2) { $refresh[$parts[0]] = $parts[1] }
+            }
             snap list 2>$null | Select-Object -Skip 1 | ForEach-Object {
                 $parts = $_.Trim() -split '\s+'
-                if ($parts.Count -ge 2) { [PSCustomObject]@{ Name = $parts[0]; Version = $parts[1]; Publisher = if ($parts.Count -ge 5) { $parts[4] } else { $null }; Source = 'snap'; Channel = if ($parts.Count -ge 4) { $parts[3] } else { $null } } }
+                if ($parts.Count -ge 2) {
+                    $candidate = $refresh[$parts[0]]
+                    [PSCustomObject]@{
+                        Name = $parts[0]; Version = $parts[1]; Publisher = if ($parts.Count -ge 5) { $parts[4] } else { $null }; Source = 'snap'
+                        Channel = if ($parts.Count -ge 4) { $parts[3] } else { $null }
+                        Candidate = if ($candidate) { $candidate } else { $null }
+                        UpdateAvailable = [bool]$candidate
+                    }
+                }
             }
         }
         if (Get-Command -Name flatpak -CommandType Application -ErrorAction SilentlyContinue) {
