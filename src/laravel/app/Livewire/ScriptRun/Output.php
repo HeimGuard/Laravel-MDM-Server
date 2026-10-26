@@ -64,7 +64,7 @@ class Output extends Component
 
         // The script itself is fixed (a new version, the runs keep theirs), no copy: its name, description and schedule stay.
         // The AI wrote it, so it runs only by hand until a system admin has read it.
-        $script->fill(Arr::except($generated, ['name', 'description']) + ['manual_remediation' => true])->save();
+        $script->fill(['manual_remediation' => true] + Arr::except($generated, ['name', 'description']))->save();
 
         return $this->redirectRoute('script.show', $script, navigate: true);
     }

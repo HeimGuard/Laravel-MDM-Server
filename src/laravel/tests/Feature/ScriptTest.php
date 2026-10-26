@@ -436,7 +436,7 @@ class ScriptTest extends TestCase
         ]);
         $answer = fn (string $name, string $remediation) => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => json_encode([
             'name' => $name, 'description' => 'Updates LXD.', 'platform' => 'linux', 'timeout' => 60,
-            'detection' => "exit 0", 'remediation' => $remediation, 'manual_remediation' => false,
+            'detection' => "if (-not (Test-Path /x)) { exit 1 }\nexit 0", 'remediation' => $remediation, 'manual_remediation' => false,
         ])]]]);
 
         Http::fake(['api.anthropic.com/*' => $answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd')]);

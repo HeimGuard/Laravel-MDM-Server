@@ -69,7 +69,7 @@ trait RemediatesFindings
         if ($existing) {
             // A change of what runs is a new version of the script; the runs keep theirs.
             $script = $existing;
-            $script->fill(Arr::except($generated, ['name', 'description']) + ['manual_remediation' => true])->save();
+            $script->fill(['manual_remediation' => true] + Arr::except($generated, ['name', 'description']))->save();
         } else {
             $script = new Script(array_merge($generated, ['manual_remediation' => true, 'name' => $generated['name'] ?: ($rule?->name ?? 'Remediation')]));
             $script->created_by = auth()->id();
