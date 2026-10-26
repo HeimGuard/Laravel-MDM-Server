@@ -441,14 +441,14 @@ class ScriptTest extends TestCase
 
         Http::fake(['api.anthropic.com/*' => $answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd')]);
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
-        $script = Script::query()->sole();
+        $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame(1, $script->version);
 
         // Another language or another answer of the AI: the same script, its name stays, the code is a new version.
         Http::fake(['api.anthropic.com/*' => $answer('LXD (Snap) aktualisieren', 'snap refresh lxd --channel=5.21/stable')]);
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
 
-        $script = Script::query()->sole();
+        $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame('LXD CVE-2025-54289 (snap)', $script->name);
         $this->assertSame('snap refresh lxd --channel=5.21/stable', $script->remediation);
         $this->assertSame(2, $script->version);
@@ -468,6 +468,7 @@ class ScriptTest extends TestCase
         ])]]])]);
 
         $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
+        $scripts = Script::query()->count();
         Livewire::test(RunOutput::class, ['runId' => $run->id])->assertSee('AI fix')->call('aiFix')->assertHasNoErrors()->assertRedirect();
 
         // The AI got the script, the error, the exit codes and the output; the result is the script itself, a new version.
@@ -476,7 +477,7 @@ class ScriptTest extends TestCase
             && str_contains($request['messages'][0]['content'], 'remediation 2')
             && str_contains($request['messages'][0]['content'], 'operating system Ubuntu 26.04 LTS')
             && str_contains($request['messages'][0]['content'], 'Current script'));
-        $this->assertSame(1, Script::query()->count(), 'no copy is written');
+        $this->assertSame($scripts, Script::query()->count(), 'no copy is written');
         $fixed = $script->fresh();
         $this->assertSame('Cleanup', $fixed->name);
         $this->assertTrue($fixed->manual_remediation);
