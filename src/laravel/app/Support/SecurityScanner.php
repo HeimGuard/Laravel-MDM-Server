@@ -41,23 +41,25 @@ class SecurityScanner
     }
 
     /** Settings (days; 0 is off): an acknowledged finding is open again after this long, a device that has not reported for this long has stale findings. */
-    public const ACK_DAYS_SETTING = 'mdm.security_ack_days';
+    public const ACK_DAYS_SETTING = 'main.general.security_ack_days';
 
-    public const STALE_DAYS_SETTING = 'mdm.security_stale_days';
+    public const STALE_DAYS_SETTING = 'main.general.security_stale_days';
 
-    /** The days of the setting of the portal, else of the environment (MDM_SECURITY_ACK_DAYS, MDM_SECURITY_STALE_DAYS). */
+    public const DEFAULT_STALE_DAYS = 14;
+
+    /** The days of the settings of the portal (System > Settings): acknowledgements do not expire unless set. */
     public static function ackDays(): int
     {
         $value = Setting::query()->whereNull('settable_id')->where('index', self::ACK_DAYS_SETTING)->value('value');
 
-        return max(0, (int) ($value ?? config('mdm.security_ack_days', 0)));
+        return max(0, (int) $value);
     }
 
     public static function staleDays(): int
     {
         $value = Setting::query()->whereNull('settable_id')->where('index', self::STALE_DAYS_SETTING)->value('value');
 
-        return max(0, (int) ($value ?? config('mdm.security_stale_days', 14)));
+        return $value === null || $value === '' ? self::DEFAULT_STALE_DAYS : max(0, (int) $value);
     }
 
     /**

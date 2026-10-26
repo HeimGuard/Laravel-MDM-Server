@@ -118,10 +118,10 @@ device that has one of the tags of the rule's `allow_tags` (`developer`, `admin`
 A package **without a source of updates** is low, medium for a network service that runs as root.
 
 **Life of a finding.** An acknowledged finding of the inventory is open again when it gets worse (a more severe CVE; a remote
-access tool starts to run is another rule, so it is a new finding). With `MDM_SECURITY_ACK_DAYS` (or the setting
-`mdm.security_ack_days`; 0, off, by default) an acknowledgement expires after that many days. Findings that the last scan does not
+access tool starts to run is another rule, so it is a new finding). With the setting *security_ack_days* of **System > Settings**
+(0 or empty, off, by default) an acknowledgement expires after that many days. Findings that the last scan does not
 see are resolved by that scan; once a day the findings of a rule that was switched off are resolved too, and the findings of a
-device that has not reported for `MDM_SECURITY_STALE_DAYS` days (default 14) are marked **stale** (they leave the list of what needs
+device that has not reported for *security_stale_days* days of **System > Settings** (default 14, 0 is off) are marked **stale** (they leave the list of what needs
 attention, and become current again when the device reports).
 
 The built-in parsers ([`resources/security/parsers.json`](../src/laravel/resources/security/parsers.json))
