@@ -50,7 +50,7 @@ What the agent collects (the *sources* of the rules):
 | `listening` | `Get-NetTCPConnection` / `Get-NetUDPEndpoint` with the process | `ss -tulpn` |
 | `startup` | Run / RunOnce keys, Startup folders, scheduled tasks outside `\Microsoft\` | cron (system and users), units in `/etc/systemd/system`, `rc.local`, desktop autostart |
 | `admins` | members of Administrators | uid 0, groups sudo / wheel / admin |
-| `os` (agents 1.27.0+) | the operating system: `Id` `windows`, its caption and its build with the revision as the version (`10.0.19045.5555`, what the cumulative updates change) | `Id` from `/etc/os-release` (`ubuntu`), `PRETTY_NAME`, `VERSION_ID` and the kernel (`uname -r`) |
+| `os` (agents 1.27.0+; `Codename` 1.28.0+) | the operating system: `Id` `windows`, its caption and its build with the revision as the version (`10.0.19045.5555`, what the cumulative updates change) | `Id` from `/etc/os-release` (`ubuntu`), `PRETTY_NAME`, `VERSION_ID` and the kernel (`uname -r`) |
 | `posture` | firewall, antivirus (Security Center / Defender), BitLocker, Secure Boot, RDP and NLA, SMBv1, UAC, Guest, auto logon, days since the last update | firewall (ufw, firewalld, iptables / nftables), LUKS, Secure Boot, `sshd -T` (root login, passwords), unattended-upgrades, days since the last apt upgrade |
 | logs (raw, since the previous collection) | `windows.security` (1102, 4625, 4648, 4697, 4698, 4720, 4722, 4724, 4726, 4728, 4732, 4740, 4756), `windows.system` (104, 7045), `windows.defender` (1006, 1116, 1117, 5001, 5010, 5012): `Time`, `Id`, `Provider`, `Level`, `Data` (EventData / UserData, names without spaces) | `linux.auth`: the auth / authpriv journal (or `auth.log`, `secure`): `Time`, `Identifier`, `Pid`, `Message` |
 
@@ -70,6 +70,59 @@ packages are not read yet and stay out of the CVE rules.
 lists binary ones (`libssl3t64` is `openssl`, `libglib2.0-0t64` and `gir1.2-glib-2.0` are `glib2.0`), and a name
 cannot tell them apart reliably. For every dpkg package whose source package has another name the agent sends it
 as the software field `SourcePackage` (`${source:Package}` of dpkg-query); a package that is its own source has none.
+
+**Where a package comes from (agents 1.28.0+, Debian / Ubuntu).** For every dpkg package the agent reads `apt-cache policy`
+and sends the `Candidate` (the version apt would install, only when it is another one), the `Origin` of the installed version
+(`Ubuntu`, `Debian`, the host of another repository, or `dpkg/status` when no active repository has it: it was installed from
+a file or its repository is gone), and `UpdateAvailable` / `NoUpdateSource`. Snap packages have their `Channel`. The `os` item
+has the `Codename` of the release (`resolute`). Remote access tools and packages without a source of updates also get
+`Running`, `RunUser` and `Listening` (a process and a port on a non-loopback address that carry the first word of the name).
+
+**CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, ranges, ubuntu}]`)
+and names the packages it is about in `select`; the `when` next to it is what a server that does not know `cves` evaluates.
+For every package each CVE is judged on its own and the finding names only the CVEs that apply:
+
+- a CVE the changelog of the package names (`FixedCves`) is fixed;
+- for a package of Ubuntu / Debian the Ubuntu security tracker decides, by the release of the device: *released* in a version
+  at or below the installed one is fixed, *not-affected* is no finding, *released* in a newer version is **update available**
+  (the candidate has it) or **fix available via Ubuntu Pro / ESM** (`~esm`), and *needed*, *deferred*, *pending* is
+  **no fix available yet**. Without a word of the tracker the versions of the project (NVD) decide, with the epoch and the
+  Debian revision taken off (`8:7.1.2.3+dfsg1-1ubuntu0.1` is `7.1.2.3`);
+- installed must be **below** the fixed version, never equal; Debian versions are compared as `dpkg --compare-versions` does;
+- a package whose repository is none (`dpkg/status`) is **no update source**;
+- no CVE left: no finding, and an open one is resolved.
+
+The binary packages of one source package (`imagemagick`, `libsoup-3.0-0` and `libsoup-3.0-common`) are **one finding** that lists
+the packages and the CVEs. Findings that were one per package move to it on the next scan: the one that was acknowledged
+(else the oldest) keeps its history and its acknowledgement. The remediation of a finding says what to do by where the package
+comes from: `sudo apt update && sudo apt full-upgrade`, `sudo snap refresh <name>`, a new version from the vendor for a package
+without a repository, or (no fix yet) to uninstall it if it is not needed, use Ubuntu Pro or restrict its use.
+
+**Failed `apt-get update` (agents 1.28.0+).** The agent keeps the result of its last `apt-get update`; when it fails the scanner
+opens a **High** finding (*apt update fails*) naming the repositories that are the problem and the kind: not signed / key
+missing or invalid, no Release file (the repository does not support this release), not reachable, with advice for each (renew
+the key and name it with `Signed-By`, remove the PPA, ...). Notices such as a repository without the `i386` architecture are
+not errors. Until it works the CVEs of the device are judged on package lists that may be out of date, which the finding says.
+
+**Settings of the posture.** *Firewall* (Linux) is on when ufw is active, firewalld runs, or an nftables chain on the input hook
+(or the iptables INPUT chain) has a drop / reject policy or rules; the chains of Docker (`DOCKER*`, `FORWARD`) do not count. The
+finding says what is installed and how to turn it on (`sudo ufw enable`). *Disk encryption* (Linux) looks at `/` and at `/home`
+when it is a mount of its own: it is encrypted when dm-crypt / LUKS is somewhere under it (`lsblk -s`, or sysfs; LVM on LUKS and
+LUKS on LVM count), and the finding lists the mount points that are not.
+
+**Remote access tools** are three rules: *installed* (low), *running* as a service or daemon (medium), and *running and out of
+date or without a source of updates* (high); the finding says the version, whether it runs, as whom and whether it listens.
+**Network and password cracking tools** are *info*, one finding per tool (nmap, nmap-common and zenmap are `nmap`;
+wireshark and wireshark-common are `wireshark`), `netcat-openbsd` (part of a base Ubuntu installation) is not reported, and a
+device that has one of the tags of the rule's `allow_tags` (`developer`, `admin`, `security`) is allowed to have them.
+A package **without a source of updates** is low, medium for a network service that runs as root.
+
+**Life of a finding.** An acknowledged finding of the inventory is open again when it gets worse (a more severe CVE; a remote
+access tool starts to run is another rule, so it is a new finding). With `MDM_SECURITY_ACK_DAYS` (or the setting
+`mdm.security_ack_days`; 0, off, by default) an acknowledgement expires after that many days. Findings that the last scan does not
+see are resolved by that scan; once a day the findings of a rule that was switched off are resolved too, and the findings of a
+device that has not reported for `MDM_SECURITY_STALE_DAYS` days (default 14) are marked **stale** (they leave the list of what needs
+attention, and become current again when the device reports).
 
 The built-in parsers ([`resources/security/parsers.json`](../src/laravel/resources/security/parsers.json))
 make the events `failed_logon` (sshd, 4625), `sudo_failed`, `account_created` (useradd, 4720),
@@ -99,7 +152,7 @@ then alerts on it.
 
 Events are grouped by type, user and source (*25 failed sign-ins of administrator from
 203.0.113.7*) and kept 30 days on the **Events** tab. Findings of the inventory are resolved when the
-next inventory no longer matches; acknowledging one keeps it quiet (no alert) until it is gone.
+next inventory no longer matches; acknowledging one keeps it quiet (no alert) until it is gone (or gets worse, or expires, see *Life of a finding*).
 Findings of events stay open until they are acknowledged. The device shows a **Security** tab with
 its findings and inventory, and an alert from medium severity; the **Security findings** alert type
 of [Notifications](alerts.md#notifications-and-alerts) sends high and critical ones.
