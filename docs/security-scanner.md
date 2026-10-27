@@ -50,7 +50,7 @@ What the agent collects (the *sources* of the rules):
 | `listening` | `Get-NetTCPConnection` / `Get-NetUDPEndpoint` with the process | `ss -tulpn` |
 | `startup` | Run / RunOnce keys, Startup folders, scheduled tasks outside `\Microsoft\` | cron (system and users), units in `/etc/systemd/system`, `rc.local`, desktop autostart |
 | `admins` | members of Administrators | uid 0, groups sudo / wheel / admin |
-| `os` (agents 1.27.0+; `Codename` 1.28.0+) | the operating system: `Id` `windows`, its caption and its build with the revision as the version (`10.0.19045.5555`, what the cumulative updates change) | `Id` from `/etc/os-release` (`ubuntu`), `PRETTY_NAME`, `VERSION_ID` and the kernel (`uname -r`) |
+| `os` (agents 1.27.0+; `Codename` 1.28.0+; `Arch` 1.30.0+) | the operating system: `Id` `windows`, its caption and its build with the revision as the version (`10.0.19045.5555`, what the cumulative updates change) | `Id` from `/etc/os-release` (`ubuntu`), `PRETTY_NAME`, `VERSION_ID` the kernel (`uname -r`) and the architecture (`uname -m`; on Windows `PROCESSOR_ARCHITECTURE`) |
 | `posture` | firewall, antivirus (Security Center / Defender), BitLocker, Secure Boot, RDP and NLA, SMBv1, UAC, Guest, auto logon, days since the last update | firewall (ufw, firewalld, iptables / nftables), LUKS, Secure Boot, `sshd -T` (root login, passwords), unattended-upgrades, days since the last apt upgrade |
 | logs (raw, since the previous collection) | `windows.security` (1102, 4625, 4648, 4697, 4698, 4720, 4722, 4724, 4726, 4728, 4732, 4740, 4756), `windows.system` (104, 7045), `windows.defender` (1006, 1116, 1117, 5001, 5010, 5012): `Time`, `Id`, `Provider`, `Level`, `Data` (EventData / UserData, names without spaces) | `linux.auth`: the auth / authpriv journal (or `auth.log`, `secure`): `Time`, `Identifier`, `Pid`, `Message` |
 
@@ -100,6 +100,8 @@ For every package each CVE is judged on its own and the finding names only the C
 no ranges and no `when` (an older server skips them as invalid). They find what the NVD has no product for yet, and the kernel
 (`linux-signed*` packages are judged by the tracker of `linux*`). A CVE is one entry for a package: what a rule of the NVD already judges
 with the word of a tracker is not in these.
+
+A CVE of the cores of one CPU family (the rules of the trackers mark the Arm ones with `"arch": ["arm64"]`) is judged only on a device of that architecture (`Arch` of the `os` item; `x86_64` is `amd64`, `aarch64` is `arm64`); a device that sends none (agents before 1.30.0) is judged as before.
 
 Kernel builds that are installed but **not running** (`linux-image-7.0.0-22-generic`, `linux-headers-7.0.0-22`, `linux-tools-7.0.0-22`: another build than `uname -r` of the `os` item) are not judged by the CVEs of the kernel; they are old packages to remove (`sudo apt autoremove --purge`), not a hole.
 

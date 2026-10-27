@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.29.0'
+$AgentVersion = '1.30.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1622,6 +1622,8 @@ function Get-SecurityOs {
             Kernel  = ConvertTo-SecurityText "$(uname -r 2>$null)" 100
             # The release (noble, resolute): what the security tracker of the distribution is organised by.
             Codename = ConvertTo-SecurityText $osRelease['VERSION_CODENAME'] 50
+            # The CPU architecture (x86_64, aarch64): a CVE of Arm cores does not concern an x86 device.
+            Arch = ConvertTo-SecurityText "$(uname -m 2>$null)" 50
         }
         return
     }
@@ -1629,7 +1631,7 @@ function Get-SecurityOs {
     $revision = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name UBR -ErrorAction Stop).UBR
     # The revision is missing on very old systems: the build alone would say less than it seems to.
     if ("$($os.Version)" -match '^\d+\.\d+\.\d+$' -and "$revision" -match '^\d+$') {
-        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null; Codename = $null }
+        [PSCustomObject]@{ Id = 'windows'; Name = ConvertTo-SecurityText $os.Caption 300; Version = "$($os.Version).$revision"; Kernel = $null; Codename = $null; Arch = ConvertTo-SecurityText "$env:PROCESSOR_ARCHITECTURE" 50 }
     }
 }
 
@@ -4011,7 +4013,7 @@ $SecurityFields = @{
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
     admins    = @('Name', 'Source', 'Enabled')
-    os        = @('Name', 'Version', 'Id', 'Kernel', 'Codename')
+    os        = @('Name', 'Version', 'Id', 'Kernel', 'Codename', 'Arch')
     posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors')
 }
 $SecurityKeyFields = @{
@@ -4045,7 +4047,7 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
         if ($field -in $optional -and $value -eq '') { continue }

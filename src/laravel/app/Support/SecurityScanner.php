@@ -558,7 +558,7 @@ class SecurityScanner
     {
         $os = SecurityInventory::query()->where('device_id', $device->id)->first()?->items('os')[0] ?? null;
 
-        return ['release' => SecurityCves::release($os), 'os' => $os['Id'] ?? null, 'kernel' => $os['Kernel'] ?? null];
+        return ['release' => SecurityCves::release($os), 'os' => $os['Id'] ?? null, 'kernel' => $os['Kernel'] ?? null, 'arch' => $os['Arch'] ?? null];
     }
 
     /**
@@ -567,7 +567,7 @@ class SecurityScanner
      * with "cves"). Each: fingerprint, message, item (the details), and for a rule with "cves" the
      * severity of its CVEs and "legacy", the fingerprints the packages of the group had when each was a finding.
      *
-     * @param  array{release?: ?string, os?: ?string, kernel?: ?string}  $context
+     * @param  array{release?: ?string, os?: ?string, kernel?: ?string, arch?: ?string}  $context
      * @return array<string, array{fingerprint: string, message: string, item: array, severity?: string, legacy?: array<int, string>}>
      */
     public static function matches(array $definition, array $items, array $context = []): array
@@ -634,7 +634,7 @@ class SecurityScanner
                 if (SecurityCves::isOtherKernel($item, $context['kernel'] ?? null)) {
                     continue;
                 }
-                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null, $index);
+                $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null, $index, $context['arch'] ?? null);
                 if ($affecting === []) {
                     continue;
                 }

@@ -42,7 +42,7 @@ class SecurityRules
      */
     public const OPTIONAL_FIELDS = [
         'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening',
-        'Codename', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
+        'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
     ];
 
     /**
@@ -85,8 +85,8 @@ class SecurityRules
         'os' => [
             'label' => 'Operating system',
             // Agents 1.27.0+: Id windows or the ID of /etc/os-release (ubuntu), Name the caption (PRETTY_NAME), Version the build of
-            // Windows with its revision (10.0.19045.5555) or VERSION_ID (26.04), Kernel on Linux. One item.
-            'fields' => ['Name', 'Version', 'Id', 'Kernel', 'Codename'],
+            // Windows with its revision (10.0.19045.5555) or VERSION_ID (26.04), Kernel on Linux, Arch (agents 1.30.0+). One item.
+            'fields' => ['Name', 'Version', 'Id', 'Kernel', 'Codename', 'Arch'],
             'key' => ['Id'],
         ],
         'posture' => [
