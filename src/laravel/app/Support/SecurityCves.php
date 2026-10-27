@@ -48,6 +48,41 @@ class SecurityCves
         return $codename !== '' ? $codename : (strtolower((string) ($os['Id'] ?? '')) === 'debian' ? (self::DEBIAN_RELEASES[$version] ?? null) : (self::UBUNTU_RELEASES[$version] ?? null));
     }
 
+    /** amd64 for x86_64, arm64 for aarch64: the names of dpkg, whatever `uname -m` says. */
+    public static function normalArch(?string $arch): string
+    {
+        $arch = strtolower(trim((string) $arch));
+
+        return ['x86_64' => 'amd64', 'x64' => 'amd64', 'aarch64' => 'arm64', 'armv8l' => 'arm64'][$arch] ?? $arch;
+    }
+
+    /** False for a CVE of the cores of one CPU family ("arch": ["arm64"]) on a device of another; true when either is not known. */
+    public static function runsOn(array $cve, ?string $arch): bool
+    {
+        if (trim((string) $arch) === '' || ! is_array($cve['arch'] ?? null) || $cve['arch'] === []) {
+            return true;
+        }
+
+        return in_array(self::normalArch($arch), array_map(fn ($a) => self::normalArch((string) $a), $cve['arch']), true);
+    }
+
+    /**
+     * A package of a kernel build (linux-image-7.0.0-22-generic, linux-headers-7.0.0-22, linux-tools-7.0.0-22) other than the one
+     * the device runs (`uname -r`, 7.0.0-38-generic): it is not loaded, so the CVEs of the kernel do not make it a finding.
+     */
+    public static function isOtherKernel(array $item, ?string $running): bool
+    {
+        if ($running === null || ! preg_match('/^(\d+\.\d+\.\d+-\d+)/', trim($running), $now)) {
+            return false;
+        }
+        if (strtolower((string) ($item['Source'] ?? '')) !== 'dpkg'
+            || ! preg_match('/^linux-(?:image|image-unsigned|modules|modules-extra|headers|tools|cloud-tools|buildinfo)-(\d+\.\d+\.\d+-\d+)(?:-.+)?$/', (string) ($item['Name'] ?? ''), $built)) {
+            return false;
+        }
+
+        return $built[1] !== $now[1];
+    }
+
     /** Which tracker of the CVEs speaks for the distribution of the device: debian, ubuntu (also when it is not known), null for another one. */
     private static function trackerOf(?string $osId): ?string
     {
@@ -102,7 +137,7 @@ class SecurityCves
      * @param  array<int, array>  $cves
      * @return array<string, array{id: string, severity: string, status: string, fixed: ?string}> by CVE id
      */
-    public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null, ?array $index = null): array
+    public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null, ?array $index = null, ?string $arch = null): array
     {
         if ($index !== null) {
             $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : ($item['Name'] ?? '')));
@@ -116,6 +151,9 @@ class SecurityCves
                 continue;
             }
             if ($dpkg && $changelog !== '' && str_contains($changelog, ','.strtolower($cve['id']).',')) {
+                continue;
+            }
+            if (! self::runsOn($cve, $arch)) {
                 continue;
             }
             $result = $dpkg ? self::dpkg($cve, $item, $release, $osId) : self::upstream($cve, $item);

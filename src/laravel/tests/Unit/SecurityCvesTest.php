@@ -200,6 +200,32 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('trixie', SecurityCves::release(['Id' => 'debian', 'Version' => '13', 'Codename' => null]));
     }
 
+    public function test_a_cve_of_arm_cores_is_found_only_on_an_arm_device(): void
+    {
+        $cve = ['id' => 'CVE-2025-10263', 'severity' => 'high', 'ranges' => [], 'arch' => ['arm64'], 'ubuntu' => ['linux' => ['resolute' => ['released', '7.0.0-31.31']]]];
+        $kernel = ['Name' => 'linux-image-7.0.0-22-generic', 'Version' => '7.0.0-22.22', 'SourcePackage' => 'linux-signed', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
+        $this->assertCount(1, SecurityCves::affecting([$cve], $kernel, 'resolute', 'ubuntu'), 'no architecture known: as before');
+        $this->assertCount(1, SecurityCves::affecting([$cve], $kernel, 'resolute', 'ubuntu', null, 'aarch64'));
+        $this->assertCount(1, SecurityCves::affecting([$cve], $kernel, 'resolute', 'ubuntu', null, 'arm64'));
+        $this->assertSame([], SecurityCves::affecting([$cve], $kernel, 'resolute', 'ubuntu', null, 'x86_64'));
+        $this->assertSame([], SecurityCves::affecting([$cve], $kernel, 'resolute', 'ubuntu', SecurityCves::index([$cve]), 'amd64'), 'by the index too');
+        $this->assertCount(1, SecurityCves::affecting([['arch' => []] + $cve], $kernel, 'resolute', 'ubuntu', null, 'x86_64'), 'an empty list says nothing');
+        $this->assertCount(1, SecurityCves::affecting([array_diff_key($cve, ['arch' => 1])], $kernel, 'resolute', 'ubuntu', null, 'x86_64'), 'a CVE of every architecture');
+    }
+
+    public function test_a_kernel_that_is_installed_but_not_running_is_not_judged(): void
+    {
+        $item = fn (string $name) => ['Name' => $name, 'Version' => '7.0.0-22.22', 'Source' => 'dpkg'];
+        $running = '7.0.0-38-generic';
+        foreach (['linux-image-7.0.0-22-generic', 'linux-headers-7.0.0-22', 'linux-tools-7.0.0-22-generic', 'linux-modules-7.0.0-22-generic'] as $name) {
+            $this->assertTrue(SecurityCves::isOtherKernel($item($name), $running), $name);
+        }
+        foreach (['linux-image-7.0.0-38-generic', 'linux-headers-7.0.0-38', 'linux-libc-dev', 'linux-tools-common', 'bpftool', 'openssl'] as $name) {
+            $this->assertFalse(SecurityCves::isOtherKernel($item($name), $running), $name);
+        }
+        $this->assertFalse(SecurityCves::isOtherKernel($item('linux-image-7.0.0-22-generic'), null), 'the running kernel is not known');
+    }
+
     public function test_the_signed_kernel_is_judged_by_the_tracker_of_the_unsigned_one(): void
     {
         $this->assertSame('linux', SecurityCves::trackerSource('linux-signed'));
