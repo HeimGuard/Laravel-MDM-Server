@@ -48,6 +48,23 @@ class SecurityCves
         return $codename !== '' ? $codename : (strtolower((string) ($os['Id'] ?? '')) === 'debian' ? (self::DEBIAN_RELEASES[$version] ?? null) : (self::UBUNTU_RELEASES[$version] ?? null));
     }
 
+    /**
+     * A package of a kernel build (linux-image-7.0.0-22-generic, linux-headers-7.0.0-22, linux-tools-7.0.0-22) other than the one
+     * the device runs (`uname -r`, 7.0.0-38-generic): it is not loaded, so the CVEs of the kernel do not make it a finding.
+     */
+    public static function isOtherKernel(array $item, ?string $running): bool
+    {
+        if ($running === null || ! preg_match('/^(\d+\.\d+\.\d+-\d+)/', trim($running), $now)) {
+            return false;
+        }
+        if (strtolower((string) ($item['Source'] ?? '')) !== 'dpkg'
+            || ! preg_match('/^linux-(?:image|image-unsigned|modules|modules-extra|headers|tools|cloud-tools|buildinfo)-(\d+\.\d+\.\d+-\d+)(?:-.+)?$/', (string) ($item['Name'] ?? ''), $built)) {
+            return false;
+        }
+
+        return $built[1] !== $now[1];
+    }
+
     /** Which tracker of the CVEs speaks for the distribution of the device: debian, ubuntu (also when it is not known), null for another one. */
     private static function trackerOf(?string $osId): ?string
     {

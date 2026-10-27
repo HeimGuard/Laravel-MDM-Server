@@ -200,6 +200,19 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('trixie', SecurityCves::release(['Id' => 'debian', 'Version' => '13', 'Codename' => null]));
     }
 
+    public function test_a_kernel_that_is_installed_but_not_running_is_not_judged(): void
+    {
+        $item = fn (string $name) => ['Name' => $name, 'Version' => '7.0.0-22.22', 'Source' => 'dpkg'];
+        $running = '7.0.0-38-generic';
+        foreach (['linux-image-7.0.0-22-generic', 'linux-headers-7.0.0-22', 'linux-tools-7.0.0-22-generic', 'linux-modules-7.0.0-22-generic'] as $name) {
+            $this->assertTrue(SecurityCves::isOtherKernel($item($name), $running), $name);
+        }
+        foreach (['linux-image-7.0.0-38-generic', 'linux-headers-7.0.0-38', 'linux-libc-dev', 'linux-tools-common', 'bpftool', 'openssl'] as $name) {
+            $this->assertFalse(SecurityCves::isOtherKernel($item($name), $running), $name);
+        }
+        $this->assertFalse(SecurityCves::isOtherKernel($item('linux-image-7.0.0-22-generic'), null), 'the running kernel is not known');
+    }
+
     public function test_the_signed_kernel_is_judged_by_the_tracker_of_the_unsigned_one(): void
     {
         $this->assertSame('linux', SecurityCves::trackerSource('linux-signed'));

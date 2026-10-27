@@ -101,6 +101,8 @@ no ranges and no `when` (an older server skips them as invalid). They find what 
 (`linux-signed*` packages are judged by the tracker of `linux*`). A CVE is one entry for a package: what a rule of the NVD already judges
 with the word of a tracker is not in these.
 
+Kernel builds that are installed but **not running** (`linux-image-7.0.0-22-generic`, `linux-headers-7.0.0-22`, `linux-tools-7.0.0-22`: another build than `uname -r` of the `os` item) are not judged by the CVEs of the kernel; they are old packages to remove (`sudo apt autoremove --purge`), not a hole.
+
 The binary packages of one source package (`imagemagick`, `libsoup-3.0-0` and `libsoup-3.0-common`) are **one finding** that lists
 the packages and the CVEs. Findings that were one per package move to it on the next scan: the one that was acknowledged
 (else the oldest) keeps its history and its acknowledgement. The remediation of a finding says what to do by where the package
