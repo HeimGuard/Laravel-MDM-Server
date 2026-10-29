@@ -3778,16 +3778,25 @@ ExecStart=$pwsh -NoLogo -NoProfile -NonInteractive -File "$AgentDir/app.ps1" $(G
 WorkingDirectory=$AgentDir
 Restart=always
 RestartSec=10
+TimeoutStopSec=15
 Nice=10
 IOSchedulingClass=idle
 
 [Install]
 WantedBy=multi-user.target
 "@
+    # A running agent (update of the installation) keeps the old version until it is restarted; one that is not
+    # running is only started: `enable --now` does it, and a restart of it would wait for the agent it has just
+    # started to stop (up to TimeoutStopSec, 90 s by default) before it starts it again.
+    $running = (systemctl is-active laravel-mdm-agent.service 2>$null) -eq 'active'
     Set-Content -Path /etc/systemd/system/laravel-mdm-agent.service -Value $unit
     systemctl daemon-reload
-    systemctl enable --now laravel-mdm-agent.service
-    systemctl restart laravel-mdm-agent.service
+    Write-Host 'Starting the service laravel-mdm-agent...' -ForegroundColor Yellow
+    systemctl enable laravel-mdm-agent.service
+    if ($running) { systemctl restart laravel-mdm-agent.service } else { systemctl start laravel-mdm-agent.service }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'The service did not start: systemctl status laravel-mdm-agent, journalctl -u laravel-mdm-agent' -ForegroundColor Red
+    }
 }
 
 function Register-AgentTask {
