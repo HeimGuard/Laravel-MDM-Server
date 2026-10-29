@@ -303,6 +303,9 @@ class SecurityCvesTest extends TestCase
             $this->assertTrue(SecurityCves::isKernelImage($item($name, 'linux-signed')), $name);
             $this->assertFalse(SecurityCves::isKernelDevelopment($item($name, 'linux-signed')), $name);
         }
+        foreach (['linux-aws-headers-5.15.0-1052', 'linux-azure-tools-6.5.0-1018', 'linux-hwe-6.8-headers-6.8.0-45', 'linux-gcp-cloud-tools-6.5.0-1020'] as $name) {
+            $this->assertTrue(SecurityCves::isKernelDevelopment($item($name)), $name);
+        }
         $this->assertFalse(SecurityCves::isKernelDevelopment($item('bpftool', 'something-else')), 'by the source package it is built from');
         $this->assertFalse(SecurityCves::isKernelDevelopment($item('openssl', 'openssl')));
     }

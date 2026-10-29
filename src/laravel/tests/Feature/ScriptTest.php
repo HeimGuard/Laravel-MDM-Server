@@ -561,7 +561,7 @@ class ScriptTest extends TestCase
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export-ack', 'severity' => 'low',
             'message' => 'No firewall', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(), 'acknowledged_at' => now(),
         ]);
-        $content = $this->get(route('security.export'))->streamedContent();
+        $content = $this->get(route('security.export', ['status' => 'unresolved']))->streamedContent();
         $this->assertStringContainsString('2 finding(s), 1 of them acknowledged.', $content);
         $this->assertStringContainsString('Not acknowledged: High: 1', $content);
         $this->assertStringNotContainsString('Low: 1', $content);

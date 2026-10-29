@@ -96,7 +96,7 @@ class SecurityCves
         $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : $name));
 
         return str_starts_with($source, 'linux')
-            && (bool) preg_match('/^(?:linux-(?:headers|tools|cloud-tools|buildinfo|source|libc-dev|perf)\b.*|bpftool|linux-lib.*)$/', $name);
+            && (bool) preg_match('/^(?:linux-(?:[a-z0-9.]+-)*(?:headers|tools|cloud-tools|buildinfo|source|libc-dev|perf)\b.*|bpftool)$/', $name);
     }
 
     /** Whether the package is the kernel itself (image, modules): what a kernel CVE is a hole of. */

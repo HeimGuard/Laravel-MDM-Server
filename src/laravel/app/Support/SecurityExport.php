@@ -97,7 +97,7 @@ class SecurityExport
             'collected_at' => $inventory?->collected_at?->toIso8601String(),
             'findings' => $findings->map(fn ($finding) => [
                 'severity' => $finding->severity,
-                'rule' => $finding->rule?->name,
+                'rule' => $finding->title,
                 'message' => $finding->message,
                 'first_seen_at' => $finding->first_seen_at?->toIso8601String(),
                 'acknowledged' => $finding->acknowledged_at !== null,

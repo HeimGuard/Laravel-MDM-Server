@@ -118,7 +118,7 @@ class SecurityLifecycleTest extends TestCase
         // The same CVEs: it stays acknowledged. A critical one: it needs attention again.
         SecurityScanner::scan($device);
         $this->assertNotNull($finding->fresh()->acknowledged_at);
-        $this->groupedRule('critical', [['id' => 'CVE-2026-1002', 'severity' => 'critical', 'ranges' => [[null, '9.0', null]], 'ubuntu' => ['libsoup3' => ['resolute' => ['needed', '']]]]]);
+        $this->groupedRule('critical', [['id' => 'CVE-2026-1002', 'severity' => 'critical', 'ranges' => [[null, '9.0', null]], 'ubuntu' => ['libsoup3' => ['resolute' => ['released', '99.0-1']]]]]);
         SecurityScanner::scan($device);
 
         $worse = $finding->fresh();

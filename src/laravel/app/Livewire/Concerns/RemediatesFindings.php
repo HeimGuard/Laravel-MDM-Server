@@ -35,7 +35,7 @@ trait RemediatesFindings
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
         $details = is_array($finding->details) ? $finding->details : [];
-        $request = "Remediate this security finding.\nRule: {$rule?->name}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
+        $request = "Remediate this security finding.\nRule: {$finding->title}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
             // What the scanner found out about it: where the software comes from, what can be done about the CVEs (a fix to install, none yet).
             .(filled($details['Status'] ?? null) ? "\nStatus of the CVEs: {$details['Status']}" : '')
             .(filled($details['Cves'] ?? null) ? "\nCVEs: ".mb_strimwidth((string) $details['Cves'], 0, 600, '…') : '')
