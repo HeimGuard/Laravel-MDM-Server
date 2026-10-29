@@ -276,6 +276,7 @@ class SecurityCvesTest extends TestCase
         ];
         $this->assertSame('no_fix', SecurityCves::status($affecting));
         $this->assertSame('medium', SecurityCves::severity($affecting), 'a critical CVE nobody can fix yet is at most medium');
+        $this->assertSame('critical', SecurityCves::worst($affecting), 'what the CVEs really have');
         $affecting['C'] = ['id' => 'C', 'severity' => 'high', 'status' => 'update_available', 'fixed' => '2'];
         $this->assertSame('high', SecurityCves::severity($affecting), 'one that an update fixes keeps its severity');
         $this->assertNull(SecurityCves::status([]));
@@ -306,6 +307,8 @@ class SecurityCvesTest extends TestCase
         foreach (['linux-aws-headers-5.15.0-1052', 'linux-azure-tools-6.5.0-1018', 'linux-hwe-6.8-headers-6.8.0-45', 'linux-gcp-cloud-tools-6.5.0-1020'] as $name) {
             $this->assertTrue(SecurityCves::isKernelDevelopment($item($name)), $name);
         }
+        $this->assertTrue(SecurityCves::isOtherKernel($item('linux-aws-headers-5.15.0-1040'), '5.15.0-1052-aws'));
+        $this->assertFalse(SecurityCves::isOtherKernel($item('linux-aws-headers-5.15.0-1052'), '5.15.0-1052-aws'));
         $this->assertFalse(SecurityCves::isKernelDevelopment($item('bpftool', 'something-else')), 'by the source package it is built from');
         $this->assertFalse(SecurityCves::isKernelDevelopment($item('openssl', 'openssl')));
     }

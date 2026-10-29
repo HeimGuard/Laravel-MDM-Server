@@ -174,6 +174,14 @@ class SecurityFinding extends Model
         return $this->rule?->urls ?? [];
     }
 
+    /** The severity the CVEs of the finding really have, when the finding says less (nothing can be done about them yet), else null. */
+    public function getWorstSeverityAttribute(): ?string
+    {
+        $worst = $this->details['WorstSeverity'] ?? null;
+
+        return is_string($worst) && (SecurityRules::SEVERITIES[$worst] ?? 9) < (SecurityRules::SEVERITIES[$this->severity] ?? 9) ? $worst : null;
+    }
+
     public function getSeverityColorAttribute(): string
     {
         return SecurityRules::SEVERITY_COLORS[$this->severity] ?? 'secondary';

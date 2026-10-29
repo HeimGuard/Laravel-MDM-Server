@@ -561,6 +561,9 @@ class SecurityScanner
         return ['release' => SecurityCves::release($os), 'os' => $os['Id'] ?? null, 'kernel' => $os['Kernel'] ?? null, 'arch' => $os['Arch'] ?? null];
     }
 
+    /** Names of a finding of a threshold in its message; the details have them all. */
+    private const MESSAGE_ITEMS = 30;
+
     /**
      * The findings of a rule in a list: one per matching item, or one for the whole list with
      * "threshold", or one per group of items ("group", and the packages of one source package
@@ -585,8 +588,10 @@ class SecurityScanner
             if (count($matching) < $definition['threshold']) {
                 return [];
             }
-            $names = array_map(fn ($item) => self::itemName($definition['source'], $item), array_slice($matching, 0, 10));
-            $summary = ['count' => count($matching), 'items' => implode(', ', array_filter($names)).(count($matching) > 10 ? ', …' : '')];
+            $names = array_map(fn ($item) => self::itemName($definition['source'], $item), array_slice($matching, 0, self::MESSAGE_ITEMS));
+            $summary = ['count' => count($matching), 'items' => implode(', ', array_filter($names)).(count($matching) > self::MESSAGE_ITEMS ? ', …' : '')];
+            // The message shows some of them; the finding keeps all, so nothing is lost behind the dots.
+            $summary['all'] = array_slice(array_values(array_filter(array_map(fn ($item) => self::itemName($definition['source'], $item), $matching))), 0, 500);
             $fingerprint = SecurityRules::fingerprint($definition, null);
 
             return [$fingerprint => [
@@ -676,6 +681,7 @@ class SecurityScanner
                 $item['Status'] = SecurityCves::STATUSES[SecurityCves::status($cves)] ?? '';
                 $item['Remediation'] = SecurityCves::remediation($items, $cves);
                 $item['Severity'] = $match['severity'] = SecurityCves::severity($cves, $definition['severity'] ?? 'medium');
+                $item['WorstSeverity'] = SecurityCves::worst($cves) ?? $item['Severity'];
                 // Only CVEs Ubuntu has not assessed: at most low, there is nothing to fix.
                 if (SecurityCves::status($cves) === 'not_triaged' && (SecurityRules::SEVERITIES[$match['severity']] ?? 9) < SecurityRules::SEVERITIES['low']) {
                     $item['Severity'] = $match['severity'] = 'low';

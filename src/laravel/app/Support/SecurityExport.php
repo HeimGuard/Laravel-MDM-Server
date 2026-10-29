@@ -32,8 +32,9 @@ class SecurityExport
      */
     public static function streamMarkdown(Builder $query, string $title = 'Security findings'): void
     {
-        $counts = (clone $query)->reorder()->whereNull('acknowledged_at')->selectRaw('severity, count(*) as total')->groupBy('severity')->pluck('total', 'severity')->all();
-        $acknowledged = (clone $query)->reorder()->whereNotNull('acknowledged_at')->count();
+        $total = (clone $query)->reorder()->selectRaw('severity, acknowledged_at is not null as quiet, count(*) as total')->groupBy('severity', 'quiet')->get();
+        $acknowledged = (int) $total->where('quiet', 1)->sum('total');
+        $counts = $total->where('quiet', 0)->pluck('total', 'severity')->map(fn ($n) => (int) $n)->all();
         echo self::header($title, array_sum($counts) + $acknowledged, $counts, $acknowledged);
         $query->with(['rule', 'device', 'acknowledger'])->chunk(self::CHUNK, function ($findings) {
             echo $findings->map(fn ($finding) => self::block($finding))->implode('');
@@ -67,6 +68,9 @@ class SecurityExport
         $out[] = '- **First seen:** '.$finding->first_seen_at?->toDateTimeString().', last seen '.$finding->last_seen_at?->toDateTimeString().($finding->occurrences > 1 ? ", {$finding->occurrences} times" : '');
         if ($finding->acknowledged_at) {
             $out[] = '- **Acknowledged:** '.$finding->acknowledged_at->toDateTimeString().' by '.self::line($finding->acknowledger?->name ?? '?');
+        }
+        if ($worst = $finding->worstSeverity) {
+            $out[] = '- **Worst CVE:** '.$worst.' (nothing can be done about it yet, so the finding is '.$finding->severity.')';
         }
         if ($hint = $finding->remediation) {
             $out[] = '- **Remediation:** '.self::line($hint);

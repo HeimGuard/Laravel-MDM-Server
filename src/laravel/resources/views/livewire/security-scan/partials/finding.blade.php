@@ -20,11 +20,15 @@
             @endif
         </div>
         <div class="small text-break mt-1">{{ $finding->message }}</div>
+        @if ($finding->worstSeverity)
+            <div class="small text-body-secondary mt-1"><i class="fas fa-info-circle me-1"></i>{{ __('Worst CVE: :severity (nothing can be done about it yet)', ['severity' => __(ucfirst($finding->worstSeverity))]) }}</div>
+        @endif
         @if ($finding->remediation)
             <div class="small text-muted mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
         @endif
-        @if ($finding->urls)
-            <div class="mt-1">@foreach ($finding->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
+        @php($links = $finding->urls)
+        @if ($links)
+            <div class="mt-1">@foreach ($links as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
         @endif
         <div class="small text-body-tertiary mt-1">
             <span title="{{ $finding->first_seen_at }}">{{ __('Found :time', ['time' => $finding->first_seen_at->diffForHumans()]) }}</span>

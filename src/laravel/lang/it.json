@@ -1017,5 +1017,6 @@
     "Show more": "Mostra altro",
     "cves: a list of up to :count CVEs (id, severity, ranges, ubuntu).": "cves: un elenco di al massimo :count CVE (id, severity, ranges, ubuntu).",
     "group: on rules of the software source, an object with a field and a pattern (its first group names the group).": "group: per le regole della fonte software, un oggetto con un campo e un modello (il suo primo gruppo dà il nome al gruppo).",
-    "allow_tags: a list of up to 20 device tags that are allowed to have it.": "allow_tags: un elenco di al massimo 20 tag di dispositivo autorizzati ad averlo."
+    "allow_tags: a list of up to 20 device tags that are allowed to have it.": "allow_tags: un elenco di al massimo 20 tag di dispositivo autorizzati ad averlo.",
+    "Worst CVE: :severity (nothing can be done about it yet)": "CVE più grave: :severity (per ora non si può fare nulla)"
 }

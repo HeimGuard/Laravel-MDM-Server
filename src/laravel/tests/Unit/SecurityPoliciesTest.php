@@ -139,6 +139,7 @@ class SecurityPoliciesTest extends TestCase
         $found = SecurityScanner::matches($this->cveRule($cves, '^foo'), [$this->deb('foo', '1.0-1')], ['release' => 'resolute']);
 
         $this->assertSame('medium', array_values($found)[0]['severity'], 'a CVE without a fix is at most medium: there is nothing to do but wait');
+        $this->assertSame('critical', array_values($found)[0]['item']['WorstSeverity'], 'what the CVEs really have is kept');
     }
 
     public function test_nmap_nmap_common_and_zenmap_are_one_finding_and_netcat_openbsd_none(): void
@@ -198,6 +199,13 @@ class SecurityPoliciesTest extends TestCase
         $this->assertCount(1, $found);
         $this->assertSame('Packages without a source of updates (3): docker-ce, docker-ce-cli, containerd.io', $found[0]['message']);
         $this->assertSame([], SecurityScanner::matches($this->rule('software.no-update-source'), []));
+
+        // The message shows the first ones, the finding keeps all of them.
+        $lots = array_map(fn ($i) => ['Name' => "vendor-pkg-$i"] + $quiet, range(1, 45));
+        $found = array_values(SecurityScanner::matches($this->rule('software.no-update-source'), $lots))[0];
+        $this->assertStringContainsString('(45)', $found['message']);
+        $this->assertStringContainsString('vendor-pkg-30, …', $found['item']['items']);
+        $this->assertCount(45, $found['item']['all']);
         $this->assertSame('medium', $this->rule('software.no-update-source-service')['severity']);
     }
 
