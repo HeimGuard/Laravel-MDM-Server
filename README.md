@@ -75,3 +75,5 @@ Details: [Installing the agent](docs/installation.md).
 | `src/powershell` | Agent (Windows, Debian / Ubuntu) |
 | `src/docker` | Container image and its configuration |
 | `docker-compose.yml`, `docker-compose.mysql.yml` | Running the image |
+
+---
