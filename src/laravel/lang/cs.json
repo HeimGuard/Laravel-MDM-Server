@@ -1017,5 +1017,6 @@
     "Show more": "Zobrazit další",
     "cves: a list of up to :count CVEs (id, severity, ranges, ubuntu).": "cves: seznam nejvýš :count CVE (id, severity, ranges, ubuntu).",
     "group: on rules of the software source, an object with a field and a pattern (its first group names the group).": "group: u pravidel zdroje software objekt s polem a vzorem (jeho první skupina pojmenuje skupinu).",
-    "allow_tags: a list of up to 20 device tags that are allowed to have it.": "allow_tags: seznam nejvýš 20 štítků zařízení, která to smějí mít."
+    "allow_tags: a list of up to 20 device tags that are allowed to have it.": "allow_tags: seznam nejvýš 20 štítků zařízení, která to smějí mít.",
+    "Worst CVE: :severity (nothing can be done about it yet)": "Nejzávažnější CVE: :severity (zatím se s tím nedá nic dělat)"
 }

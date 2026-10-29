@@ -21,7 +21,7 @@ class SecurityExport
      */
     public static function markdown(Collection $findings, string $title = 'Security findings'): string
     {
-        return self::header($title, $findings->count(), $findings->countBy('severity')->all()).$findings->map(fn ($finding) => self::block($finding))->implode('');
+        return self::header($title, $findings->count(), $findings->whereNull('acknowledged_at')->countBy('severity')->all(), $findings->whereNotNull('acknowledged_at')->count()).$findings->map(fn ($finding) => self::block($finding))->implode('');
     }
 
     /**
@@ -32,22 +32,27 @@ class SecurityExport
      */
     public static function streamMarkdown(Builder $query, string $title = 'Security findings'): void
     {
-        $counts = (clone $query)->reorder()->selectRaw('severity, count(*) as total')->groupBy('severity')->pluck('total', 'severity')->all();
-        echo self::header($title, array_sum($counts), $counts);
+        $total = (clone $query)->reorder()->selectRaw('severity, acknowledged_at is not null as quiet, count(*) as total')->groupBy('severity', 'quiet')->get();
+        $acknowledged = (int) $total->where('quiet', 1)->sum('total');
+        $counts = $total->where('quiet', 0)->pluck('total', 'severity')->map(fn ($n) => (int) $n)->all();
+        echo self::header($title, array_sum($counts) + $acknowledged, $counts, $acknowledged);
         $query->with(['rule', 'device', 'acknowledger'])->chunk(self::CHUNK, function ($findings) {
             echo $findings->map(fn ($finding) => self::block($finding))->implode('');
             flush();
         });
     }
 
-    /** @param  array<string, int>  $counts  findings per severity */
-    private static function header(string $title, int $total, array $counts): string
+    /**
+     * @param  array<string, int>  $counts  findings nobody acknowledged, per severity
+     * @param  int  $acknowledged  acknowledged findings: quiet, so they are not in the counts per severity
+     */
+    private static function header(string $title, int $total, array $counts, int $acknowledged = 0): string
     {
-        $out = ["# {$title}", '', 'Exported '.now()->toDateTimeString().", {$total} finding(s).", ''];
+        $out = ["# {$title}", '', 'Exported '.now()->toDateTimeString().", {$total} finding(s)".($acknowledged > 0 ? ", {$acknowledged} of them acknowledged." : '.'), ''];
         $summary = collect(array_keys(SecurityRules::SEVERITIES))->filter(fn ($level) => isset($counts[$level]))
             ->map(fn ($level) => ucfirst($level).': '.$counts[$level])->implode(' · ');
         if ($summary !== '') {
-            array_push($out, $summary, '');
+            array_push($out, 'Not acknowledged: '.$summary, '');
         }
 
         return implode("\n", $out)."\n";
@@ -56,7 +61,7 @@ class SecurityExport
     private static function block(SecurityFinding $finding): string
     {
         $rule = $finding->rule;
-        $out = ['## ['.ucfirst($finding->severity).'] '.self::line($rule?->name ?? $finding->message), ''];
+        $out = ['## ['.ucfirst($finding->severity).'] '.self::line($finding->title), ''];
         $out[] = '- **Target:** '.self::line($finding->device?->displayName ?? $finding->targetLabel);
         $out[] = '- **Status:** '.$finding->status;
         $out[] = '- **Finding:** '.self::line($finding->message);
@@ -64,10 +69,13 @@ class SecurityExport
         if ($finding->acknowledged_at) {
             $out[] = '- **Acknowledged:** '.$finding->acknowledged_at->toDateTimeString().' by '.self::line($finding->acknowledger?->name ?? '?');
         }
+        if ($worst = $finding->worstSeverity) {
+            $out[] = '- **Worst CVE:** '.$worst.' (nothing can be done about it yet, so the finding is '.$finding->severity.')';
+        }
         if ($hint = $finding->remediation) {
             $out[] = '- **Remediation:** '.self::line($hint);
         }
-        foreach ($rule?->urls ?? [] as $link) {
+        foreach ($finding->urls as $link) {
             $out[] = '- '.self::line($link['url']);
         }
 
@@ -93,7 +101,7 @@ class SecurityExport
             'collected_at' => $inventory?->collected_at?->toIso8601String(),
             'findings' => $findings->map(fn ($finding) => [
                 'severity' => $finding->severity,
-                'rule' => $finding->rule?->name,
+                'rule' => $finding->title,
                 'message' => $finding->message,
                 'first_seen_at' => $finding->first_seen_at?->toIso8601String(),
                 'acknowledged' => $finding->acknowledged_at !== null,

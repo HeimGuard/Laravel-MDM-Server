@@ -723,7 +723,7 @@ class SecurityScannerTest extends TestCase
         $this->assertContains('process.miner', $keys);
         $admins = SecurityFinding::query()->whereHas('rule', fn ($q) => $q->where('key', 'admins.many'))->get();
         $this->assertCount(1, $admins);
-        $this->assertSame('4 administrator accounts: root, alice, bob, carol', $admins[0]->message);
+        $this->assertSame('3 enabled administrators: alice, bob, carol', $admins[0]->message, 'root is not counted');
     }
 
     public function test_acknowledging_quiets_findings_until_they_are_gone(): void

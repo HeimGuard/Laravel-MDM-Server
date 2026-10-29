@@ -66,6 +66,14 @@ class SecurityCves
         return in_array(self::normalArch($arch), array_map(fn ($a) => self::normalArch((string) $a), $cve['arch']), true);
     }
 
+    /** The kernel packages that are loaded (what a kernel CVE is a hole of) and the ones built from its source that are not. */
+    private const KERNEL_LOADED = 'image|image-unsigned|modules|modules-extra';
+
+    private const KERNEL_UNLOADED = 'headers|tools|cloud-tools|buildinfo|source|libc-dev|perf';
+
+    /** A flavour of the kernel in the name: linux-aws-headers-5.15.0-1052, linux-hwe-6.8-tools-6.8.0-45. */
+    private const KERNEL_FLAVOUR = '(?:[a-z0-9.]+-)*';
+
     /**
      * A package of a kernel build (linux-image-7.0.0-22-generic, linux-headers-7.0.0-22, linux-tools-7.0.0-22) other than the one
      * the device runs (`uname -r`, 7.0.0-38-generic): it is not loaded, so the CVEs of the kernel do not make it a finding.
@@ -76,11 +84,34 @@ class SecurityCves
             return false;
         }
         if (strtolower((string) ($item['Source'] ?? '')) !== 'dpkg'
-            || ! preg_match('/^linux-(?:image|image-unsigned|modules|modules-extra|headers|tools|cloud-tools|buildinfo)-(\d+\.\d+\.\d+-\d+)(?:-.+)?$/', (string) ($item['Name'] ?? ''), $built)) {
+            || ! preg_match('/^linux-'.self::KERNEL_FLAVOUR.'(?:'.self::KERNEL_LOADED.'|headers|tools|cloud-tools|buildinfo)-(\d+\.\d+\.\d+-\d+)(?:-.+)?$/', (string) ($item['Name'] ?? ''), $built)) {
             return false;
         }
 
         return $built[1] !== $now[1];
+    }
+
+    /**
+     * A package built from the kernel source that is not the kernel: headers, tools, libc headers, perf, bpftool. The CVEs of the
+     * kernel are bugs of the running image and its modules, nothing of these is loaded, so they are not a finding of their own.
+     */
+    public static function isKernelDevelopment(array $item): bool
+    {
+        if (strtolower((string) ($item['Source'] ?? '')) !== 'dpkg') {
+            return false;
+        }
+        $name = (string) ($item['Name'] ?? '');
+        $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : $name));
+
+        return str_starts_with($source, 'linux')
+            && (bool) preg_match('/^(?:linux-'.self::KERNEL_FLAVOUR.'(?:'.self::KERNEL_UNLOADED.')\b.*|bpftool)$/', $name);
+    }
+
+    /** Whether the package is the kernel itself (image, modules): what a kernel CVE is a hole of. */
+    public static function isKernelImage(array $item): bool
+    {
+        return strtolower((string) ($item['Source'] ?? '')) === 'dpkg'
+            && (bool) preg_match('/^linux-'.self::KERNEL_FLAVOUR.'(?:'.self::KERNEL_LOADED.')\b/', (string) ($item['Name'] ?? ''));
     }
 
     /** Which tracker of the CVEs speaks for the distribution of the device: debian, ubuntu (also when it is not known), null for another one. */
@@ -304,17 +335,42 @@ class SecurityCves
         return null;
     }
 
-    /** The most severe severity of the CVEs. */
+    /**
+     * The severity of a finding: the most severe of its CVEs. A CVE nobody can fix yet (no fix, not yet assessed by Ubuntu) counts
+     * at most as medium: the severity says how urgent it is to act, and there is nothing to do but wait or restrict the package.
+     * worst() has the severity the CVEs really have.
+     */
     public static function severity(array $affecting, string $default = 'medium'): string
     {
         $best = null;
         foreach ($affecting as $cve) {
-            if (isset(SecurityRules::SEVERITIES[$cve['severity']]) && ($best === null || SecurityRules::SEVERITIES[$cve['severity']] < SecurityRules::SEVERITIES[$best])) {
-                $best = $cve['severity'];
+            $level = $cve['severity'] ?? null;
+            if (! isset(SecurityRules::SEVERITIES[$level])) {
+                continue;
+            }
+            if (in_array($cve['status'] ?? null, ['no_fix', 'not_triaged'], true) && SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES['medium']) {
+                $level = 'medium';
+            }
+            if ($best === null || SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES[$best]) {
+                $best = $level;
             }
         }
 
         return $best ?? $default;
+    }
+
+    /** The most severe severity the CVEs have, whatever can be done about them. */
+    public static function worst(array $affecting): ?string
+    {
+        $best = null;
+        foreach ($affecting as $cve) {
+            $level = $cve['severity'] ?? null;
+            if (isset(SecurityRules::SEVERITIES[$level]) && ($best === null || SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES[$best])) {
+                $best = $level;
+            }
+        }
+
+        return $best;
     }
 
     /**
@@ -346,6 +402,8 @@ class SecurityCves
         if (in_array('no_fix', $statuses, true) && $source === 'snap') {
             $name = (string) ($first['Name'] ?? '');
             $lines[] = 'The channel of the snap ('.($first['Channel'] ?? '').') has no fixed version: switch to a newer track that has it (snap info '.$name.' lists them; sudo snap refresh '.$name.' --channel=<track>/stable), or remove the snap if it is not needed.';
+        } elseif (in_array('no_fix', $statuses, true) && array_filter($items, fn ($item) => self::isKernelImage($item))) {
+            $lines[] = 'The distribution has not released a fixed kernel yet: nothing to remove (this is the running kernel). Install it when it comes (sudo apt update && sudo apt full-upgrade, then reboot), use Livepatch / Ubuntu Pro if it covers the kernel, and keep untrusted users and workloads off the machine meanwhile.';
         } elseif (in_array('no_fix', $statuses, true)) {
             $line = 'The distribution or vendor has not released a fix yet: uninstall '.($names !== '' ? $names : 'it').' if it is not needed, use Ubuntu Pro if it covers the package, or restrict its use';
             $line .= preg_match('/magick/i', (string) ($first['SourcePackage'] ?? $first['Name'] ?? '')) ? ' (policy.xml of ImageMagick).' : '.';

@@ -556,6 +556,15 @@ class ScriptTest extends TestCase
         $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['severity' => 'critical']))->streamedContent());
         $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export', ['search' => 'Firewall']))->streamedContent());
         $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['search' => 'nothing like it']))->streamedContent());
+        // What somebody acknowledged is quiet: it is not in the counts per severity.
+        \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export-ack', 'severity' => 'low',
+            'message' => 'No firewall', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(), 'acknowledged_at' => now(),
+        ]);
+        $content = $this->get(route('security.export', ['status' => 'unresolved']))->streamedContent();
+        $this->assertStringContainsString('2 finding(s), 1 of them acknowledged.', $content);
+        $this->assertStringContainsString('Not acknowledged: High: 1', $content);
+        $this->assertStringNotContainsString('Low: 1', $content);
         $this->get(route('security.export', ['status' => 'bogus']))->assertSessionHasErrors('status');
         $this->get(route('security.export', ['device' => 999999]))->assertSessionHasErrors('device');
         Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertSee('Export Markdown')->assertSee(route('security.export', ['device' => $device->id, 'status' => 'unresolved']));

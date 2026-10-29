@@ -35,7 +35,7 @@ trait RemediatesFindings
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
         $details = is_array($finding->details) ? $finding->details : [];
-        $request = "Remediate this security finding.\nRule: {$rule?->name}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
+        $request = "Remediate this security finding.\nRule: {$finding->title}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
             // What the scanner found out about it: where the software comes from, what can be done about the CVEs (a fix to install, none yet).
             .(filled($details['Status'] ?? null) ? "\nStatus of the CVEs: {$details['Status']}" : '')
             .(filled($details['Cves'] ?? null) ? "\nCVEs: ".mb_strimwidth((string) $details['Cves'], 0, 600, '…') : '')
@@ -43,7 +43,7 @@ trait RemediatesFindings
             .(filled($details['Origin'] ?? null) ? "\nPackage origin: {$details['Origin']}" : '')
             .($finding->remediation ? "\nHint: {$finding->remediation}" : '')
             // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
-            .($rule && $rule->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($rule->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
+            .($finding->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($finding->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
             .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '')
             // The operating system and its version the script runs on (Ubuntu 26.04 LTS, Microsoft Windows 11 Pro (10.0.26200)).
             .(filled($finding->device?->os) ? "\nOperating system: ".mb_strimwidth(preg_replace('/\s+/', ' ', (string) $finding->device->os), 0, 200, '…') : '');

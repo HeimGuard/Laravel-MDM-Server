@@ -275,8 +275,42 @@ class SecurityCvesTest extends TestCase
             'B' => ['id' => 'B', 'severity' => 'critical', 'status' => 'no_fix', 'fixed' => null],
         ];
         $this->assertSame('no_fix', SecurityCves::status($affecting));
-        $this->assertSame('critical', SecurityCves::severity($affecting));
+        $this->assertSame('medium', SecurityCves::severity($affecting), 'a critical CVE nobody can fix yet is at most medium');
+        $this->assertSame('critical', SecurityCves::worst($affecting), 'what the CVEs really have');
+        $affecting['C'] = ['id' => 'C', 'severity' => 'high', 'status' => 'update_available', 'fixed' => '2'];
+        $this->assertSame('high', SecurityCves::severity($affecting), 'one that an update fixes keeps its severity');
         $this->assertNull(SecurityCves::status([]));
+    }
+
+    public function test_the_kernel_without_a_fix_is_not_advised_to_be_uninstalled(): void
+    {
+        $image = ['Name' => 'linux-image-7.0.0-38-generic', 'Version' => '7.0.0-38.38', 'Source' => 'dpkg', 'SourcePackage' => 'linux-signed'];
+        $affecting = ['CVE-1' => ['id' => 'CVE-1', 'severity' => 'critical', 'status' => 'no_fix', 'fixed' => null]];
+        $text = SecurityCves::remediation([$image], $affecting);
+
+        $this->assertStringNotContainsString('uninstall', $text);
+        $this->assertStringContainsString('running kernel', $text);
+        $this->assertStringContainsString('reboot', $text);
+    }
+
+    public function test_the_headers_and_tools_of_the_kernel_are_not_the_kernel(): void
+    {
+        $item = fn (string $name, string $source = 'linux') => ['Name' => $name, 'Version' => '7.0.0-38.38', 'Source' => 'dpkg', 'SourcePackage' => $source];
+        foreach (['linux-headers-7.0.0-38-generic', 'linux-headers-7.0.0-38', 'linux-tools-7.0.0-38', 'linux-tools-common', 'linux-libc-dev', 'bpftool', 'linux-perf'] as $name) {
+            $this->assertTrue(SecurityCves::isKernelDevelopment($item($name)), $name);
+            $this->assertFalse(SecurityCves::isKernelImage($item($name)), $name);
+        }
+        foreach (['linux-image-7.0.0-38-generic', 'linux-modules-7.0.0-38-generic', 'linux-modules-extra-5.15.0-198-generic'] as $name) {
+            $this->assertTrue(SecurityCves::isKernelImage($item($name, 'linux-signed')), $name);
+            $this->assertFalse(SecurityCves::isKernelDevelopment($item($name, 'linux-signed')), $name);
+        }
+        foreach (['linux-aws-headers-5.15.0-1052', 'linux-azure-tools-6.5.0-1018', 'linux-hwe-6.8-headers-6.8.0-45', 'linux-gcp-cloud-tools-6.5.0-1020'] as $name) {
+            $this->assertTrue(SecurityCves::isKernelDevelopment($item($name)), $name);
+        }
+        $this->assertTrue(SecurityCves::isOtherKernel($item('linux-aws-headers-5.15.0-1040'), '5.15.0-1052-aws'));
+        $this->assertFalse(SecurityCves::isOtherKernel($item('linux-aws-headers-5.15.0-1052'), '5.15.0-1052-aws'));
+        $this->assertFalse(SecurityCves::isKernelDevelopment($item('bpftool', 'something-else')), 'by the source package it is built from');
+        $this->assertFalse(SecurityCves::isKernelDevelopment($item('openssl', 'openssl')));
     }
 
     public function test_release_of_a_device(): void

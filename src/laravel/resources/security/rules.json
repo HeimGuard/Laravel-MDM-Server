@@ -304,14 +304,15 @@
     },
     {
         "key": "admins.many",
-        "name": "Many administrators",
-        "description": "Every administrator account is one more way to take over the device.",
-        "severity": "low",
+        "name": "More than 2 local administrators",
+        "description": "Least privilege: every administrator account is one more way to take over the device. root, which every Linux system has, is not counted.",
+        "severity": "medium",
         "platform": "any",
         "source": "admins",
-        "threshold": 4,
-        "when": {"field": "Enabled", "op": "ne", "value": false},
-        "message": "{count} administrator accounts: {items}"
+        "threshold": 3,
+        "when": {"all": [{"field": "Enabled", "op": "ne", "value": false}, {"field": "Name", "op": "ne", "value": "root"}]},
+        "message": "{count} enabled administrators: {items}",
+        "remediation": "Remove administrators that are not needed."
     },
     {
         "key": "posture.firewall-windows",
@@ -703,8 +704,9 @@
         "platform": "linux",
         "source": "software",
         "when": {"all": [{"field": "Source", "op": "eq", "value": "dpkg"}, {"field": "NoUpdateSource", "op": "true"}, {"field": "Name", "op": "not_matches", "value": "\\b(anydesk|teamviewer|rustdesk|ultraviewer|supremo|splashtop|ammyy|radmin|dwservice|dwagent|screenconnect|connectwise control|logmein|remotepc|aeroadmin|getscreen|zoho assist|atera)\\b"}, {"not": {"all": [{"field": "Running", "op": "true"}, {"field": "Listening", "op": "true"}, {"field": "RunUser", "op": "eq", "value": "root"}]}}]},
-        "message": "{Name} {Version} has no source of updates",
-        "remediation": "Add the repository of the vendor (so that apt updates it), install a current version by hand, or uninstall it."
+        "threshold": 1,
+        "message": "Packages without a source of updates ({count}): {items}",
+        "remediation": "Add the repository of the vendor (so that apt updates it), install a current version by hand, or uninstall it. After an upgrade to a new release of the distribution the repositories of vendors (Docker, Microsoft, Zabbix) are switched off: look in /etc/apt/sources.list.d (*.distUpgrade, *.save), point them at the new release and run sudo apt update."
     },
     {
         "key": "software.no-update-source-service",
