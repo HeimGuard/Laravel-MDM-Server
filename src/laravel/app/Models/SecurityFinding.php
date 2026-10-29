@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\NetworkMap;
+use App\Support\SecurityCves;
 use App\Support\SecurityRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class SecurityFinding extends Model
 {
+    /** CVE links shown of a finding that lists more. */
+    public const MAX_CVE_LINKS = 10;
+
     protected $fillable = [
         'device_id', 'target_ip', 'target_mac', 'network', 'site',
         'security_rule_id', 'fingerprint', 'severity', 'message', 'details', 'occurrences',
@@ -135,6 +139,39 @@ class SecurityFinding extends Model
         $own = $this->details['Remediation'] ?? null;
 
         return is_string($own) && $own !== '' ? $own : ($this->rule?->definition['remediation'] ?? null);
+    }
+
+    /**
+     * What the finding is called: the rule's name, except for the CVEs of a rule that covers many packages ("Ubuntu packages:
+     * known vulnerabilities"), where it is the package they are of.
+     */
+    public function getTitleAttribute(): string
+    {
+        $name = (string) ($this->rule?->name ?? $this->message);
+        $source = trim((string) ($this->details['SourcePackage'] ?? ''));
+        if ($source !== '' && isset($this->rule?->definition['cves']) && preg_match('/ packages: known vulnerabilities$/', $name)) {
+            return SecurityCves::trackerSource($source).': known vulnerabilities';
+        }
+
+        return $name;
+    }
+
+    /**
+     * Links of the finding: for CVEs, the CVEs it lists (the links of a rule with CVEs are of its first CVEs, not of the ones
+     * this device has), else the links of the rule. At most MAX_CVE_LINKS.
+     *
+     * @return list<array{url: string, host: string}>
+     */
+    public function getUrlsAttribute(): array
+    {
+        if (isset($this->rule?->definition['cves'])) {
+            preg_match_all('/\bCVE-\d{4}-\d{4,}\b/', (string) ($this->details['Cves'] ?? $this->message), $found);
+
+            return array_map(fn (string $id) => ['url' => 'https://nvd.nist.gov/vuln/detail/'.$id, 'host' => $id],
+                array_slice(array_values(array_unique($found[0])), 0, self::MAX_CVE_LINKS));
+        }
+
+        return $this->rule?->urls ?? [];
     }
 
     public function getSeverityColorAttribute(): string

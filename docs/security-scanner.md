@@ -103,6 +103,13 @@ with the word of a tracker is not in these.
 
 A CVE of the cores of one CPU family (the rules of the trackers mark the Arm ones with `"arch": ["arm64"]`) is judged only on a device of that architecture (`Arch` of the `os` item; `x86_64` is `amd64`, `aarch64` is `arm64`); a device that sends none (agents before 1.30.0) is judged as before.
 
+A CVE nobody can fix yet (*no fix available yet*, *not yet assessed*) counts at most as **medium**: the severity says how urgent it is to act, and
+there is nothing to do but wait or restrict the package (the kernel included: its advice is to install the fix and reboot when it comes, never to remove
+the running kernel). The headers, tools, perf, bpftool and libc headers built from the kernel source (`linux-headers-*`, `linux-tools-*`, `linux-libc-dev`,
+`bpftool`) are not loaded, so the CVEs of the kernel are not a finding of them. The links of a finding of CVEs are the NVD pages of the CVEs it lists
+(at most 10), not the links of the rule, which are the same for every device; a finding of a rule that covers many packages is titled by the source
+package (`qemu: known vulnerabilities`).
+
 Kernel builds that are installed but **not running** (`linux-image-7.0.0-22-generic`, `linux-headers-7.0.0-22`, `linux-tools-7.0.0-22`: another build than `uname -r` of the `os` item) are not judged by the CVEs of the kernel; they are old packages to remove (`sudo apt autoremove --purge`), not a hole.
 
 The binary packages of one source package (`imagemagick`, `libsoup-3.0-0` and `libsoup-3.0-common`) are **one finding** that lists
@@ -128,7 +135,7 @@ date or without a source of updates* (high); the finding says the version, wheth
 **Network and password cracking tools** are *info*, one finding per tool (nmap, nmap-common and zenmap are `nmap`;
 wireshark and wireshark-common are `wireshark`), `netcat-openbsd` (part of a base Ubuntu installation) is not reported, and a
 device that has one of the tags of the rule's `allow_tags` (`developer`, `admin`, `security`) is allowed to have them.
-A package **without a source of updates** is low, medium for a network service that runs as root.
+A package **without a source of updates** is low, medium for a network service that runs as root; the packages of a device are **one finding** (an upgrade of the distribution switches the repositories of vendors off, and a dozen packages lose their source at once). More than 2 enabled local administrators (without `root`) is medium.
 
 **Life of a finding.** An acknowledged finding of the inventory is open again when it gets worse (a more severe CVE; a remote
 access tool starts to run is another rule, so it is a new finding). With the setting *security_ack_days* of **System > Settings**

@@ -80,7 +80,7 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], SecurityScanner::matches($rule, $items, ['release' => 'resolute']));
     }
 
-    public function test_the_kernel_image_and_its_headers_are_one_finding(): void
+    public function test_the_signed_kernel_image_and_its_modules_are_one_finding(): void
     {
         $cve = ['id' => 'CVE-2026-1', 'severity' => 'critical', 'ranges' => [], 'ubuntu' => ['linux' => ['jammy' => ['needed', '']]]];
         $rule = $this->cveRule([$cve], '^linux-');
@@ -95,7 +95,8 @@ class SecurityPoliciesTest extends TestCase
 
         $this->assertCount(1, $found);
         $this->assertStringContainsString('linux-image-5.15.0-198-generic', array_values($found)[0]['item']['Packages']);
-        $this->assertStringContainsString('linux-headers-5.15.0-198', array_values($found)[0]['item']['Packages']);
+        $this->assertStringContainsString('linux-modules-5.15.0-198-generic', array_values($found)[0]['item']['Packages']);
+        $this->assertStringNotContainsString('linux-headers', array_values($found)[0]['item']['Packages'], 'headers are not loaded');
     }
 
     public function test_the_fingerprint_of_one_package_is_the_one_it_always_had(): void
@@ -120,16 +121,24 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame('not yet assessed by Ubuntu', array_values($found)[0]['item']['Status']);
 
         $cves[1]['ubuntu'] = ['python3.10' => ['jammy' => ['needed', '']]];
-        $this->assertSame('high', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity']);
+        $this->assertSame('medium', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity'], 'no fix yet: at most medium');
+        $cves[1]['ubuntu'] = ['python3.10' => ['jammy' => ['released', '3.10.12-2']]];
+        $this->assertSame('medium', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity']);
     }
 
     public function test_the_severity_of_a_cve_finding_is_the_one_of_its_worst_cve(): void
     {
-        $cves = $this->cves(2, ['foo' => ['resolute' => ['needed', '']]]);
+        $cves = $this->cves(2, ['foo' => ['resolute' => ['released', '1.0-2']]]);
         $cves[1]['severity'] = 'critical';
         $found = SecurityScanner::matches($this->cveRule($cves, '^foo'), [$this->deb('foo', '1.0-1')], ['release' => 'resolute']);
 
         $this->assertSame('critical', array_values($found)[0]['severity']);
+
+        $cves = $this->cves(2, ['foo' => ['resolute' => ['needed', '']]]);
+        $cves[1]['severity'] = 'critical';
+        $found = SecurityScanner::matches($this->cveRule($cves, '^foo'), [$this->deb('foo', '1.0-1')], ['release' => 'resolute']);
+
+        $this->assertSame('medium', array_values($found)[0]['severity'], 'a CVE without a fix is at most medium: there is nothing to do but wait');
     }
 
     public function test_nmap_nmap_common_and_zenmap_are_one_finding_and_netcat_openbsd_none(): void
@@ -182,7 +191,42 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], SecurityScanner::matches($this->rule('software.no-update-source-service'), [$quiet]));
         $this->assertSame([], SecurityScanner::matches($this->rule('software.no-update-source'), [['Name' => 'teamviewer'] + $quiet]), 'remote access tools have their own rules');
         $this->assertSame('low', $this->rule('software.no-update-source')['severity']);
+
+        // One finding for all of them: a Docker repository that an upgrade switched off leaves a dozen packages at once.
+        $many = array_map(fn ($name) => ['Name' => $name] + $quiet, ['docker-ce', 'docker-ce-cli', 'containerd.io']);
+        $found = array_values(SecurityScanner::matches($this->rule('software.no-update-source'), $many));
+        $this->assertCount(1, $found);
+        $this->assertSame('Packages without a source of updates (3): docker-ce, docker-ce-cli, containerd.io', $found[0]['message']);
+        $this->assertSame([], SecurityScanner::matches($this->rule('software.no-update-source'), []));
         $this->assertSame('medium', $this->rule('software.no-update-source-service')['severity']);
+    }
+
+    public function test_root_is_not_one_of_the_local_administrators(): void
+    {
+        $rule = $this->rule('admins.many');
+        $admin = fn (string $name) => ['Name' => $name, 'Source' => 'group sudo', 'Enabled' => true];
+        $root = ['Name' => 'root', 'Source' => 'uid 0', 'Enabled' => true];
+
+        $this->assertSame([], SecurityScanner::matches($rule, [$root, $admin('jakub'), $admin('vasek')]), 'two people and root are fine');
+        $found = array_values(SecurityScanner::matches($rule, [$root, $admin('jakub'), $admin('vasek'), $admin('karel')]));
+        $this->assertCount(1, $found);
+        $this->assertSame('3 enabled administrators: jakub, vasek, karel', $found[0]['message']);
+        $this->assertSame('medium', $rule['severity']);
+    }
+
+    public function test_the_headers_and_tools_of_the_kernel_are_not_a_finding_of_the_kernel_cves(): void
+    {
+        $ubuntu = ['linux' => ['resolute' => ['needed', '']]];
+        $rule = $this->cveRule($this->cves(2, $ubuntu), '^(linux|bpftool)');
+        $kernel = fn (string $name, string $source) => $this->deb($name, '7.0.0-38.38', $source);
+        $items = [
+            $kernel('linux-image-7.0.0-38-generic', 'linux-signed'), $kernel('linux-modules-7.0.0-38-generic', 'linux'),
+            $kernel('linux-headers-7.0.0-38-generic', 'linux'), $kernel('linux-tools-common', 'linux'), $kernel('bpftool', 'linux'), $kernel('linux-libc-dev', 'linux'),
+        ];
+        $found = array_values(SecurityScanner::matches($rule, $items, ['release' => 'resolute', 'os' => 'ubuntu', 'kernel' => '7.0.0-38-generic']));
+
+        $this->assertCount(1, $found);
+        $this->assertSame('linux-image-7.0.0-38-generic 7.0.0-38.38, linux-modules-7.0.0-38-generic 7.0.0-38.38', $found[0]['item']['Packages']);
     }
 
     public function test_a_failed_apt_update_is_a_high_finding_naming_the_repositories(): void
@@ -215,7 +259,7 @@ class SecurityPoliciesTest extends TestCase
     {
         $select = ['field' => 'SourcePackage', 'op' => 'in', 'value' => ['foo']];
         $rule = ['key' => 'org.distro-ubuntu-01', 'name' => 'Ubuntu: known vulnerabilities', 'severity' => 'high', 'platform' => 'linux', 'source' => 'software',
-            'select' => $select, 'cves' => [['id' => 'CVE-2026-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['needed', '']]]]]];
+            'select' => $select, 'cves' => [['id' => 'CVE-2026-1', 'severity' => 'high', 'ranges' => [], 'ubuntu' => ['foo' => ['noble' => ['released', '1.0-2']]]]]];
 
         $this->assertSame([], SecurityRules::errors($rule));
         $found = SecurityScanner::matches($rule, [$this->deb('libfoo1', '1.0-1', 'foo'), $this->deb('bar', '1.0-1')], ['release' => 'noble', 'os' => 'ubuntu']);

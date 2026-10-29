@@ -634,6 +634,10 @@ class SecurityScanner
                 if (SecurityCves::isOtherKernel($item, $context['kernel'] ?? null)) {
                     continue;
                 }
+                // Headers, tools, perf and libc headers of the kernel source are not loaded: a kernel CVE is not a hole of them.
+                if (SecurityCves::isKernelDevelopment($item)) {
+                    continue;
+                }
                 $affecting = SecurityCves::affecting($definition['cves'], $item, $context['release'] ?? null, $context['os'] ?? null, $index, $context['arch'] ?? null);
                 if ($affecting === []) {
                     continue;

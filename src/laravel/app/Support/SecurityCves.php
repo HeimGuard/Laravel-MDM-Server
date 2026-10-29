@@ -83,6 +83,29 @@ class SecurityCves
         return $built[1] !== $now[1];
     }
 
+    /**
+     * A package built from the kernel source that is not the kernel: headers, tools, libc headers, perf, bpftool. The CVEs of the
+     * kernel are bugs of the running image and its modules, nothing of these is loaded, so they are not a finding of their own.
+     */
+    public static function isKernelDevelopment(array $item): bool
+    {
+        if (strtolower((string) ($item['Source'] ?? '')) !== 'dpkg') {
+            return false;
+        }
+        $name = (string) ($item['Name'] ?? '');
+        $source = self::trackerSource((string) (($item['SourcePackage'] ?? '') !== '' ? $item['SourcePackage'] : $name));
+
+        return str_starts_with($source, 'linux')
+            && (bool) preg_match('/^(?:linux-(?:headers|tools|cloud-tools|buildinfo|source|libc-dev|perf)\b.*|bpftool|linux-lib.*)$/', $name);
+    }
+
+    /** Whether the package is the kernel itself (image, modules): what a kernel CVE is a hole of. */
+    public static function isKernelImage(array $item): bool
+    {
+        return strtolower((string) ($item['Source'] ?? '')) === 'dpkg'
+            && (bool) preg_match('/^linux-(?:image|image-unsigned|modules|modules-extra)\b/', (string) ($item['Name'] ?? ''));
+    }
+
     /** Which tracker of the CVEs speaks for the distribution of the device: debian, ubuntu (also when it is not known), null for another one. */
     private static function trackerOf(?string $osId): ?string
     {
@@ -304,13 +327,23 @@ class SecurityCves
         return null;
     }
 
-    /** The most severe severity of the CVEs. */
+    /**
+     * The most severe severity of the CVEs. A CVE nobody can fix yet (no fix, no update source) counts at most as medium: the
+     * severity says how urgent it is to act, and there is nothing to do but wait or restrict the package.
+     */
     public static function severity(array $affecting, string $default = 'medium'): string
     {
         $best = null;
         foreach ($affecting as $cve) {
-            if (isset(SecurityRules::SEVERITIES[$cve['severity']]) && ($best === null || SecurityRules::SEVERITIES[$cve['severity']] < SecurityRules::SEVERITIES[$best])) {
-                $best = $cve['severity'];
+            $level = $cve['severity'] ?? null;
+            if (! isset(SecurityRules::SEVERITIES[$level])) {
+                continue;
+            }
+            if (in_array($cve['status'] ?? null, ['no_fix', 'not_triaged'], true) && SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES['medium']) {
+                $level = 'medium';
+            }
+            if ($best === null || SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES[$best]) {
+                $best = $level;
             }
         }
 
@@ -346,6 +379,8 @@ class SecurityCves
         if (in_array('no_fix', $statuses, true) && $source === 'snap') {
             $name = (string) ($first['Name'] ?? '');
             $lines[] = 'The channel of the snap ('.($first['Channel'] ?? '').') has no fixed version: switch to a newer track that has it (snap info '.$name.' lists them; sudo snap refresh '.$name.' --channel=<track>/stable), or remove the snap if it is not needed.';
+        } elseif (in_array('no_fix', $statuses, true) && array_filter($items, fn ($item) => self::isKernelImage($item))) {
+            $lines[] = 'The distribution has not released a fixed kernel yet: nothing to remove (this is the running kernel). Install it when it comes (sudo apt update && sudo apt full-upgrade, then reboot), use Livepatch / Ubuntu Pro if it covers the kernel, and keep untrusted users and workloads off the machine meanwhile.';
         } elseif (in_array('no_fix', $statuses, true)) {
             $line = 'The distribution or vendor has not released a fix yet: uninstall '.($names !== '' ? $names : 'it').' if it is not needed, use Ubuntu Pro if it covers the package, or restrict its use';
             $line .= preg_match('/magick/i', (string) ($first['SourcePackage'] ?? $first['Name'] ?? '')) ? ' (policy.xml of ImageMagick).' : '.';

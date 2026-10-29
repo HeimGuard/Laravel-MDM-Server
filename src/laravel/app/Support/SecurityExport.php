@@ -21,7 +21,7 @@ class SecurityExport
      */
     public static function markdown(Collection $findings, string $title = 'Security findings'): string
     {
-        return self::header($title, $findings->count(), $findings->countBy('severity')->all()).$findings->map(fn ($finding) => self::block($finding))->implode('');
+        return self::header($title, $findings->count(), $findings->whereNull('acknowledged_at')->countBy('severity')->all(), $findings->whereNotNull('acknowledged_at')->count()).$findings->map(fn ($finding) => self::block($finding))->implode('');
     }
 
     /**
@@ -32,22 +32,26 @@ class SecurityExport
      */
     public static function streamMarkdown(Builder $query, string $title = 'Security findings'): void
     {
-        $counts = (clone $query)->reorder()->selectRaw('severity, count(*) as total')->groupBy('severity')->pluck('total', 'severity')->all();
-        echo self::header($title, array_sum($counts), $counts);
+        $counts = (clone $query)->reorder()->whereNull('acknowledged_at')->selectRaw('severity, count(*) as total')->groupBy('severity')->pluck('total', 'severity')->all();
+        $acknowledged = (clone $query)->reorder()->whereNotNull('acknowledged_at')->count();
+        echo self::header($title, array_sum($counts) + $acknowledged, $counts, $acknowledged);
         $query->with(['rule', 'device', 'acknowledger'])->chunk(self::CHUNK, function ($findings) {
             echo $findings->map(fn ($finding) => self::block($finding))->implode('');
             flush();
         });
     }
 
-    /** @param  array<string, int>  $counts  findings per severity */
-    private static function header(string $title, int $total, array $counts): string
+    /**
+     * @param  array<string, int>  $counts  findings nobody acknowledged, per severity
+     * @param  int  $acknowledged  acknowledged findings: quiet, so they are not in the counts per severity
+     */
+    private static function header(string $title, int $total, array $counts, int $acknowledged = 0): string
     {
-        $out = ["# {$title}", '', 'Exported '.now()->toDateTimeString().", {$total} finding(s).", ''];
+        $out = ["# {$title}", '', 'Exported '.now()->toDateTimeString().", {$total} finding(s)".($acknowledged > 0 ? ", {$acknowledged} of them acknowledged." : '.'), ''];
         $summary = collect(array_keys(SecurityRules::SEVERITIES))->filter(fn ($level) => isset($counts[$level]))
             ->map(fn ($level) => ucfirst($level).': '.$counts[$level])->implode(' · ');
         if ($summary !== '') {
-            array_push($out, $summary, '');
+            array_push($out, 'Not acknowledged: '.$summary, '');
         }
 
         return implode("\n", $out)."\n";
@@ -56,7 +60,7 @@ class SecurityExport
     private static function block(SecurityFinding $finding): string
     {
         $rule = $finding->rule;
-        $out = ['## ['.ucfirst($finding->severity).'] '.self::line($rule?->name ?? $finding->message), ''];
+        $out = ['## ['.ucfirst($finding->severity).'] '.self::line($finding->title), ''];
         $out[] = '- **Target:** '.self::line($finding->device?->displayName ?? $finding->targetLabel);
         $out[] = '- **Status:** '.$finding->status;
         $out[] = '- **Finding:** '.self::line($finding->message);
@@ -67,7 +71,7 @@ class SecurityExport
         if ($hint = $finding->remediation) {
             $out[] = '- **Remediation:** '.self::line($hint);
         }
-        foreach ($rule?->urls ?? [] as $link) {
+        foreach ($finding->urls as $link) {
             $out[] = '- '.self::line($link['url']);
         }
 
