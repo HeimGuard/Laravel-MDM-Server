@@ -56,7 +56,12 @@ class DeviceRules extends Component
         $threshold = $gb ? null : $threshold;
 
         $rule = $this->ruleFor($type);
+        $device = \App\Models\Device::find($this->deviceId);
+        $label = __($this->types()[$type]['label'] ?? $type);
         if (! $setting['enabled']) {
+            if ($rule && $device) {
+                \App\Support\Audit::device($device, 'alerts', __('Alert turned off: :alert', ['alert' => $label]), ['type' => $type]);
+            }
             $rule?->delete();
 
             return;
@@ -66,7 +71,12 @@ class DeviceRules extends Component
         if ($rule->exists && $rule->isDirty(['threshold', 'unit', 'limit_gb', 'minutes'])) {
             $rule->events()->whereNull('resolved_at')->update(['resolved_at' => now()]);
         }
+        $created = ! $rule->exists;
         $rule->save();
+        if ($device && ($created || $rule->wasChanged())) {
+            \App\Support\Audit::device($device, 'alerts', ($created ? __('Alert turned on: :alert', ['alert' => $label]) : __('Alert changed: :alert', ['alert' => $label])),
+                ['type' => $type, 'threshold' => $threshold, 'unit' => $gb ? 'gb' : 'percent', 'limit_gb' => $limit, 'minutes' => $minutes]);
+        }
         $this->dispatch('alertRuleSaved');
     }
 

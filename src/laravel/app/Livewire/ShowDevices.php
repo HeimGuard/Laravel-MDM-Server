@@ -99,6 +99,7 @@ class ShowDevices extends Component
         $device = new Device();
         $device->forceFill($settings + ['kind' => 'ping', 'name' => $this->pingName, 'os' => '', 'token' => hash('sha256', \Illuminate\Support\Str::random(60))]);
         $device->save();
+        \App\Support\Audit::device($device, 'create', __('Added ping device :ip', ['ip' => $device->ping_address]), ['ip' => $device->ping_address, 'mac' => $device->ping_mac]);
 
         $this->reset(['pingName', 'pingAddress', 'pingMac', 'addMode']);
         $this->pingPrefix = 24;

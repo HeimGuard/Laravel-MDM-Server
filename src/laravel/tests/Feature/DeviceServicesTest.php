@@ -231,9 +231,9 @@ class DeviceServicesTest extends TestCase
             ->assertSeeHtml('class="nav-link active" x-on:click="$wire.tab = \'services\'"')
             ->assertSeeHtml('class="tab-pane fade show active" id="services-tab-pane"');
 
-        // A tab this device does not have (no Docker, no drives) falls back to the first one it has.
+        // A tab this device does not have (no Docker, no drives) falls back to the first one, Overview.
         Livewire::withQueryParams(['tab' => 'docker'])->test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
-            ->assertSeeHtml('class="tab-pane fade show active" id="updates-tab-pane"')
+            ->assertSeeHtml('class="tab-pane fade show active" id="overview-tab-pane"')
             ->assertDontSeeHtml('class="tab-pane fade show active" id="services-tab-pane"');
 
         Livewire::withQueryParams(['range' => '24h'])->test(DeviceMetrics::class, ['selectedDeviceId' => $device->id])

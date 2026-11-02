@@ -48,7 +48,11 @@ class DeviceCommands extends Component
         }
     }
 
-    /** Scans this host's own ports from an agent that can reach it (the agent that pings it, or one in its network). */
+    /**
+     * Scans this host's own ports from an agent that can reach it (the agent that pings it, or one in
+     * its network). Also from the Open ports card of a ping-only device (PingMonitor).
+     */
+    #[On('scan-ports')]
     public function scanPorts(bool $all = false)
     {
         $device = Device::find($this->selectedDeviceId);
@@ -98,12 +102,16 @@ class DeviceCommands extends Component
             'finished_at' => now(),
             'message' => $command->status === 'queued' ? __('Cancelled by :user', ['user' => $user]) : __('Given up by :user', ['user' => $user]),
         ]);
+        \App\Support\Audit::command($command, 'cancel', auth()->user());
         DeviceCommand::announce($command->device_id, $command->target);
     }
 
     public function deleteDevice()
     {
-        Device::find($this->selectedDeviceId)?->delete();
+        if ($device = Device::find($this->selectedDeviceId)) {
+            \App\Support\Audit::device($device, 'delete', __('Deleted device :device', ['device' => $device->displayName]));
+            $device->delete();
+        }
         \App\Support\LiveUpdates::device((int) $this->selectedDeviceId, 'deleted');
 
         $this->dispatch('device-deleted');
@@ -124,15 +132,8 @@ class DeviceCommands extends Component
         $recentWake = $device->offline ? $device->recentWake() : null;
         $recentPing = $device->isPingOnly ? $device->recentPingNow() : null;
 
-        // Port scan of this host: the agent that can scan it (null hides the menu action), a scan
-        // running for its address, and the last result. The scan runs on the agent, not this device.
-        $address = $device->portScanAddress();
-        $portScan = $address === null ? null : [
-            'address' => $address,
-            'scanner' => $device->portScanner(),
-            'command' => \App\Models\DeviceCommand::query()->where('command', 'scanPorts')->active()->where('target', 'ports:'.$address)->first(),
-            'result' => \App\Models\PortScanResult::query()->where('ip', $address)->latest('scanned_at')->first(),
-        ];
+        // Port scan of this host (a scanner of null hides the menu action).
+        $portScan = $device->portScanState();
 
         // With the device's own commands: a wake or ping another agent does for it, a wake an agent
         // before 1.13.2 finished on its side while the device is still waited for, and a port scan

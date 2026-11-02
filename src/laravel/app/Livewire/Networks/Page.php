@@ -94,6 +94,7 @@ class Page extends Component
             'ping_mac' => $neighbour->mac,
         ]);
         $device->save();
+        \App\Support\Audit::device($device, 'create', __('Added from the network map: :ip', ['ip' => $neighbour->ip]), ['ip' => $neighbour->ip, 'mac' => $neighbour->mac]);
 
         return $this->redirect(route('devices', ['selectedDeviceId' => $device->id]));
     }

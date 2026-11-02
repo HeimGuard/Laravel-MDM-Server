@@ -41,7 +41,12 @@ class WakeSettings extends Component
 
             return;
         }
-        $device->forceFill($settings)->save();
+        $device->forceFill($settings);
+        $changes = $device->getDirty();
+        $device->save();
+        if ($changes !== []) {
+            \App\Support\Audit::device($device, 'settings', __('Wake-on-LAN settings changed'), ['changes' => $changes]);
+        }
         \App\Support\LiveUpdates::device($device->id, 'settings');
 
         $this->dispatch('closeModal');

@@ -108,10 +108,12 @@ class PortScanSecurityTest extends TestCase
         Device::recordHeartbeat($printer->id);
         $this->actingAs(User::factory()->create());
 
-        // Nothing to show yet: no tabs at all, never the agent's.
+        // Nothing to show yet: Overview and the (empty) History only, never the agent's tab.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $printer->id])
+            ->assertSee('id="overview-tab"', false)
+            ->assertSee('id="history-tab"', false)
+            ->assertSee(__('Nothing done with the device yet.'))
             ->assertDontSee('id="security-tab"', false)
-            ->assertDontSee('id="history-tab"', false)
             ->assertDontSee('id="agent-tab"', false);
 
         // A scan of its ports (run by the agent) is its history, the findings its security.
