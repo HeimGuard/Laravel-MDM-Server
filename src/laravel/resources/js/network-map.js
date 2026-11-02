@@ -403,14 +403,16 @@ export function createNetworkMap(root, data) {
             if (!net || !dev || !grid) {
                 return '';
             }
-            const y = (dev.top + dev.bottom) / 2;
+            // Into the middle of the device's top, where its other links come in: across over the grid
+            // for its first row, else across the gap above it.
+            const y = dev.top - grid.top < 1 ? grid.top - 20 : dev.top - GAP.y / 2;
             const right = sides.get(edge.to) === 'right';
-            const edgeX = right ? dev.right : dev.left;
+            const entryX = dev.x;
             const channel = right ? grid.right + 14 : grid.left - 14;
             const beside = right ? net.x > grid.right + 24 : net.x < grid.left - 24;
             const points = beside
-                ? [[net.x, net.bottom], [net.x, y], [edgeX, y]]
-                : [[net.x, net.bottom], [net.x, net.bottom + 18], [channel, net.bottom + 18], [channel, y], [edgeX, y]];
+                ? [[net.x, net.bottom], [net.x, y], [entryX, y], [entryX, dev.top]]
+                : [[net.x, net.bottom], [net.x, net.bottom + 18], [channel, net.bottom + 18], [channel, y], [entryX, y], [entryX, dev.top]];
             return `<path class="nm-link is-side is-${esc(edge.type)}${active ? ' is-active' : ''}" d="${curve(points)}"></path>`;
         };
         const drawSide = () => {
