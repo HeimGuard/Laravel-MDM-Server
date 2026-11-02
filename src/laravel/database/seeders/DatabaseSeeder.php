@@ -8,6 +8,7 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // User::factory(10)->create();
+        // No users: the first one is created on the setup page (/setup).
+        $this->call(DeviceSeeder::class);
     }
 }

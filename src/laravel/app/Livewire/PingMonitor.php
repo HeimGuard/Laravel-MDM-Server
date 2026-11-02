@@ -83,6 +83,7 @@ class PingMonitor extends Component
             'labels' => $labels,
             'device' => $device,
             'relay' => $device->pingRelay(),
+            'portScan' => $device->portScanState(),
             'points' => $points,
             'downs' => array_map(fn ($bucket) => $bucket['down'], $buckets),
             'max' => max(1, (float) max(array_filter($points, fn ($point) => $point !== null) ?: [1])),

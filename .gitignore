@@ -4,3 +4,4 @@ Thumbs.db
 /.vscode
 docker-compose.override.yml
 .megamemory/*
+src/laravel/laravel

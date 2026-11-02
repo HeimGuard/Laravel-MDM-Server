@@ -13,8 +13,8 @@ class DeviceDetail extends Component
     public $selectedDeviceId;
 
     /** Selected tab, kept in the URL; the view falls back to the first tab the device has. */
-    #[Url(except: 'drives')]
-    public string $tab = 'drives';
+    #[Url(except: 'overview')]
+    public string $tab = 'overview';
 
     /* Edit Mode*/
     public $editMode = false;
@@ -28,8 +28,12 @@ class DeviceDetail extends Component
     public function saveFriendlyName()
     {
         $device = Device::find($this->selectedDeviceId);
+        $before = $device->displayName;
         $device->friendly_name = $this->friendlyName;
         $device->save();
+        if ($device->displayName !== $before) {
+            \App\Support\Audit::device($device, 'rename', __('Renamed :from to :to', ['from' => $before, 'to' => $device->displayName]), ['from' => $before, 'to' => $device->displayName]);
+        }
         $this->editMode = false;
         \App\Support\LiveUpdates::device($device->id, 'settings');
     }
@@ -61,8 +65,12 @@ class DeviceDetail extends Component
             return;
         }
         $tags = Device::normalizeTags($this->tagsText);
+        $before = $device->tagList;
         $device->tags = $tags === [] ? null : $tags;
         $device->save();
+        if ($device->tagList !== $before) {
+            \App\Support\Audit::device($device, 'tags', __('Tags: :tags', ['tags' => implode(', ', $device->tagList) ?: '—']), ['from' => $before, 'to' => $device->tagList]);
+        }
         $this->editTags = false;
         \App\Support\LiveUpdates::device($device->id, 'settings');
         // The device list shows the tags and filters by them.
@@ -108,6 +116,9 @@ class DeviceDetail extends Component
         Gate::authorize('is-system-admin');
 
         Device::query()->whereKey($this->selectedDeviceId)->update(['public_key' => null, 'key_registered_at' => null]);
+        if ($device = Device::find($this->selectedDeviceId)) {
+            \App\Support\Audit::device($device, 'reset-key', __('Device key reset'));
+        }
     }
 
     /** Live update (resources/js/live.js): this device changed. */
@@ -121,12 +132,9 @@ class DeviceDetail extends Component
         return view('livewire.device-detail', [
             'selectedDevice' => $device,
             'activeCommands' => $device->activeCommands(),
-            // Its own commands and the wakes / pings / port scans other agents did for it.
-            'history' => \App\Models\DeviceCommand::query()->with(['issuer', 'device'])
-                ->where(fn ($query) => $query->where('device_id', $device->id)->orWhereIn('target', array_filter([
-                    'device:'.$device->id, 'ping:'.$device->id, ($address = $device->portScanAddress()) ? 'ports:'.$address : null,
-                ])))
-                ->latest('id')->limit(25)->get(),
+            // The audit log of the device: its commands (and the wakes / pings other agents did for
+            // it), the scans of its ports by another agent, and what was changed on it.
+            'history' => \App\Support\Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])),
         ]);
     }
 }

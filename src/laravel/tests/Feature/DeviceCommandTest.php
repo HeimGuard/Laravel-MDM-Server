@@ -33,6 +33,39 @@ class DeviceCommandTest extends TestCase
         return $device->fresh();
     }
 
+    public function test_every_command_and_action_is_in_the_audit_log_and_the_history(): void
+    {
+        $device = $this->device('1.30.0');
+        $user = User::factory()->create(['name' => 'Alice']);
+
+        // A command of the system (no user) is audited too.
+        $system = $device->issueCommand('sync');
+        $this->assertNotNull($system);
+
+        $this->actingAs($user);
+        Livewire::test(DeviceCommands::class, ['selectedDeviceId' => $device->id])->call('sendCommandToDevice', 'restart');
+        $restart = DeviceCommand::query()->where('command', 'restart')->firstOrFail();
+        Livewire::test(DeviceCommands::class, ['selectedDeviceId' => $device->id])->call('cancel', $restart->id);
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('friendlyName', 'Office PC')->call('saveFriendlyName')
+            ->call('startEditTags')->set('tagsText', 'office')->call('saveTags');
+
+        $entries = \SteelAnts\LaravelBoilerplate\Models\Activity::query()->where('affected_id', $device->id)->orderBy('id')->get();
+        $this->assertSame(['command', 'command', 'cancel', 'rename', 'tags'], $entries->pluck('data.action')->all());
+        $this->assertSame([$system->id, $restart->id, $restart->id], $entries->take(3)->pluck('data.command_id')->all());
+        $this->assertNull($entries[0]->actor_id);
+        $this->assertSame([$user->id, $user->id, $user->id, $user->id], $entries->skip(1)->pluck('actor_id')->values()->all());
+
+        // The History is read from the audit log: the commands with their status, the other actions as logged.
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id, 'tab' => 'history'])
+            ->assertSee(__('Restart'))
+            ->assertSee(__('Sync'))
+            ->assertSee(__('Cancelled: :command', ['command' => __('Restart')]))
+            ->assertSee(__('Renamed :from to :to', ['from' => $device->displayName, 'to' => 'Office PC']))
+            ->assertSee(__('Tags: :tags', ['tags' => 'office']))
+            ->assertSee('Alice');
+    }
+
     public function test_tracking_agent_reports_progress_and_result(): void
     {
         $device = $this->device();
