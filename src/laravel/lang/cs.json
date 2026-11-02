@@ -392,6 +392,8 @@
     "Last logged on user": "Naposledy přihlášený uživatel",
     "Last run :time": "Naposledy spuštěno :time",
     "Last seen :time": "Naposledy viděno :time",
+    "Last login :time": "Naposledy přihlášen :time",
+    "Never logged in": "Nikdy nepřihlášen",
     "Last used at": "Naposledy použito",
     "Limit": "Limit",
     "Limitation": "Omezení",

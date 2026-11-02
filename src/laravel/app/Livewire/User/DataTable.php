@@ -79,11 +79,16 @@ class DataTable extends DataTableComponent
 
     public function renderColumnName(mixed $value, $row): string
     {
-        if (!$row->isSystemAdmin) {
-            return e($value);
+        $name = e($value);
+        if ($row->isSystemAdmin) {
+            $name .= ' <span class="badge text-bg-danger ms-1">' . __('System Admin') . '</span>';
         }
 
-        return e($value) . ' <span class="badge text-bg-danger ms-1">' . __('System Admin') . '</span>';
+        $lastLogin = $row->last_login_at
+            ? '<span title="' . e($row->last_login_at) . '">' . e(__('Last login :time', ['time' => $row->last_login_at->diffForHumans()])) . '</span>'
+            : e(__('Never logged in'));
+
+        return $name . '<div class="small text-muted">' . $lastLogin . '</div>';
     }
 
     /** Long addresses wrap instead of widening the table on phones. */

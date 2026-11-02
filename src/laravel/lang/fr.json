@@ -392,6 +392,8 @@
     "Last logged on user": "Dernier utilisateur connecté",
     "Last run :time": "Dernière exécution :time",
     "Last seen :time": "Vu pour la dernière fois :time",
+    "Last login :time": "Dernière connexion :time",
+    "Never logged in": "Jamais connecté",
     "Last used at": "Dernière utilisation le",
     "Limit": "Limite",
     "Limitation": "Limitation",
