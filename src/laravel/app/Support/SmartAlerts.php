@@ -49,7 +49,7 @@ class SmartAlerts
             $alerts[] = [
                 'key' => 'wake',
                 'severity' => 'danger',
-                'icon' => 'fas fa-sun',
+                'icon' => 'fas fa-power-off',
                 'title' => __('Wake failed'),
                 'message' => ($wake->displayMessage ?: $wake->statusLabel).' · '.__('through :relay', ['relay' => $wake->device?->displayName ?? '?']).' · '.$wake->updated_at->diffForHumans(),
                 'action' => ['command' => 'wake', 'label' => __('Try again'), 'icon' => 'fas fa-redo'],
@@ -366,6 +366,7 @@ class SmartAlerts
             ['device_id' => $device->id, 'key' => $key],
             ['signature' => self::signature($alert), 'dismissed_by' => $user?->id, 'created_at' => now(), 'updated_at' => now()],
         );
+        Audit::device($device, 'dismiss', __('Alert dismissed: :alert', ['alert' => $alert['title'] ?? $key]), ['key' => $key], $user);
 
         return true;
     }

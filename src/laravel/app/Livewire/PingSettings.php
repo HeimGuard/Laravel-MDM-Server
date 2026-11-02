@@ -52,7 +52,12 @@ class PingSettings extends Component
         if ($settings['ping_address'] !== $device->ping_address) {
             $settings += ['last_seen_at' => null, 'ping_rtt' => null];
         }
-        $device->forceFill($settings)->save();
+        $device->forceFill($settings);
+        $changes = array_intersect_key($device->getDirty(), array_flip(['ping_address', 'ping_prefix', 'ping_mac', 'ping_via_id']));
+        $device->save();
+        if ($changes !== []) {
+            \App\Support\Audit::device($device, 'settings', __('Ping settings changed'), ['changes' => $changes]);
+        }
         \App\Support\LiveUpdates::device($device->id, 'settings');
 
         $this->dispatch('ping-settings-saved');

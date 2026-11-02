@@ -23,6 +23,8 @@
         $securitySevere = $securityFindings->whereIn('severity', ['critical', 'high'])->count();
         // The tab from the URL (?tab=), or the first one this device has.
         $tabs = array_keys(array_filter([
+            // Alerts, the ping monitor and the metrics of every device.
+            'overview' => true,
             // Volumes and the health of the disks under them.
             'drives' => !empty($selectedDevice->drives) || $diskHealth !== null,
             'updates' => $hasUpdates,
@@ -31,7 +33,8 @@
             'docker' => $docker !== null,
             'scripts' => $scriptRuns->isNotEmpty(),
             'security' => $hasSecurity || $securityFindings->isNotEmpty(),
-            'history' => $history->isNotEmpty(),
+            // Always, also of a ping-only device: its pings, wakes and port scans (empty until the first).
+            'history' => true,
             'agent' => ! $selectedDevice->isPingOnly,
         ]));
         $updatesRunning = \App\Models\Device::findActive($activeCommands, 'doUpdates');
@@ -129,28 +132,17 @@
         </div>
     </div>
 
-    {{-- Ping-only devices have no report, but alerts of their own, above the graph like the ones of the other devices (another address, a failed wake). --}}
-    @if (!empty($selectedDevice->data) || $selectedDevice->isPingOnly)
-        @livewire('device-alerts', ['selectedDeviceId' => $selectedDevice->id], key('device-alerts' . $selectedDevice->id))
-    @endif
-
-    @if ($selectedDevice->isPingOnly)
-        @livewire('ping-monitor', ['deviceId' => $selectedDevice->id], key('ping-monitor' . $selectedDevice->id))
-    @endif
-
-    @unless ($selectedDevice->isPingOnly)
-    <div class="mt-3">
-        @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
-    </div>
-    @endunless
-
-    {{-- Ping-only devices only get the tabs they have data for (security findings, history). --}}
-    @if ($tabs !== [])
+    {{-- Ping-only devices only get the tabs they have data for (and Overview, History). --}}
     <div class="mt-4">
         {{-- Scrolls sideways when the tabs do not fit; the active one is kept in view. The wrapper
              scrolls, not the list: it would clip the underline of the active tab. --}}
         <div class="nav-tabs-scroll" x-init="$nextTick(() => { const tab = $el.querySelector('.nav-link.active'); if (tab) $el.scrollLeft = Math.max(0, tab.getBoundingClientRect().right - $el.getBoundingClientRect().right + $el.scrollLeft + 16) })">
         <ul class="nav nav-tabs flex-nowrap text-nowrap" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button aria-controls="overview-tab-pane" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'overview' ? 'active' : '' }}" x-on:click="$wire.tab = 'overview'" data-bs-target="#overview-tab-pane" data-bs-toggle="tab" id="overview-tab" role="tab" type="button">
+                    <i class="fas fa-th-large me-2"></i>{{ __('Overview') }}
+                </button>
+            </li>
             @if (!empty($selectedDevice->drives) || $diskHealth !== null)
                 <li class="nav-item" role="presentation">
                     <button aria-controls="drives-tab-pane" aria-selected="{{ $activeTab === 'drives' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'drives' ? 'active' : '' }}" x-on:click="$wire.tab = 'drives'" data-bs-target="#drives-tab-pane" data-bs-toggle="tab" id="drives-tab" role="tab" type="button">
@@ -218,13 +210,11 @@
                     </button>
                 </li>
             @endif
-            @if ($history->isNotEmpty())
                 <li class="nav-item" role="presentation">
                     <button aria-controls="history-tab-pane" aria-selected="{{ $activeTab === 'history' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'history' ? 'active' : '' }}" x-on:click="$wire.tab = 'history'" data-bs-target="#history-tab-pane" data-bs-toggle="tab" id="history-tab" role="tab" type="button">
                         <i class="fas fa-history me-2"></i>{{ __('History') }}
                     </button>
                 </li>
-            @endif
             @unless ($selectedDevice->isPingOnly)
             <li class="nav-item" role="presentation">
                 <button aria-controls="agent-tab-pane" aria-selected="{{ $activeTab === 'agent' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'agent' ? 'active' : '' }}" x-on:click="$wire.tab = 'agent'" data-bs-target="#agent-tab-pane" data-bs-toggle="tab" id="agent-tab" role="tab" type="button">
@@ -239,6 +229,18 @@
         </div>
 
         <div class="tab-content pt-3">
+            <div aria-labelledby="overview-tab" class="tab-pane fade {{ $activeTab === 'overview' ? 'show active' : '' }}" id="overview-tab-pane" role="tabpanel" tabindex="0">
+                {{-- Ping-only devices have no report, but alerts of their own, above the graph like the ones of the other devices (another address, a failed wake). --}}
+                @if (!empty($selectedDevice->data) || $selectedDevice->isPingOnly)
+                    @livewire('device-alerts', ['selectedDeviceId' => $selectedDevice->id], key('device-alerts' . $selectedDevice->id))
+                @endif
+
+                @if ($selectedDevice->isPingOnly)
+                    @livewire('ping-monitor', ['deviceId' => $selectedDevice->id], key('ping-monitor' . $selectedDevice->id))
+                @else
+                    @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
+                @endif
+            </div>
             @if (!empty($selectedDevice->drives) || $diskHealth !== null)
                 <div aria-labelledby="drives-tab" class="tab-pane fade {{ $activeTab === 'drives' ? 'show active' : '' }}" id="drives-tab-pane" role="tabpanel" tabindex="0">
                     @if (!empty($selectedDevice->drives))
@@ -246,15 +248,15 @@
                         @foreach ($selectedDevice->drives as $drive)
                             <div class="col-12 col-md-6">
                                 <div class="d-flex align-items-center gap-3">
-                                    <i class="fas {{ $drive['DriveType'] == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-muted"></i>
+                                    <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-muted"></i>
                                     <div class="flex-grow-1">
-                                        <div>{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] }})</div>
+                                        <div>{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] ?? '?' }})</div>
                                         @if (isset($drive['Size']) && isset($drive['PercentUsed']))
                                             <div class="progress my-1" style="height: 6px;">
                                                 <div aria-valuemax="100" aria-valuemin="0" aria-valuenow="{{ $drive['PercentUsed'] }}" class="progress-bar {{ $drive['PercentUsed'] > 90 ? 'bg-danger' : '' }}" role="progressbar" style="width: {{ $drive['PercentUsed'] }}%"></div>
                                             </div>
                                             <small class="text-muted">
-                                                {{ __(':free free of :total', ['free' => \App\Support\Bytes::format($drive['SizeRemaining']), 'total' => \App\Support\Bytes::format($drive['Size'])]) }}
+                                                {{ __(':free free of :total', ['free' => \App\Support\Bytes::format($drive['SizeRemaining'] ?? 0), 'total' => \App\Support\Bytes::format($drive['Size'])]) }}
                                             </small>
                                         @endif
                                     </div>
@@ -598,13 +600,16 @@
                 </div>
             @endif
 
-            @if ($history->isNotEmpty())
                 <div aria-labelledby="history-tab" class="tab-pane fade {{ $activeTab === 'history' ? 'show active' : '' }}" id="history-tab-pane" role="tabpanel" tabindex="0">
+                    {{-- Parsed from the audit log (App\Support\Audit): commands with their status, other actions as they were logged. --}}
+                    @if ($history->isEmpty())
+                        <div class="text-body-secondary small">{{ __('Nothing done with the device yet.') }}</div>
+                    @else
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th>{{ __('Command') }}</th>
+                                    <th>{{ __('Action') }}</th>
                                     <th>{{ __('Status') }}</th>
                                     <th class="d-none d-md-table-cell">{{ __('Issued by') }}</th>
                                     <th class="d-none d-sm-table-cell">{{ __('Duration') }}</th>
@@ -612,34 +617,54 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach ($history as $command)
-                                    <tr wire:key="history-{{ $command->id }}">
+                                @foreach ($history as ['activity' => $activity, 'command' => $command])
+                                    @php
+                                        $action = $activity->data['action'] ?? null;
+                                        $icon = $command?->icon ?? match ($action) {
+                                            'cancel' => 'fas fa-ban',
+                                            'rename' => 'fas fa-pen',
+                                            'tags' => 'fas fa-tags',
+                                            'delete' => 'fas fa-trash',
+                                            'create' => 'fas fa-plus',
+                                            'reset-key' => 'fas fa-key',
+                                            'settings' => 'fas fa-sliders-h',
+                                            'alerts' => 'far fa-bell',
+                                            'dismiss' => 'fas fa-eye-slash',
+                                            'acknowledge', 'reopen' => 'fas fa-shield-alt',
+                                            'command' => 'fas fa-terminal',
+                                            default => 'fas fa-history',
+                                        };
+                                        $relayId = $activity->data['relay'] ?? ($command && $command->device_id !== $selectedDevice->id ? $command->device_id : null);
+                                    @endphp
+                                    <tr wire:key="history-{{ $activity->id }}">
                                         <td class="text-break" style="min-width: 9rem;">
-                                            <i class="{{ $command->icon }} fa-fw text-body-secondary me-1"></i>{{ $command->label }}
-                                            @if ($command->device_id !== $selectedDevice->id)
+                                            <i class="{{ $icon }} fa-fw text-body-secondary me-1"></i>{{ $command?->label ?? $activity->lang_text }}
+                                            @if ($relayId && $command)
                                                 <div class="small text-body-secondary">{{ __('through :relay', ['relay' => $command->device?->displayName ?? '?']) }}</div>
                                             @endif
                                         </td>
                                         <td>
-                                            @if ($command->active)
+                                            @if ($command?->active)
                                                 <div style="min-width: 10rem; max-width: 22rem;" title="{{ $command->displayMessage }}">@include('partials.device.command-progress', ['command' => $command, 'compact' => true])</div>
-                                            @else
+                                            @elseif ($command)
                                                 <x-badge :color="$command->statusColor" size="sm" variant="subtle" :title="$command->statusHint">{{ $command->statusLabel }}</x-badge>
                                                 @if ($command->resultNote)
                                                     <div class="small text-body-secondary text-break">{{ $command->resultNote }}</div>
                                                 @endif
+                                            @else
+                                                <span class="small text-body-secondary">—</span>
                                             @endif
                                         </td>
-                                        <td class="d-none d-md-table-cell small text-body-secondary">{{ $command->issuer?->name ?? '—' }}</td>
-                                        <td class="d-none d-sm-table-cell small text-body-secondary text-nowrap">{{ $command->duration ?? '—' }}</td>
-                                        <td class="text-end small text-nowrap" title="{{ $command->created_at }}{{ $command->finished_at ? ' → ' . $command->finished_at : '' }}">{{ $command->created_at->diffForHumans() }}</td>
+                                        <td class="d-none d-md-table-cell small text-body-secondary">{{ $activity->actor?->name ?? __('System') }}</td>
+                                        <td class="d-none d-sm-table-cell small text-body-secondary text-nowrap">{{ $command?->duration ?? '—' }}</td>
+                                        <td class="text-end small text-nowrap" title="{{ $activity->created_at }}{{ $command?->finished_at ? ' → ' . $command->finished_at : '' }}">{{ $activity->created_at->diffForHumans() }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
+                    @endif
                 </div>
-            @endif
             @unless ($selectedDevice->isPingOnly)
             <div aria-labelledby="agent-tab" class="tab-pane fade {{ $activeTab === 'agent' ? 'show active' : '' }}" id="agent-tab-pane" role="tabpanel" tabindex="0">
                 @php
@@ -767,5 +792,4 @@
             @endunless
         </div>
     </div>
-    @endif
 </div>

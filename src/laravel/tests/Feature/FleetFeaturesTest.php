@@ -530,7 +530,7 @@ class FleetFeaturesTest extends TestCase
 
         // In the history of the woken device too, through the relay.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $sleeping->id])
-            ->assertViewHas('history', fn ($history) => $history->pluck('id')->contains($command->id))
+            ->assertViewHas('history', fn ($history) => $history->pluck('command.id')->contains($command->id))
             ->assertSee('through pc-relay');
 
         // The device reports: done.
@@ -805,13 +805,13 @@ class FleetFeaturesTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_wake_is_in_the_menu_of_physical_devices(): void
+    public function test_wake_is_beside_the_menu_of_physical_devices(): void
     {
         $this->actingAs(User::factory()->create());
         $pc = $this->device('pc', ['Networks' => [$this->network('192.168.1.20')]], version: '1.11.0');
         $vm = $this->device('vm', ['Networks' => [$this->network('192.168.1.21')], 'Virtualization' => ['Type' => 'vm', 'Name' => 'kvm']], version: '1.11.0');
 
-        // Online: in the menu, disabled with the reason.
+        // Online: beside the menu, disabled with the reason.
         Livewire::test(DeviceCommands::class, ['selectedDeviceId' => $pc->id])
             ->assertSeeHtml('wire:click="wake"')->assertSee('The device is online');
         // A virtual machine is not woken by a magic packet.

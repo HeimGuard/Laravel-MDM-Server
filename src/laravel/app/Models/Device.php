@@ -426,6 +426,8 @@ class Device extends Model
         if ($issued === null) {
             return null;
         }
+        // Every command is in the audit log, the History tab of the device is read from it.
+        \App\Support\Audit::command($issued, user: $user);
 
         // Instant delivery over WebSocket; the command stays queued for the HTTP report as a fallback.
         rescue(fn () => \App\Events\DeviceCommandIssued::dispatch($this, $command));
@@ -500,7 +502,7 @@ class Device extends Model
         }
         $type = $this->data->machine->Type ?? null;
 
-        return array_key_exists($type, self::TYPE_ICONS) ? $type : 'desktop';
+        return is_string($type) && array_key_exists($type, self::TYPE_ICONS) ? $type : 'desktop';
     }
 
     /** windows or linux; older agents do not report it, guess from the OS name. */
@@ -695,6 +697,23 @@ class Device extends Model
         }
 
         return null;
+    }
+
+    /**
+     * The port scan of this host: its address, the agent that can scan it (null: nothing can), a scan
+     * running for the address and the last result. Null without an address. The scan runs on the
+     * agent, not on this device.
+     */
+    public function portScanState(): ?array
+    {
+        $address = $this->portScanAddress();
+
+        return $address === null ? null : [
+            'address' => $address,
+            'scanner' => $this->portScanner(),
+            'command' => DeviceCommand::query()->where('command', 'scanPorts')->active()->where('target', 'ports:'.$address)->first(),
+            'result' => PortScanResult::query()->where('ip', $address)->latest('scanned_at')->first(),
+        ];
     }
 
     /**

@@ -3,17 +3,18 @@
     // All commands are in the menu (the alerts above offer Install all and Restart when needed).
     $menuCommands = [
         'doUpdates' => ['icon' => 'fas fa-sync', 'label' => $pendingUpdates > 0 ? trans_choice('Install :count update|Install :count updates', $pendingUpdates, ['count' => $pendingUpdates]) : __('Install updates'), 'confirm' => null],
-        // Collects updates, packages and disk health again now instead of on the next schedule.
-        'sync' => ['icon' => 'fas fa-cloud-download-alt', 'label' => __('Sync'), 'confirm' => null, 'title' => __('Collect all data on the device again now and report it')],
         'restart' => ['icon' => 'fas fa-redo', 'label' => __('Restart'), 'confirm' => __('Restart :device now? Unsaved work of its users is lost.', ['device' => $selectedDevice->displayName])],
         'turnOff' => ['icon' => 'fas fa-power-off', 'label' => __('Turn off'), 'confirm' => __('Turn off :device? It can only be started again on site (or with Wake-on-LAN).', ['device' => $selectedDevice->displayName])],
     ];
-    // Wake in the menu of every device a magic packet can wake (not virtual machines), disabled
+    // Wake beside the menu of every device a magic packet can wake (not virtual machines), disabled
     // with the reason while it cannot (online, no relay in its network, …).
     $canWake = $selectedDevice->isPingOnly || ($hasData && $selectedDevice->virtualization === null);
+    // Sync collects updates, packages and disk health again now instead of on the next schedule.
+    $syncRunning = $hasData && ! $selectedDevice->offline && ! $selectedDevice->isPingOnly ? \App\Models\Device::findActive($active, 'sync') : null;
+    $syncRefusal = $hasData && ! $selectedDevice->offline && ! $selectedDevice->isPingOnly && ! $syncRunning ? $selectedDevice->commandRefusal('sync') : null;
 @endphp
 {{-- Reloads when the device reports (live updates over Reverb), e.g. the progress of a command.
-     The bell and the menu sit in the top right corner of the device card (position-relative). --}}
+     Wake, Sync and the menu sit in the top right corner of the device card (position-relative). --}}
 <div>
     <div class="position-absolute top-0 end-0 p-3 d-flex align-items-center gap-2">
         @if (! $selectedDevice->offline && ! $selectedDevice->isPingOnly)
@@ -35,10 +36,37 @@
                 @endif
             </span>
         @endif
-        <button class="btn btn-light btn-sq" type="button" title="{{ __('Alerts') }}" aria-label="{{ __('Alerts') }}"
-            x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'notifications.device-rules', title: @js(__('Alerts for :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
-            <i class="far fa-bell"></i>
-        </button>
+        @if ($canWake)
+            <button class="btn btn-light btn-sq" type="button" wire:click="wake" aria-label="{{ __('Wake') }}"
+                title="{{ $wakeRefusal ?? __('Wake') . ': ' . __('Magic packet sent by :relay', ['relay' => $wakeRelay?->displayName]) }}" @disabled($wakeRefusal || $recentWake?->active)>
+                @if ($recentWake?->active)
+                    <span aria-hidden="true" class="spinner-border spinner-border-sm"></span>
+                @else
+                    <i class="fas fa-power-off"></i>
+                @endif
+            </button>
+        @endif
+        @if ($selectedDevice->isPingOnly)
+            {{-- Sync of a ping-only device: the agent that pings it pings it now. --}}
+            <button class="btn btn-light btn-sq" type="button" wire:click="pingNow" aria-label="{{ __('Sync') }}"
+                title="{{ $pingNowRefusal ?? __('Sync') . ': ' . __('Ping it now') }}" @disabled($pingNowRefusal || $recentPing?->active)>
+                @if ($recentPing?->active)
+                    <span aria-hidden="true" class="spinner-border spinner-border-sm"></span>
+                @else
+                    <i class="fas fa-sync-alt"></i>
+                @endif
+            </button>
+        @elseif ($hasData && ! $selectedDevice->offline)
+            <button class="btn btn-light btn-sq" type="button" wire:click="sendCommandToDevice('sync')" aria-label="{{ __('Sync') }}"
+                title="{{ $syncRunning ? __('Sync') . ': ' . $syncRunning->statusLabel : ($syncRefusal ?? __('Sync') . ': ' . __('Collect all data on the device again now and report it')) }}"
+                @disabled($syncRunning || $syncRefusal)>
+                @if ($syncRunning)
+                    <span aria-hidden="true" class="spinner-border spinner-border-sm"></span>
+                @else
+                    <i class="fas fa-sync-alt"></i>
+                @endif
+            </button>
+        @endif
         {{-- Open state in Alpine (not Bootstrap's JS): a live update of the component keeps it open. --}}
         <div class="dropdown" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape.window="open = false">
             <button x-bind:aria-expanded="open" aria-label="{{ __('More actions') }}" class="btn btn-light btn-sq" title="{{ __('More actions') }}" type="button" x-on:click="open = ! open" x-bind:class="{ show: open }">
@@ -56,6 +84,12 @@
                         <i class="dropdown-ico fas fa-tags fa-fw"></i>{{ __('Edit tags') }}
                     </button>
                 </li>
+                <li>
+                    <button class="dropdown-item" type="button"
+                        x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'notifications.device-rules', title: @js(__('Alerts for :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
+                        <i class="dropdown-ico far fa-bell fa-fw"></i>{{ __('Alerts') }}
+                    </button>
+                </li>
                 @if ($selectedDevice->isPingOnly)
                     <li>
                         <button class="dropdown-item" type="button"
@@ -69,40 +103,6 @@
                         <button class="dropdown-item" type="button"
                             x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'wake-settings', title: @js(__('Wake-on-LAN of :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
                             <i class="dropdown-ico fas fa-sliders-h fa-fw"></i>{{ __('Wake-on-LAN settings') }}
-                        </button>
-                    </li>
-                @endif
-                @if ($canWake)
-                    <li><hr class="dropdown-divider"></li>
-                    <li>
-                        <button class="dropdown-item d-flex align-items-center" type="button" wire:click="wake"
-                            title="{{ $wakeRefusal ?? __('Magic packet sent by :relay', ['relay' => $wakeRelay?->displayName]) }}" @disabled($wakeRefusal || $recentWake?->active)>
-                            @if ($recentWake?->active)
-                                <span aria-hidden="true" class="dropdown-ico spinner-border spinner-border-sm"></span>
-                            @else
-                                <i class="dropdown-ico fas fa-sun fa-fw"></i>
-                            @endif
-                            {{ __('Wake') }}
-                            @if ($wakeRefusal)
-                                <span class="small text-muted ms-2 text-truncate" style="max-width: 12rem">{{ $wakeRefusal }}</span>
-                            @endif
-                        </button>
-                    </li>
-                @endif
-                @if ($selectedDevice->isPingOnly)
-                    {{-- Sync of a ping-only device: the agent that pings it pings it now. --}}
-                    <li>
-                        <button class="dropdown-item d-flex align-items-center" type="button" wire:click="pingNow"
-                            title="{{ $pingNowRefusal ?? __('Ping it now') }}" @disabled($pingNowRefusal || $recentPing?->active)>
-                            @if ($recentPing?->active)
-                                <span aria-hidden="true" class="dropdown-ico spinner-border spinner-border-sm"></span>
-                            @else
-                                <i class="dropdown-ico fas fa-cloud-download-alt fa-fw"></i>
-                            @endif
-                            {{ __('Sync') }}
-                            @if ($pingNowRefusal)
-                                <span class="small text-muted ms-2 text-truncate" style="max-width: 12rem">{{ $pingNowRefusal }}</span>
-                            @endif
                         </button>
                     </li>
                 @endif
@@ -193,7 +193,7 @@
     </div>
 
     @if (! $recentWake && $selectedDevice->offline && ($hasData || $selectedDevice->isPingOnly) && $wakeRefusal)
-        <div class="small text-muted mt-2"><i class="fas fa-sun me-1"></i>{{ __('Wake-on-LAN') }}: {{ $wakeRefusal }}</div>
+        <div class="small text-muted mt-2"><i class="fas fa-power-off me-1"></i>{{ __('Wake-on-LAN') }}: {{ $wakeRefusal }}</div>
     @endif
 
     {{-- The result of the last Sync (ping now); while it runs it is with the commands below. --}}
@@ -204,9 +204,9 @@
         </div>
     @endif
 
-    {{-- The last port scan of this host (it runs on another agent). Everything shown comes from the
-         scanned host and is printed as escaped text. --}}
-    @if ($portScan && $portScan['result'] && ! $portScan['command'])
+    {{-- The last port scan of this host (it runs on another agent); of a ping-only device in the Open
+         ports card of its overview. Everything shown comes from the scanned host and is printed as escaped text. --}}
+    @if ($portScan && $portScan['result'] && ! $portScan['command'] && ! $selectedDevice->isPingOnly)
         @php $result = $portScan['result']; @endphp
         <div class="small mt-2">
             <details>
