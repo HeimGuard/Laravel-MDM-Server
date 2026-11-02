@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.30.0'
+$AgentVersion = '1.30.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -3764,9 +3764,27 @@ function Test-AgentAdmin {
     return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-AgentPwshPath {
+    # pwsh of a snap runs from /snap/<name>/<revision>/, which a refresh of the snap removes:
+    # the service starts it through /snap/<name>/current/ instead.
+    return (Get-Process -Id $PID).Path -replace '^(/snap/[^/]+)/x?\d+/', '$1/current/'
+}
+
+function Repair-AgentService {
+    # Units written by agents before 1.30.1 start pwsh of one snap revision and fail (203/EXEC) after its refresh.
+    $unit = '/etc/systemd/system/laravel-mdm-agent.service'
+    if (-not (Test-Path -Path $unit)) { return }
+    $content = Get-Content -Path $unit -Raw
+    $repaired = $content -replace '(?m)^(ExecStart=/snap/[^/]+)/x?\d+/', '$1/current/'
+    if ($repaired -eq $content) { return }
+    Set-Content -Path $unit -Value $repaired -NoNewline
+    systemctl daemon-reload
+    Write-AgentLog 'The service starts pwsh of the snap through /current/ now, not of one snap revision'
+}
+
 function Register-AgentService {
     # Linux: systemd service running as root, restarted when it exits, low CPU and I/O priority.
-    $pwsh = (Get-Process -Id $PID).Path
+    $pwsh = Get-AgentPwshPath
     $unit = @"
 [Unit]
 Description=Laravel-MDM agent
@@ -6688,6 +6706,9 @@ function Start-Agent {
     # Read again: an enrolment just now registered the key.
     $script:KeyRegistered = [bool](Get-AgentConfig)['key_registered']
     Write-AgentLog ('Agent {0} started (PowerShell {1}, {2}, server {3})' -f $AgentVersion, $PSVersionTable.PSVersion, $(if ($OnLinux) { 'Linux' } else { 'Windows' }), $ServerUrl)
+    if ($OnLinux) {
+        try { Repair-AgentService } catch { Write-AgentLog "The service unit was not repaired: $($_.Exception.Message)" -IsError }
+    }
     $inventory = Get-CachedInventory
     # First inventory a few minutes after start, so it does not add to the load during boot.
     $nextInventory = if ($inventory -and -not $inventory.Stale) { $inventory.CollectedAt.AddSeconds($InventoryInterval) } elseif ($inventory) { (Get-Date).AddMinutes(1) } else { (Get-Date).AddMinutes(5) }
