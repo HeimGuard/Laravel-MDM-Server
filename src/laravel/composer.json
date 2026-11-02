@@ -15,7 +15,7 @@
         "laravel/sanctum": "^4.2",
         "laravel/tinker": "^3.0",
         "livewire/livewire": "^3.6",
-        "steelants/laravel-boilerplate": "^2.6",
+        "steelants/laravel-boilerplate": "^3.0",
         "steelants/laravel-boilerplate.dashboard": "dev-main",
         "steelants/laravel-general": "^1.1"
     },
