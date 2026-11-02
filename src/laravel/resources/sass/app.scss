@@ -1,4 +1,14 @@
+// HeimGuard colours (_heimguard-colors.scss); the light values, the dark theme is mapped at runtime.
+$primary: #49C22D;
+$success: #1E7A0C;
+$info: #0B5FA5;
+$warning: #F2C94C;
+$danger: #B42318;
+$component-active-color: #08150A;
+$form-check-input-checked-color: #08150A;
+
 @import "./boilerplate/boilerplate.scss";
+@import "./heimguard-colors";
 
 // Keep badge icons and text on one line, vertically centred.
 .badge {
@@ -113,9 +123,7 @@ label.mdm-tag {
 
 // On the selected row of the device list.
 .list-group-item.active .mdm-tag {
-    color: rgba(255, 255, 255, 0.85);
-    background-color: rgba(255, 255, 255, 0.15);
-    border-color: transparent;
+    background-color: var(--hg-surface);
 }
 
 .mdm-tags {
@@ -174,12 +182,12 @@ label.mdm-tag {
     }
 
     &.is-offline {
-        background-color: var(--bs-secondary-color);
+        background-color: var(--hg-offline);
     }
 }
 
 .list-group-item.active .device-dot {
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, .6);
+    box-shadow: 0 0 0 2px var(--hg-surface);
 }
 
 // Uptime Kuma style bar of the last pings (ping-only devices): one rounded bar per check.
@@ -193,7 +201,7 @@ label.mdm-tag {
     flex: 1 1 0;
     min-width: 3px;
     border-radius: 50rem;
-    background-color: var(--bs-secondary-bg);
+    background-color: var(--hg-surface-hover);
 
     &.is-up {
         background-color: var(--bs-success);
@@ -221,11 +229,6 @@ label.mdm-tag {
     }
 }
 
-// Stat tile of "Needs remediation" (script detail), next to the boilerplate's green / red / purple.
-.stat-ico.is-orange {
-    background: rgba(255, 159, 67, .7);
-}
-
 // Network map (Networks page, resources/js/network-map.js): HTML nodes on a dotted canvas, SVG links.
 .network-map {
     position: relative;
@@ -234,7 +237,7 @@ label.mdm-tag {
     min-height: 320px;
     border-radius: .75rem;
     overflow: hidden;
-    background: radial-gradient(circle, var(--bs-border-color) 1px, transparent 1px) 0 0 / 22px 22px;
+    background: radial-gradient(circle, var(--hg-line) 1px, transparent 1px) 0 0 / 22px 22px;
 
     .nm-viewport { position: absolute; inset: 0; cursor: grab; touch-action: none; user-select: none; }
     .nm-viewport:active { cursor: grabbing; }
@@ -254,9 +257,9 @@ label.mdm-tag {
     max-width: 18rem;
     border: 1px solid var(--bs-border-color);
     border-radius: .75rem;
-    background: var(--bs-body-bg);
     color: var(--bs-body-color);
     box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+    background: var(--hg-surface);
     font-size: .8rem;
     line-height: 1.2;
     text-decoration: none;
@@ -280,8 +283,8 @@ label.mdm-tag {
     &.tone-purple .nm-icon { background: rgba(138, 108, 255, .2); color: #8a6cff; }
 
     // Sites and gateways: the path to the internet.
-    &.is-site { border: 2px solid rgba(160, 170, 190, .7); }
-    &.is-gateway, &.is-server { border: 2px solid rgba(40, 199, 111, .85); box-shadow: 0 0 14px rgba(40, 199, 111, .25); }
+    &.is-site { border: 2px solid var(--hg-line-strong); }
+    &.is-gateway, &.is-server { border: 2px solid var(--hg-ok); box-shadow: 0 0 14px rgba(var(--hg-ok-rgb), .25); }
     &.is-gateway .nm-badge, &.is-server .nm-badge { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
     // Networks: blocks the devices hang from.
     &.is-network { border: 2px solid var(--bs-primary); border-radius: .55rem; }
@@ -291,9 +294,9 @@ label.mdm-tag {
     // A public address devices were behind before, nobody there now.
     &.is-site.state-down { opacity: .45; border-style: dashed; box-shadow: none; }
     &.state-offline, &.state-warning { opacity: .6; box-shadow: none; }
-    &.is-isolated { border: 2px dashed rgba(255, 159, 67, .85); }
+    &.is-isolated { border: 2px dashed var(--hg-high); }
     // Seen by an agent, not in the portal.
-    &.is-unknown { border: 1px dashed var(--bs-secondary-color); box-shadow: none; background: var(--bs-tertiary-bg); }
+    &.is-unknown { border: 1px dashed var(--hg-line-strong); box-shadow: none; background: var(--hg-surface-raised); }
     &.is-unknown .nm-badge { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
 }
 
@@ -303,25 +306,25 @@ label.mdm-tag {
 // The other networks of a device (on its card).
 .nm-tag {
     display: inline-block; margin-left: .3rem; padding: 0 .35rem; border-radius: 1rem; font-size: .6rem; line-height: 1.1rem; vertical-align: 1px;
-    background: rgba(99, 132, 255, .2); color: #9db0ff;
+    background: var(--hg-info-subtle); color: var(--hg-info);
     &.is-wifi { background: rgba(150, 120, 255, .22); color: #c3b0ff; }
-    &.is-vpn { background: rgba(23, 162, 184, .22); color: #7fe0ee; }
+    &.is-vpn { background: var(--hg-surface-raised); color: var(--hg-ink-muted); }
 }
 
-.nm-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; margin-right: .3rem; vertical-align: middle; background: #28c76f; }
-.nm-dot.is-offline { background: #6c757d; }
-.nm-dot.is-warning { background: #ea5455; }
+.nm-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; margin-right: .3rem; vertical-align: middle; background: var(--hg-ok); }
+.nm-dot.is-offline { background: var(--hg-offline); }
+.nm-dot.is-warning { background: var(--hg-critical); }
 
 .nm-link {
     fill: none;
     stroke-width: 2;
-    &.is-wan { stroke: rgba(160, 170, 190, .7); stroke-width: 3; }
-    &.is-uplink { stroke: rgba(40, 199, 111, .8); stroke-width: 3; }
-    &.is-lan, &.is-cellular { stroke: rgba(99, 132, 255, .75); }
+    &.is-wan { stroke: var(--hg-line-strong); stroke-width: 3; }
+    &.is-uplink { stroke: var(--hg-ok); stroke-width: 3; }
+    &.is-lan, &.is-cellular { stroke: var(--hg-info); }
     &.is-wifi { stroke: rgba(150, 120, 255, .95); stroke-width: 2.5; stroke-dasharray: 2 5; stroke-linecap: round; }
     &.is-vpn { stroke: #17a2b8; stroke-dasharray: 7 5; }
     &.is-tunnel { stroke: rgba(23, 162, 184, .55); stroke-dasharray: 2 4; }
-    &.is-unknown { stroke: rgba(160, 170, 190, .6); stroke-width: 1.5; stroke-dasharray: 4 4; }
+    &.is-unknown { stroke: var(--hg-offline); stroke-width: 1.5; stroke-dasharray: 4 4; }
     &.is-down { opacity: .25; }
     &.is-tunnel.is-down { opacity: .5; }
     // The column of a grid behind its cards; the link of a device to its other network.

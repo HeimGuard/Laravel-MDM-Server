@@ -1,0 +1,487 @@
+// HeimGuard colours: the design tokens of both themes as --hg-* custom properties, and the
+// Bootstrap / boilerplate variables and components mapped onto them. In new code use the token
+// (var(--hg-surface), var(--hg-ink-muted), ...), not a hex value.
+
+$hg-tokens-dark: (
+    bg: #0D1411,
+    surface: #141D19,
+    surface-raised: #1C2823,
+    surface-hover: #25342D,
+    line: #2B3A33,
+    line-strong: #73887D,
+    ink: #E6EEE8,
+    ink-muted: #9CADA2,
+    brand: #49C22D,
+    on-brand: #08150A,
+    brand-ink: #5ED743,
+    brand-subtle: #173320,
+    ok: #5ED743,
+    ok-subtle: #173320,
+    warn: #F2C94C,
+    warn-subtle: #3A3114,
+    high: #FF9342,
+    high-subtle: #3D2614,
+    critical: #FF7468,
+    critical-subtle: #40201D,
+    info: #67BCEB,
+    info-subtle: #14303F,
+    offline: #6F8076,
+    focus: #67BCEB,
+    sev-critical: #FF7468,
+    sev-high: #FF9342,
+    sev-medium: #F2C94C,
+    sev-low: #67BCEB,
+    sev-none: #6F8076,
+    term-bg: #080D0B,
+    term-fg: #D5E0D8,
+    term-dim: #8C9C92,
+    term-ok: #5ED743,
+    term-warn: #F2C94C,
+    term-err: #FF7468,
+    term-info: #67BCEB,
+    chart-1: #5ED743,
+    chart-2: #67BCEB,
+    chart-3: #F2C94C,
+    chart-grid: #2B3A33,
+    chart-axis: #9CADA2,
+    // Text and icons on a solid status fill (danger button, text-bg-*): not a design token.
+    on-fill: #08150A,
+);
+
+$hg-tokens-light: (
+    bg: #F2F5F3,
+    surface: #FFFFFF,
+    surface-raised: #E9EFEB,
+    surface-hover: #DCE5DF,
+    line: #CBD6CF,
+    line-strong: #66796E,
+    ink: #0E1A14,
+    ink-muted: #4B5B51,
+    brand: #49C22D,
+    on-brand: #08150A,
+    brand-ink: #1E7A0C,
+    brand-subtle: #DDF3D6,
+    ok: #1E7A0C,
+    ok-subtle: #DDF3D6,
+    warn: #7A5800,
+    warn-subtle: #FBF0CC,
+    high: #A64300,
+    high-subtle: #FDE6D3,
+    critical: #B42318,
+    critical-subtle: #FBDDD9,
+    info: #0B5FA5,
+    info-subtle: #D8EAF8,
+    offline: #66796E,
+    focus: #0B5FA5,
+    sev-critical: #B42318,
+    sev-high: #A64300,
+    sev-medium: #7A5800,
+    sev-low: #0B5FA5,
+    sev-none: #66796E,
+    term-bg: #080D0B,
+    term-fg: #D5E0D8,
+    term-dim: #8C9C92,
+    term-ok: #5ED743,
+    term-warn: #F2C94C,
+    term-err: #FF7468,
+    term-info: #67BCEB,
+    chart-1: #1E7A0C,
+    chart-2: #0B5FA5,
+    chart-3: #7A5800,
+    chart-grid: #CBD6CF,
+    chart-axis: #4B5B51,
+    on-fill: #FFFFFF,
+);
+
+// Bootstrap theme colour -> [fill token, text token, subtle ground, subtle border].
+$hg-theme-colors: (
+    primary: (brand, brand-ink, brand-subtle, brand),
+    secondary: (offline, ink-muted, surface-raised, line-strong),
+    success: (ok, ok, ok-subtle, ok),
+    info: (info, info, info-subtle, info),
+    warning: (warn, warn, warn-subtle, warn),
+    danger: (critical, critical, critical-subtle, critical),
+    light: (surface-raised, ink-muted, surface-raised, line),
+    dark: (ink, ink, surface-hover, line-strong),
+);
+
+@mixin hg-theme($tokens, $overlay) {
+    @each $name, $value in $tokens {
+        --hg-#{$name}: #{$value};
+        --hg-#{$name}-rgb: #{to-rgb($value)};
+    }
+    --hg-overlay: #{$overlay};
+
+    // Body and neutrals.
+    --bs-body-bg: var(--hg-bg);
+    --bs-body-bg-rgb: var(--hg-bg-rgb);
+    --bs-body-color: var(--hg-ink);
+    --bs-body-color-rgb: var(--hg-ink-rgb);
+    --bs-emphasis-color: var(--hg-ink);
+    --bs-emphasis-color-rgb: var(--hg-ink-rgb);
+    --bs-heading-color: inherit;
+    --bs-secondary-color: var(--hg-ink-muted);
+    --bs-secondary-color-rgb: var(--hg-ink-muted-rgb);
+    --bs-tertiary-color: var(--hg-ink-muted);
+    --bs-tertiary-color-rgb: var(--hg-ink-muted-rgb);
+    --bs-secondary-bg: var(--hg-surface-hover);
+    --bs-secondary-bg-rgb: var(--hg-surface-hover-rgb);
+    --bs-tertiary-bg: var(--hg-surface);
+    --bs-tertiary-bg-rgb: var(--hg-surface-rgb);
+    --bs-border-color: var(--hg-line);
+    --bs-border-color-translucent: var(--hg-line);
+    --bs-link-color: var(--hg-brand-ink);
+    --bs-link-color-rgb: var(--hg-brand-ink-rgb);
+    --bs-link-hover-color: var(--hg-brand-ink);
+    --bs-link-hover-color-rgb: var(--hg-brand-ink-rgb);
+    --bs-code-color: var(--hg-brand-ink);
+    --bs-highlight-bg: var(--hg-warn-subtle);
+    --bs-highlight-color: var(--hg-ink);
+    --bs-focus-ring-color: var(--hg-focus);
+    --bs-form-valid-color: var(--hg-ok);
+    --bs-form-valid-border-color: var(--hg-ok);
+    --bs-form-invalid-color: var(--hg-critical);
+    --bs-form-invalid-border-color: var(--hg-critical);
+
+    @each $color, $parts in $hg-theme-colors {
+        $fill: nth($parts, 1);
+        --bs-#{$color}: var(--hg-#{$fill});
+        --bs-#{$color}-rgb: var(--hg-#{$fill}-rgb);
+        --bs-#{$color}-text-emphasis: var(--hg-#{nth($parts, 2)});
+        --bs-#{$color}-bg-subtle: var(--hg-#{nth($parts, 3)});
+        --bs-#{$color}-border-subtle: var(--hg-#{nth($parts, 4)});
+    }
+
+    // Plain buttons (boilerplate): hover and press on the hover surface.
+    --bs-btn-hover-bg: var(--hg-surface-hover);
+    --bs-btn-active-bg: var(--hg-surface-hover);
+}
+
+:root,
+[data-bs-theme=light] {
+    @include hg-theme($hg-tokens-light, rgba(14, 26, 20, .40));
+}
+
+[data-bs-theme=dark] {
+    @include hg-theme($hg-tokens-dark, rgba(5, 9, 7, .64));
+}
+
+// Green is never text on a light ground: text-primary is the brand ink.
+.text-primary,
+.link-primary {
+    color: var(--hg-brand-ink) !important;
+}
+
+@each $color, $parts in $hg-theme-colors {
+    .text-bg-#{$color} {
+        color: var(--hg-on-fill) !important;
+        background-color: var(--hg-#{nth($parts, 1)}) !important;
+    }
+}
+
+.text-bg-primary {
+    color: var(--hg-on-brand) !important;
+}
+
+.text-bg-light {
+    color: var(--hg-ink) !important;
+}
+
+.text-bg-secondary {
+    color: var(--hg-ink) !important;
+    background-color: var(--hg-surface-hover) !important;
+}
+
+// Focus: a 2px blue ring with a 2px gap, visible on the green button too.
+:focus-visible,
+.btn:focus-visible,
+.form-check-input:focus,
+.form-control:focus,
+.form-select:focus {
+    outline: 2px solid var(--hg-focus);
+    outline-offset: 2px;
+    box-shadow: none;
+}
+
+.form-control:focus,
+.form-select:focus {
+    outline-offset: 0;
+    border-color: var(--hg-focus);
+}
+
+// Layout: panels on the page background.
+.layout-nav,
+.layout-subnav,
+.layout-sidebar,
+.navbar-main,
+.layout-nav-mobile {
+    background-color: var(--hg-surface);
+    border-color: var(--hg-line) !important;
+}
+
+.app-nav .is-active .nav-link {
+    background: var(--hg-brand-subtle);
+    box-shadow: inset 3px 0 0 var(--hg-brand);
+    color: var(--hg-ink);
+
+    .nav-link-ico {
+        color: var(--hg-brand-ink);
+    }
+}
+
+.nav-tabs {
+    --bs-nav-tabs-border-color: var(--hg-line);
+    --bs-nav-tabs-link-active-color: var(--hg-ink);
+    --bs-nav-tabs-link-active-border-color: var(--hg-brand);
+
+    .nav-link.active,
+    .nav-item.show .nav-link {
+        border-bottom-color: var(--hg-brand);
+    }
+}
+
+.nav-switch {
+    background-color: var(--hg-surface-raised);
+
+    .nav-link.active,
+    .nav-item.show .nav-link {
+        background-color: var(--hg-surface);
+        box-shadow: inset 0 0 0 1px var(--hg-line);
+    }
+}
+
+.card {
+    --bs-card-bg: var(--hg-surface);
+    --bs-card-cap-bg: var(--hg-surface);
+    --bs-card-border-color: var(--hg-line);
+    --bs-card-color: var(--hg-ink);
+}
+
+.list-group {
+    --bs-list-group-color: var(--hg-ink);
+    --bs-list-group-border-color: var(--hg-line);
+    --bs-list-group-action-hover-bg: var(--hg-surface-hover);
+    --bs-list-group-action-hover-color: var(--hg-ink);
+    --bs-list-group-action-active-bg: var(--hg-surface-hover);
+    --bs-list-group-action-active-color: var(--hg-ink);
+    --bs-list-group-active-bg: var(--hg-brand-subtle);
+    --bs-list-group-active-color: var(--hg-ink);
+    --bs-list-group-active-border-color: var(--hg-brand);
+}
+
+// Tables: body on the surface, header one step above.
+.table {
+    --bs-table-bg: var(--hg-surface);
+    --bs-table-color: var(--hg-ink);
+    --bs-table-border-color: var(--hg-line);
+    --bs-table-striped-bg: var(--hg-surface-raised);
+    --bs-table-striped-color: var(--hg-ink);
+    --bs-table-hover-bg: var(--hg-surface-hover);
+    --bs-table-hover-color: var(--hg-ink);
+    --bs-table-active-bg: var(--hg-surface-hover);
+    --bs-table-active-color: var(--hg-ink);
+}
+
+.table thead th {
+    background: var(--hg-surface-raised);
+    color: var(--hg-ink-muted);
+}
+
+.table-selectable tbody tr:hover td,
+.table-selectable tbody tr.selected td {
+    background: var(--hg-surface-hover);
+}
+
+// Inputs.
+.form-control,
+.form-select {
+    background-color: var(--hg-surface-raised);
+    border-color: var(--hg-line-strong);
+    color: var(--hg-ink);
+
+    &::placeholder {
+        color: var(--hg-ink-muted);
+    }
+
+    &:disabled {
+        background-color: var(--hg-surface);
+        color: var(--hg-ink-muted);
+    }
+}
+
+.input-group-text {
+    background-color: var(--hg-surface);
+    border-color: var(--hg-line-strong);
+    color: var(--hg-ink-muted);
+}
+
+.form-check-input {
+    background-color: var(--hg-surface-raised);
+    border-color: var(--hg-line-strong);
+
+    &:checked,
+    &[type=checkbox]:indeterminate {
+        background-color: var(--hg-brand);
+        border-color: var(--hg-brand);
+    }
+}
+
+.form-range {
+    &::-webkit-slider-thumb { background-color: var(--hg-brand); }
+    &::-moz-range-thumb { background-color: var(--hg-brand); }
+    &::-webkit-slider-runnable-track { background-color: var(--hg-surface-raised); }
+    &::-moz-range-track { background-color: var(--hg-surface-raised); }
+}
+
+// Overlays.
+.dropdown-menu {
+    --bs-dropdown-bg: var(--hg-surface-raised);
+    --bs-dropdown-color: var(--hg-ink);
+    --bs-dropdown-border-color: var(--hg-line);
+    --bs-dropdown-divider-bg: var(--hg-line);
+    --bs-dropdown-link-color: var(--hg-ink);
+    --bs-dropdown-link-hover-color: var(--hg-ink);
+    --bs-dropdown-link-hover-bg: var(--hg-surface-hover);
+    --bs-dropdown-link-active-color: var(--hg-ink);
+    --bs-dropdown-link-active-bg: var(--hg-surface-hover);
+    --bs-dropdown-header-color: var(--hg-ink-muted);
+}
+
+.popover {
+    --bs-popover-bg: var(--hg-surface-raised);
+    --bs-popover-border-color: var(--hg-line);
+    --bs-popover-header-bg: var(--hg-surface-raised);
+    --bs-popover-body-color: var(--hg-ink);
+}
+
+.tooltip {
+    --bs-tooltip-bg: var(--hg-ink);
+    --bs-tooltip-color: var(--hg-bg);
+}
+
+.modal {
+    --bs-modal-bg: var(--hg-surface);
+    --bs-modal-color: var(--hg-ink);
+    --bs-modal-border-color: var(--hg-line);
+}
+
+.offcanvas {
+    --bs-offcanvas-bg: var(--hg-surface);
+    --bs-offcanvas-color: var(--hg-ink);
+    --bs-offcanvas-border-color: var(--hg-line);
+}
+
+.modal-backdrop,
+.offcanvas-backdrop {
+    --bs-backdrop-bg: var(--hg-overlay);
+    --bs-backdrop-opacity: 1;
+}
+
+.progress,
+.progress-stacked {
+    --bs-progress-bg: var(--hg-surface-raised);
+    --bs-progress-bar-bg: var(--hg-brand);
+    --bs-progress-bar-color: var(--hg-on-brand);
+}
+
+.pagination {
+    --bs-pagination-active-bg: var(--hg-brand-subtle);
+    --bs-pagination-active-color: var(--hg-ink);
+    --bs-pagination-hover-bg: var(--hg-surface-hover);
+    --bs-pagination-focus-bg: var(--hg-surface-hover);
+}
+
+// Buttons. Fills: brand with on-brand text, status colours with on-fill text; hover and press mix
+// the fill toward the ink (lighter in dark, darker in light).
+@mixin hg-btn-fill($fill, $text) {
+    --bs-btn-color: var(--hg-#{$text});
+    --bs-btn-bg: var(--hg-#{$fill});
+    --bs-btn-border-color: var(--hg-#{$fill});
+    --bs-btn-hover-color: var(--hg-#{$text});
+    --bs-btn-hover-bg: color-mix(in srgb, var(--hg-#{$fill}) 88%, var(--hg-ink));
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--hg-#{$fill}) 88%, var(--hg-ink));
+    --bs-btn-active-color: var(--hg-#{$text});
+    --bs-btn-active-bg: color-mix(in srgb, var(--hg-#{$fill}) 80%, var(--hg-ink));
+    --bs-btn-active-border-color: color-mix(in srgb, var(--hg-#{$fill}) 80%, var(--hg-ink));
+    --bs-btn-disabled-color: var(--hg-#{$text});
+    --bs-btn-disabled-bg: var(--hg-#{$fill});
+    --bs-btn-disabled-border-color: var(--hg-#{$fill});
+    --bs-btn-focus-box-shadow: none;
+}
+
+@mixin hg-btn-outline($border, $text) {
+    --bs-btn-color: var(--hg-#{$text});
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--hg-#{$border});
+    --bs-btn-hover-color: var(--hg-#{$text});
+    --bs-btn-hover-bg: var(--hg-surface-hover);
+    --bs-btn-hover-border-color: var(--hg-#{$border});
+    --bs-btn-active-color: var(--hg-#{$text});
+    --bs-btn-active-bg: var(--hg-surface-hover);
+    --bs-btn-active-border-color: var(--hg-#{$border});
+    --bs-btn-disabled-color: var(--hg-ink-muted);
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: var(--hg-line);
+    --bs-btn-focus-box-shadow: none;
+}
+
+.btn-primary { @include hg-btn-fill(brand, on-brand); }
+.btn-success { @include hg-btn-fill(ok, on-fill); }
+.btn-info { @include hg-btn-fill(info, on-fill); }
+.btn-warning { @include hg-btn-fill(warn, on-fill); }
+.btn-danger { @include hg-btn-fill(critical, on-fill); }
+
+.btn-secondary,
+.btn-outline-secondary { @include hg-btn-outline(line-strong, ink); }
+.btn-outline-primary { @include hg-btn-outline(brand, brand-ink); }
+.btn-outline-success { @include hg-btn-outline(ok, ok); }
+.btn-outline-info { @include hg-btn-outline(info, info); }
+.btn-outline-warning { @include hg-btn-outline(warn, warn); }
+.btn-outline-danger { @include hg-btn-outline(critical, critical); }
+
+[data-bs-theme] .btn-light,
+.btn-light {
+    @include hg-btn-outline(line, ink);
+    --bs-btn-bg: var(--hg-surface-raised);
+    --bs-btn-disabled-bg: var(--hg-surface-raised);
+}
+
+.btn-link {
+    --bs-btn-color: var(--hg-brand-ink);
+    --bs-btn-hover-color: var(--hg-brand-ink);
+    --bs-btn-active-color: var(--hg-brand-ink);
+    --bs-btn-disabled-color: var(--hg-ink-muted);
+}
+
+.btn-check:checked + .btn {
+    background-color: var(--hg-brand-subtle);
+    border-color: var(--hg-brand);
+    color: var(--hg-ink);
+}
+
+// Code, logs and command output: terminals stay dark in both themes.
+pre.bg-body-tertiary,
+pre.border {
+    background-color: var(--hg-term-bg) !important;
+    border-color: var(--hg-line) !important;
+    color: var(--hg-term-fg);
+
+    code {
+        color: inherit;
+    }
+}
+
+// Boilerplate stat tiles.
+.stat-ico {
+    color: var(--hg-ink);
+    background: var(--hg-surface-raised);
+
+    &.is-green { color: var(--hg-ok); background: var(--hg-ok-subtle); }
+    &.is-red { color: var(--hg-critical); background: var(--hg-critical-subtle); }
+    &.is-purple { color: var(--hg-info); background: var(--hg-info-subtle); }
+    &.is-orange { color: var(--hg-high); background: var(--hg-high-subtle); }
+}
+
+.stat-name {
+    color: var(--hg-ink-muted);
+}
