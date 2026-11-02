@@ -24,6 +24,18 @@ class SetupTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_login_records_the_time_without_touching_updated_at(): void
+    {
+        $user = User::factory()->create(['password' => 'a-secret-password', 'updated_at' => now()->subDay()]);
+        $this->assertNull($user->last_login_at);
+
+        $this->post('/login', ['email' => $user->email, 'password' => 'a-secret-password']);
+
+        $user->refresh();
+        $this->assertNotNull($user->last_login_at);
+        $this->assertTrue($user->updated_at->lt(now()->subHour()));
+    }
+
     public function test_login_leads_to_the_setup_before_the_first_user_exists(): void
     {
         $this->withoutVite();
