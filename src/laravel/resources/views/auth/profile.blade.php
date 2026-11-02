@@ -1,5 +1,6 @@
 <x-layout-app>
-    <div class="container-xl">
+    <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="['' => __('Profile')]" />
         <div class="page-header">
             <h1 class="hide-mobile">{{ __('Profile') }}</h1>
         </div>

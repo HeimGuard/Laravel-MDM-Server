@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Livewire\Networks\Page;
+use App\Livewire\Networks\Show;
 use App\Models\AlertRule;
 use App\Models\Device;
 use App\Models\NetworkNeighbour;
@@ -188,16 +189,20 @@ class NetworkDiscoveryTest extends TestCase
         $nodes = collect($map['nodes'])->keyBy('id');
         $edges = collect($map['edges'])->keyBy('id');
         // The gateway is drawn as the gateway, not as an unknown device.
-        // All of a network's unknown devices are one card; a click opens the network's card in the list.
+        // All of a network's unknown devices are one card; a click opens the network's detail.
         $key = 'net:gw:50:C7:BF:AA:BB:CC|192.168.1.0/24';
         $this->assertSame(['2 unknown devices'], $nodes->where('kind', 'unknown')->pluck('label')->values()->all());
         $this->assertSame('unknown', $edges["{$key}>unknown:{$key}"]['type']);
-        $this->assertStringContainsString('/networks?view=list#network-', $nodes["unknown:{$key}"]['url']);
+        $anchor = $map['networks'][0]['anchor'];
+        $this->assertStringEndsWith('/networks/'.$anchor, $nodes["unknown:{$key}"]['url']);
         $this->assertSame([$pi->id, $phone->id], array_column($map['networks'][0]['unknown'], 'id'));
 
-        Livewire::withQueryParams(['view' => 'list'])->test(Page::class)->assertSee('2 unknown devices')->assertSee('raspberrypi.lan')
-            ->call('ignore', $phone->id)->assertSee('1 ignored device')
+        // The banner of the networks page, the unknown devices on the network's detail.
+        Livewire::test(Page::class)->assertSee('Found 2 unknown devices in 1 networks.');
+        Livewire::test(Show::class, ['network' => $anchor])->assertSee('raspberrypi.lan')
+            ->call('ignore', $phone->id)->assertDontSee($phone->mac)
             ->call('add', $pi->id)->assertRedirect();
+        Livewire::withQueryParams(['view' => 'list'])->test(Page::class)->assertSee('1 ignored device');
 
         $added = Device::query()->where('kind', 'ping')->firstOrFail();
         $this->assertSame(['raspberrypi', '192.168.1.50', 24, 'B8:27:EB:12:34:56'], [$added->name, $added->ping_address, $added->ping_prefix, $added->ping_mac]);

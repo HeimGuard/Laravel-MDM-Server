@@ -3,10 +3,12 @@
 namespace Tests\Feature;
 
 use App\Livewire\Networks\Page;
+use App\Livewire\Networks\Show;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\PortScanResult;
 use App\Models\User;
+use App\Support\NetworkMap;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
@@ -192,7 +194,7 @@ class PortScanTest extends TestCase
         $this->assertTrue(Device::query()->exists());
 
         // Rendered escaped: the raw <script> tag never reaches the page.
-        $html = Livewire::withQueryParams(['view' => 'list'])->test(Page::class)->html();
+        $html = Livewire::test(Show::class, ['network' => NetworkMap::build()['networks'][0]['anchor']])->html();
         $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
         $this->assertStringContainsString('&lt;script&gt;', $html);
     }

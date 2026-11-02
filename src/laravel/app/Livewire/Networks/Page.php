@@ -21,13 +21,16 @@ use Livewire\Component;
  */
 class Page extends Component
 {
-    /** What the page shows: the map (filling the window) or the list of the networks. */
+    /** What the page shows: the map (filling the window), the list of the networks or the public addresses. */
     #[Url(except: 'map')]
     public string $view = 'map';
 
+    /** The address the port scan of the header (Scan ports…) goes to. */
+    public string $portScanIp = '';
+
     public function updatedView(): void
     {
-        $this->view = $this->view === 'list' ? 'list' : 'map';
+        $this->view = in_array($this->view, ['list', 'internet'], true) ? $this->view : 'map';
     }
     /** Live update (resources/js/live.js): devices changed; the map gets the new data. */
     #[On('devices-changed')]
@@ -50,6 +53,40 @@ class Page extends Component
         if ($agent->issueCommand('scanNetwork', ['cidr' => $found['cidr']], auth()->user()) === null) {
             $this->addError('scan.'.$found['anchor'], $agent->commandRefusal('scanNetwork', ['cidr' => $found['cidr']]) ?? __('Already on its way.'));
         }
+    }
+
+    /** Scans every network an agent there can scan (the header's Run network scan); the others are left out. */
+    public function scanAll(): void
+    {
+        $sent = 0;
+        foreach (NetworkMap::build()['networks'] as $network) {
+            $agent = ($network['scan']['agent'] ?? null) ? Device::find($network['scan']['agent']) : null;
+            if ($agent !== null && $agent->issueCommand('scanNetwork', ['cidr' => $network['cidr']], auth()->user()) !== null) {
+                $sent++;
+            }
+        }
+        if ($sent === 0) {
+            $this->addError('scanAll', __('No agent can scan a network now.'));
+        }
+    }
+
+    /** Scans the open ports of any address an agent's network contains (the header's Scan ports…). */
+    public function scanAddress(bool $all = false): void
+    {
+        $this->validate(['portScanIp' => ['required', 'ipv4']], attributes: ['portScanIp' => __('IP address')]);
+        $agent = Device::portScannerFor($this->portScanIp);
+        if ($agent === null) {
+            $this->addError('portScanIp', PortScanResult::enabled() ? __('No online agent in its network can scan it.') : __('Port scanning is turned off in the portal'));
+
+            return;
+        }
+        $params = ['ip' => $this->portScanIp] + ($all ? ['all' => true] : []);
+        if ($agent->issueCommand('scanPorts', $params, auth()->user()) === null) {
+            $this->addError('portScanIp', $agent->commandRefusal('scanPorts', $params) ?? __('Already on its way.'));
+
+            return;
+        }
+        $this->portScanIp = '';
     }
 
     /**
@@ -122,8 +159,20 @@ class Page extends Component
     public function render()
     {
         $portScanEnabled = PortScanResult::enabled();
+
+        return view('livewire.networks.page', [
+            'map' => NetworkMap::build(),
+            'discovery' => NetworkNeighbour::enabled(),
+            'portScanEnabled' => $portScanEnabled,
+            'ignored' => NetworkNeighbour::query()->whereNotNull('ignored_at')->latest('last_seen_at')->limit(50)->get(),
+        ])->title(__('Networks'));
+    }
+
+    /** Per unknown device: its latest port scan, an active one, and whether a scan can be sent. */
+    protected function portScans(): \Illuminate\Support\Collection
+    {
+        $portScanEnabled = PortScanResult::enabled();
         $unknown = NetworkNeighbour::unknown()->keyBy('id');
-        // Per unknown device: its latest port scan, an active one, and whether a scan can be sent.
         $results = PortScanResult::query()
             ->whereIn('site', $unknown->pluck('site')->unique()->all())
             ->whereIn('ip', $unknown->pluck('ip')->unique()->all())
@@ -134,7 +183,8 @@ class Page extends Component
         // The scan can go to any online agent whose network contains the address, not only the one
         // that last reported it; the candidate agents are gathered once for all unknown devices.
         $agents = Device::all()->reject(fn (Device $device) => $device->isPingOnly);
-        $portScans = $unknown->map(function (NetworkNeighbour $n) use ($results, $active, $portScanEnabled, $agents) {
+
+        return $unknown->map(function (NetworkNeighbour $n) use ($results, $active, $portScanEnabled, $agents) {
             $scanner = Device::portScannerFor($n->ip, null, $agents);
 
             return [
@@ -145,13 +195,5 @@ class Page extends Component
                     : __('No online agent in its network can scan it.'),
             ];
         });
-
-        return view('livewire.networks.page', [
-            'map' => NetworkMap::build(),
-            'discovery' => NetworkNeighbour::enabled(),
-            'portScanEnabled' => $portScanEnabled,
-            'portScans' => $portScans,
-            'ignored' => NetworkNeighbour::query()->whereNotNull('ignored_at')->latest('last_seen_at')->limit(50)->get(),
-        ])->title(__('Networks'));
     }
 }

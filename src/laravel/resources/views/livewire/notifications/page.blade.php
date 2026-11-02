@@ -1,5 +1,6 @@
 <div>
-    <div class="container-xl">
+    <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="['' => __('Notifications')]" />
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1>{{ __('Notifications') }}</h1>
