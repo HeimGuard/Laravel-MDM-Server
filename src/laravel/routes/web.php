@@ -96,6 +96,7 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/devices');
     Route::get('/devices', ShowDevices::class)->name('devices');
     Route::get('/networks', App\Livewire\Networks\Page::class)->name('networks');
+    Route::get('/networks/{network}', App\Livewire\Networks\Show::class)->name('networks.show');
     Route::get('/notifications', App\Livewire\Notifications\Page::class)->name('notifications');
     Route::get('/security', App\Livewire\SecurityScan\Page::class)->name('security');
     Route::get('/security/export', [App\Http\Controllers\SecurityExportController::class, 'findings'])->name('security.export');

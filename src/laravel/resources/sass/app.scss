@@ -366,12 +366,11 @@ label.mdm-tag {
 }
 
 // Networks page controls: compact, also on phones (where the theme makes buttons large).
-.nm-view-toggle .btn { font-size: .875rem; padding: .3rem .75rem; line-height: 1.4; }
 .nm-icon-btn { width: 2rem; height: 2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; flex-shrink: 0; }
+
+// The devices of a network: small caps headers.
+.nm-table thead th { font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color); }
+
 @media (max-width: 575.98px) {
-    // The view switch over the full width, the discovery switch beside it.
-    .nm-header-tools { width: 100%; justify-content: space-between; gap: .5rem !important; }
-    .nm-view-toggle { flex: 1 1 auto; }
-    .nm-view-toggle .btn { flex: 1 1 0; }
     .nm-scan-btn { width: 2rem; height: 2rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; }
 }

@@ -1,5 +1,6 @@
 <x-dynamic-component :component="$layout">
-    <div class="container-xl">
+    <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="[route('system.setting.index') => __('System'), '' => __('Cache')]" />
         <div class="page-header">
              <h1 class="hide-mobile" >{{ __('Cache') }} - {{ $cache_driver }}</h1>
              <div class="d-flex align-items-center gap-2">

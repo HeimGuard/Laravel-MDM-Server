@@ -247,8 +247,12 @@ class NetworkMapTest extends TestCase
 
         $this->agent('NAS', '31.30.4.122', [$this->nic('eth0', 'lan', '192.168.1.5', 24, true, '192.168.1.1')]);
         // The map (filling the window) or the list, one at a time.
-        $this->get('/networks')->assertOk()->assertSeeHtml('class="network-map"')->assertDontSee('gateway 192.168.1.1');
-        $this->get('/networks?view=list')->assertOk()->assertSee('192.168.1.0/24')->assertSee('gateway 192.168.1.1')->assertDontSeeHtml('class="network-map"');
+        $this->get('/networks')->assertOk()->assertSeeHtml('class="network-map"')->assertDontSee('192.168.1.0/24</a>', false);
+        $this->get('/networks?view=list')->assertOk()->assertSee('192.168.1.0/24')->assertSee('192.168.1.1')->assertDontSeeHtml('class="network-map"');
+        $this->get('/networks?view=internet')->assertOk()->assertSee('31.30.4.122');
+        $anchor = \App\Support\NetworkMap::build()['networks'][0]['anchor'];
+        $this->get('/networks/'.$anchor)->assertOk()->assertSee('192.168.1.5')->assertSee('NAS');
+        $this->get('/networks/network-nonsense')->assertNotFound();
         Livewire::test(Page::class)->set('view', 'nonsense')->assertSet('view', 'map');
         // A live update hands the map the new data.
         Livewire::test(Page::class)->call('devicesChanged')->assertDispatched('network-map-updated');

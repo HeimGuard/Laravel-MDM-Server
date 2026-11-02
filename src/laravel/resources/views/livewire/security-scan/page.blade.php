@@ -3,7 +3,8 @@
 @use('App\Models\SecurityEvent')
 @use('App\Support\SecurityRules')
 <div>
-    <div class="container-xl">
+    <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="['' => __('Security')]" />
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1>{{ __('Security') }}</h1>
@@ -28,10 +29,12 @@
         <div class="row g-3 mb-4">
             @foreach ($counts as $level => $count)
                 <div class="col-6 col-md">
-                    <button class="card card-body w-100 text-start py-2 {{ $severity === $level ? 'border-'.SecurityRules::SEVERITY_COLORS[$level] : '' }}" type="button"
+                    {{-- A filter of the findings: the tile of the chosen severity has its border. --}}
+                    <button class="w-100 h-100 p-0 border-0 bg-transparent text-start" type="button"
                         wire:click="$set('severity', '{{ $severity === $level ? '' : $level }}'); $set('tab', 'findings'); $set('status', 'open')">
-                        <div class="small text-body-secondary">{{ __(ucfirst($level)) }}</div>
-                        <div class="fs-4 fw-semibold {{ $count > 0 ? 'text-'.SecurityRules::SEVERITY_COLORS[$level].'-emphasis' : 'text-body-tertiary' }}">{{ $count }}</div>
+                        <x-stat :label="__(ucfirst($level))" :value="$count" :class="$severity === $level ? 'border-'.SecurityRules::SEVERITY_COLORS[$level] : ''"
+                            :icon="['critical' => 'fas fa-skull-crossbones', 'high' => 'fas fa-exclamation-circle', 'medium' => 'fas fa-exclamation-triangle', 'low' => 'fas fa-info-circle', 'info' => 'fas fa-comment-dots'][$level]"
+                            :tone="['critical' => 'red', 'high' => 'orange', 'medium' => 'yellow', 'low' => 'purple', 'info' => null][$level]" />
                     </button>
                 </div>
             @endforeach

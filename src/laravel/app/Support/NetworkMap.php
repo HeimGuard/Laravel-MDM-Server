@@ -328,6 +328,7 @@ class NetworkMap
             $this->networks[$key]['gateway'] = $gateway;
             // A device of the portal with that address is the gateway (a router added as ping-only).
             $known = $byId->first(fn (Device $device) => isset($network['members'][$device->id]) && $network['members'][$device->id]['address'] === $gateway);
+            $this->networks[$key]['gatewayName'] = $known?->displayName;
             if (isset($this->nodes[$id])) {
                 $this->nodes[$id]['sub'] = $this->nodes[$id]['sub'].' · '.$gateway;
             } else {
@@ -437,6 +438,12 @@ class NetworkMap
             'gateway' => $network['gateway'] ?? null,
             'online' => $network['online'],
             'devices' => collect($network['members'])->keys()->map(fn ($id) => ['id' => $id, 'name' => $byId[$id]->displayName, 'online' => ! $byId[$id]->offline, 'ping' => $byId[$id]->isPingOnly])->values()->all(),
+            // The detail of the network: each device with its address and MAC address there.
+            'members' => collect($network['members'])->map(fn ($member, $id) => [
+                'id' => $id, 'name' => $byId[$id]->displayName, 'address' => $member['address'], 'mac' => self::macOf($byId[$id], $member['address']),
+                'state' => match (true) { $byId[$id]->isPingOnly && $byId[$id]->offline => 'warning', $byId[$id]->offline => 'offline', default => 'up' },
+            ])->sortBy(fn ($member) => ip2long($member['address']) ?: PHP_INT_MAX)->values()->all(),
+            'gatewayName' => $network['gatewayName'] ?? null,
             'relays' => collect($network['members'])->keys()->filter(fn ($id) => ! $byId[$id]->isPingOnly && ! $byId[$id]->offline && $byId[$id]->signsRequests)->map(fn ($id) => $byId[$id]->displayName)->values()->all(),
             'anchor' => self::anchor($key),
             'unknown' => collect($network['unknown'] ?? [])->map(fn (NetworkNeighbour $neighbour) => [
@@ -447,10 +454,20 @@ class NetworkMap
         ])->sortBy(fn ($network) => [$network['kind'] === 'vpn' ? 1 : 0, -count($network['devices'])])->values()->all();
     }
 
-    /** The network's card in the list view of the page (where its unknown devices are listed). */
+    /** The detail page of the network (where its unknown devices are listed). */
     public static function cardUrl(string $key): string
     {
-        return route('networks', ['view' => 'list']).'#'.self::anchor($key);
+        return route('networks.show', ['network' => self::anchor($key)]);
+    }
+
+    /** The MAC address of the device's interface with the address (of a ping-only device its followed one). */
+    private static function macOf(Device $device, string $address): ?string
+    {
+        if ($device->isPingOnly) {
+            return $device->ping_mac;
+        }
+
+        return collect($device->networks)->first(fn ($network) => in_array($address, $network['IPAddresses'], true))['Mac'] ?? null;
     }
 
     /** The id of the network's card on the page (the links of its unknown devices go there). */

@@ -1,10 +1,7 @@
 <div>
     <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="$addDevice ? [route('devices') => __('Devices'), '' => __('Add device')] : ($selectedDevice ? [route('devices') => __('Devices'), '' => $selectedDevice->DisplayName] : ['' => __('Devices')])" />
         @if ($addDevice)
-            <nav aria-label="breadcrumb" class="small mb-2">
-                <a class="text-body-secondary text-decoration-none" href="#" wire:click.prevent="$set('addDevice', false)">{{ __('Devices') }}</a>
-                <span class="text-body-secondary mx-1">/</span>{{ __('Add device') }}
-            </nav>
             <div class="btn-group mb-3" role="group" aria-label="{{ __('Kind of device') }}">
                 <input autocomplete="off" class="btn-check" id="add-mode-agent" type="radio" value="agent" wire:model.live="addMode">
                 <label class="btn btn-outline-secondary" for="add-mode-agent"><i class="fas fa-robot me-1"></i>{{ __('With the agent') }}</label>

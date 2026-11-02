@@ -1,5 +1,6 @@
 <x-dynamic-component :component="$layout">
-	<div class="container-xl">
+	<div class="container">
+		<x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="[route('system.setting.index') => __('System'), '' => __('Jobs')]" />
 		<div class="page-header">
 			<h1>{{ __("Jobs") }}</h1>
 			<form method="POST" action="{{ route('system.jobs.clear') }}" onsubmit="return confirm('{{ __('Do you really want to clear all jobs?') }}')">

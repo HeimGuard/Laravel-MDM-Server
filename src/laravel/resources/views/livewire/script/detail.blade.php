@@ -1,5 +1,6 @@
 <div>
-    <div class="container-xl">
+    <div class="container">
+        <x-boilerplate::breadcrumb class="hide-mobile mb-2" :items="[route('script.index') => __('Scripts'), '' => $script->name]" />
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1 class="mb-1 text-break">{{ $script->name }}</h1>
@@ -57,24 +58,16 @@
         {{-- Where the script stands on the devices (the latest run of each device). --}}
         <div class="row g-3 mb-4">
             @foreach ([
-                'compliant' => ['label' => __('Compliant'), 'class' => 'is-green', 'icon' => 'fas fa-check'],
-                'remediated' => ['label' => __('Remediated'), 'class' => 'is-purple', 'icon' => 'fas fa-magic'],
-                'noncompliant' => ['label' => __('Needs remediation'), 'class' => 'is-orange', 'icon' => 'fas fa-hand-pointer'],
-                'failed' => ['label' => __('Failed'), 'class' => 'is-red', 'icon' => 'fas fa-times'],
-                'waiting' => ['label' => __('Waiting'), 'class' => '', 'icon' => 'fas fa-hourglass-half'],
+                'compliant' => ['label' => __('Compliant'), 'tone' => 'green', 'icon' => 'fas fa-check'],
+                'remediated' => ['label' => __('Remediated'), 'tone' => 'purple', 'icon' => 'fas fa-magic'],
+                'noncompliant' => ['label' => __('Needs remediation'), 'tone' => 'orange', 'icon' => 'fas fa-hand-pointer'],
+                'failed' => ['label' => __('Failed'), 'tone' => 'red', 'icon' => 'fas fa-times'],
+                'waiting' => ['label' => __('Waiting'), 'tone' => null, 'icon' => 'fas fa-hourglass-half'],
             ] as $key => $stat)
                 @continue($key === 'noncompliant' && ! $script->detectsOnly && $stats[$key] === 0)
-                {{-- Boilerplate stat tile (.stat, .stat-ico); equal widths, 4 or 5 of them. --}}
+                {{-- Equal widths, 4 or 5 of them. --}}
                 <div class="col-6 col-md">
-                    <div class="card card-body h-100">
-                        <div class="stat gap-3">
-                            <div class="stat-ico {{ $stat['class'] }} {{ $stats[$key] > 0 ? '' : 'opacity-50' }}"><i class="{{ $stat['icon'] }}"></i></div>
-                            <div>
-                                <div class="stat-name">{{ $stat['label'] }}</div>
-                                <div class="stat-value">{{ $stats[$key] }}</div>
-                            </div>
-                        </div>
-                    </div>
+                    <x-stat :label="$stat['label']" :value="$stats[$key]" :icon="$stat['icon']" :tone="$stat['tone']" />
                 </div>
             @endforeach
             @if ($outdated > 0)

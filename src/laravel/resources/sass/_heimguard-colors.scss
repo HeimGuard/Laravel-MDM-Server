@@ -221,11 +221,27 @@ $hg-theme-colors: (
 
 .app-nav .is-active .nav-link {
     background: var(--hg-brand-subtle);
-    box-shadow: inset 3px 0 0 var(--hg-brand);
     color: var(--hg-ink);
 
     .nav-link-ico {
         color: var(--hg-brand-ink);
+    }
+}
+
+// Marker: a short bar on the sidebar edge, out in the .sidebar-content padding.
+.sidebar-content .app-nav .is-active {
+    position: relative;
+
+    &::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        height: 1.75rem;
+        transform: translateY(-50%);
+        left: -.5rem;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--hg-brand);
     }
 }
 
@@ -480,6 +496,7 @@ pre.border {
     &.is-red { color: var(--hg-critical); background: var(--hg-critical-subtle); }
     &.is-purple { color: var(--hg-info); background: var(--hg-info-subtle); }
     &.is-orange { color: var(--hg-high); background: var(--hg-high-subtle); }
+    &.is-yellow { color: var(--hg-warn); background: var(--hg-warn-subtle); }
 }
 
 .stat-name {
