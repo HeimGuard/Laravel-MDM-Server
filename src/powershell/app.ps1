@@ -1807,9 +1807,10 @@ function Get-SecurityPosture {
     return $posture
 }
 
-function Get-SecurityNginxLogs {
-    # The new lines of the logs in /var/log/nginx (nginx.log): every *.log of the directory, the error
-    # logs only when the policy names them (the file names its parsers ask for, null for all), each from
+function Get-SecurityWebLogs {
+    # The new lines of the logs of the web servers and proxies of the host (web.log): every *.log in
+    # /var/log/nginx, apache2, httpd, lighttpd, caddy and traefik, the error logs (a name with "error")
+    # only when the policy names them (the file names its parsers ask for, null for all), each from
     # the byte its previous read stopped at. The position is "hash of the path:offset:mark of the head" per
     # file, joined by ";" (the server takes 512 characters: the 12 files written last).
     param (
@@ -1817,22 +1818,23 @@ function Get-SecurityNginxLogs {
         [datetime]$Since,
         $Cursor,
         [int]$MaxRecords = 20000,
-        [string]$Directory = '/var/log/nginx'
+        [string[]]$Directories = @('/var/log/nginx', '/var/log/apache2', '/var/log/httpd', '/var/log/lighttpd', '/var/log/caddy', '/var/log/traefik')
     )
 
     $none = @{ logs = @(); cursors = @{} }
     if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
-    if (-not (Test-Path -Path $Directory -PathType Container)) { return $none }
+    $directories = @($Directories | Where-Object { Test-Path -Path $_ -PathType Container })
+    if ($directories.Count -eq 0) { return $none }
 
     $positions = @{}
     foreach ($item in ("$Cursor" -split ';')) {
         if ($item -match '^(\w{8}):(\d+):(\w+)$') { $positions[$Matches[1]] = @{ Offset = [int64]$Matches[2]; Mark = $Matches[3] } }
     }
-    $files = @(Get-ChildItem -Path $Directory -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+    $files = @(Get-ChildItem -Path $directories -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 12)
     $rows = New-Object System.Collections.Generic.List[object]
     $moved = New-Object System.Collections.Generic.List[string]
     foreach ($file in $files) {
-        if ($Want.All) { if ($file.Name -match '^error') { continue } }
+        if ($Want.All) { if ($file.Name -match 'error') { continue } }
         elseif (@($Want.Ids) -notcontains $file.Name) { continue }
         $key = Get-SecurityShortHash $file.FullName
         $key = $key.PadRight(8, '0').Substring(0, 8)
@@ -1874,9 +1876,9 @@ function Get-SecurityNginxLogs {
     }
 
     $logs = @()
-    if ($rows.Count -gt 0) { $logs = @(@{ source = 'nginx.log'; fields = @('Time', 'File', 'Message'); rows = $rows.ToArray() }) }
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'web.log'; fields = @('Time', 'File', 'Message'); rows = $rows.ToArray() }) }
     $cursors = @{}
-    if ($moved.Count -gt 0) { $cursors['nginx.log'] = ($moved -join ';') }
+    if ($moved.Count -gt 0) { $cursors['web.log'] = ($moved -join ';') }
     return @{ logs = $logs; cursors = $cursors }
 }
 
@@ -1971,8 +1973,8 @@ function Get-SecurityLogs {
 
     if ($OnLinux) {
         $docker = Get-SecurityDockerLogs -Want (& $wanted 'docker.logs') -Since $Since -Cursor $Cursors['docker.logs'] -MaxRecords $MaxRecords
-        $nginx = Get-SecurityNginxLogs -Want (& $wanted 'nginx.log') -Since $Since -Cursor $Cursors['nginx.log'] -MaxRecords $MaxRecords
-        $extra = @{ logs = @(@($docker.logs) + @($nginx.logs)); cursors = @{} + $docker.cursors + $nginx.cursors }
+        $web = Get-SecurityWebLogs -Want (& $wanted 'web.log') -Since $Since -Cursor $Cursors['web.log'] -MaxRecords $MaxRecords
+        $extra = @{ logs = @(@($docker.logs) + @($web.logs)); cursors = @{} + $docker.cursors + $web.cursors }
         $want = & $wanted 'linux.auth'
         if (-not $want.All -and $want.Ids.Count -eq 0) { return $extra }
         $ids = if ($want.All) { $null } else { $want.Ids }
@@ -4120,7 +4122,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityNginxLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
