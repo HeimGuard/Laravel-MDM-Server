@@ -27,6 +27,7 @@ class SecurityParsers
     /** What the agents send (agents 1.17.0+), with the fields of a record. */
     public const LOG_SOURCES = [
         'linux.auth' => ['label' => 'Linux: auth log (journal or auth.log)', 'fields' => ['Time', 'Identifier', 'Pid', 'Message'], 'key' => 'Identifier'],
+        'docker.logs' => ['label' => 'Docker: container logs', 'fields' => ['Time', 'Container', 'Image', 'Message'], 'key' => 'Image'],
         'windows.security' => ['label' => 'Windows: Security log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.system' => ['label' => 'Windows: System log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.defender' => ['label' => 'Windows: Microsoft Defender log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],

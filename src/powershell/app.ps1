@@ -1807,6 +1807,67 @@ function Get-SecurityPosture {
     return $posture
 }
 
+function Get-SecurityDockerLogs {
+    # The lines the containers wrote to their log since the previous collection (docker.logs), only
+    # of the images the collection policy asks for (the short name of an image: no registry, no tag,
+    # "nginx" for "ghcr.io/acme/nginx:1.27"). The position is the end of the previous window (unix
+    # seconds): a window is [position, now), so no line is read twice or missed. Nothing without
+    # docker or without access to its socket.
+    param (
+        # What the policy asks for: the image names, null for every container.
+        $Want,
+        [datetime]$Since,
+        $Cursor,
+        [int]$MaxRecords = 20000
+    )
+
+    $none = @{ logs = @(); cursors = @{} }
+    if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
+    if (-not (Get-Command -Name docker -CommandType Application -ErrorAction SilentlyContinue)) { return $none }
+
+    $until = [int64]([DateTimeOffset]::UtcNow).ToUnixTimeSeconds()
+    $from = if ("$Cursor" -match '^\d+$' -and [int64]$Cursor -le $until) { [int64]$Cursor } else { [int64]([DateTimeOffset]$Since).ToUnixTimeSeconds() }
+    # A day back at most, whatever the position says (a device that was off for a long time).
+    $from = [Math]::Max($from, $until - 86400)
+
+    $containers = @(docker ps --no-trunc --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $none }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in $containers) {
+        if ($rows.Count -ge $MaxRecords) { break }
+        $parts = "$line" -split '\|', 3
+        if ($parts.Count -ne 3) { continue }
+        $id = $parts[0]
+        $name = $parts[1]
+        # "registry:5000/acme/nginx:1.27@sha256:..." -> "nginx"
+        $image = ($parts[2] -replace '@.*$', '' -split '/')[-1] -replace ':[^:]*$', ''
+        if (-not $Want.All -and @($Want.Ids | ForEach-Object { "$_".ToLowerInvariant() }) -notcontains $image.ToLowerInvariant()) { continue }
+        # One second of margin on both sides, the exact window is cut below.
+        $output = @(docker logs --timestamps --since ($from - 1) --until ($until + 1) $id 2>&1)
+        foreach ($entry in $output) {
+            if ($rows.Count -ge $MaxRecords) { break }
+            # "2026-11-04T10:23:40.123456789Z the line" (the stderr of the container comes as an error record).
+            if ("$entry" -notmatch '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z (.*)$') { continue }
+            $fraction = if ($Matches[2]) { $Matches[2].PadRight(8, '0').Substring(0, 8) } else { '' }
+            $time = [DateTimeOffset]::MinValue
+            if (-not [DateTimeOffset]::TryParse("$($Matches[1])${fraction}Z", [System.Globalization.CultureInfo]::InvariantCulture, 'AssumeUniversal', [ref]$time)) { continue }
+            $seconds = $time.ToUnixTimeSeconds()
+            if ($seconds -lt $from -or $seconds -ge $until) { continue }
+            $message = ConvertTo-SecurityText $Matches[3] 2000
+            if (-not $message) { continue }
+            $rows.Add([object[]]@($time.UtcDateTime.ToString('o'), $name, $image, $message))
+        }
+    }
+
+    $logs = @()
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'docker.logs'; fields = @('Time', 'Container', 'Image', 'Message'); rows = $rows.ToArray() }) }
+    # A window cut by the limit goes on from where its last line was, not from the end of it.
+    $position = $until
+    if ($rows.Count -ge $MaxRecords) { $position = [Math]::Max($from, [int64]([DateTimeOffset]::Parse($rows[$rows.Count - 1][0]).ToUnixTimeSeconds())) }
+    return @{ logs = $logs; cursors = @{ 'docker.logs' = "$position" } }
+}
+
 function Get-SecurityLogs {
     # The raw records of the logs the parsers of the server read, from the position the server
     # acknowledged last, only the ones the collection policy asks for (the identifiers / event ids
@@ -1836,8 +1897,9 @@ function Get-SecurityLogs {
     }
 
     if ($OnLinux) {
+        $docker = Get-SecurityDockerLogs -Want (& $wanted 'docker.logs') -Since $Since -Cursor $Cursors['docker.logs'] -MaxRecords $MaxRecords
         $want = & $wanted 'linux.auth'
-        if (-not $want.All -and $want.Ids.Count -eq 0) { return @{ logs = @(); cursors = @{} } }
+        if (-not $want.All -and $want.Ids.Count -eq 0) { return $docker }
         $ids = if ($want.All) { $null } else { $want.Ids }
         $rows = New-Object System.Collections.Generic.List[object]
         $cursor = $Cursors['linux.auth']
@@ -1904,6 +1966,8 @@ function Get-SecurityLogs {
             }
         }
         if ($rows.Count -gt 0) { $logs.Add(@{ source = 'linux.auth'; fields = @('Time', 'Identifier', 'Pid', 'Message'); rows = $rows.ToArray() }) }
+        foreach ($log in @($docker.logs)) { $logs.Add($log) }
+        foreach ($key in @($docker.cursors.Keys)) { $moved[$key] = $docker.cursors[$key] }
         return @{ logs = $logs.ToArray(); cursors = $moved }
     }
 
@@ -3981,7 +4045,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
