@@ -654,6 +654,26 @@ class SecurityScannerTest extends TestCase
         $this->assertSame(0, \Illuminate\Support\Facades\DB::table('jobs')->count());
     }
 
+    public function test_parsers_read_the_logs_of_docker_containers(): void
+    {
+        $parser = [
+            'key' => 'org.web-access-probe', 'name' => 'Probe', 'source' => 'docker.logs',
+            'when' => ['field' => 'Image', 'op' => 'in', 'value' => ['nginx']],
+            'pattern' => '^(?<ip>\S+) .*"(?<method>[A-Z]+) (?<path>\S*\.env\S*) [^"]*" (?<status>\d{3}) .* "(?:[^",]*,\s*)*(?<xff>[^",\s]+)"$',
+            'event' => ['type' => 'web_probe', 'source' => '{xff|ip}', 'message' => '{method} {path} -> {status}'],
+        ];
+        $this->assertSame([], SecurityParsers::errors($parser));
+        $line = fn (string $image, string $message) => ['Time' => '2026-11-04T10:23:40Z', 'Container' => 'web', 'Image' => $image, 'Message' => $message];
+        $access = '172.21.0.19 - - [04/Nov/2026:10:23:40 +0000] "GET /static../.env HTTP/1.1" 404 153 "-" "ua" "192.168.137.5, 34.124.194.107"';
+        $events = SecurityParsers::run([['source' => 'docker.logs', 'records' => [$line('nginx', $access), $line('nginx', $access), $line('redis', $access)]]], [$parser]);
+
+        $this->assertCount(1, $events);
+        $this->assertSame(['web_probe', 2, '34.124.194.107', 'GET /static../.env -> 404'], [$events[0]['Type'], $events[0]['Count'], $events[0]['Source'], $events[0]['Message']]);
+        // Only the images the parsers read are asked for.
+        $this->assertSame(['nginx'], SecurityParsers::policy([$parser])['sources']['docker.logs']);
+        $this->assertSame([], SecurityParsers::policy([])['sources']['docker.logs']);
+    }
+
     public function test_the_policy_tells_the_agent_which_log_records_to_send(): void
     {
         $this->device();

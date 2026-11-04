@@ -1807,6 +1807,142 @@ function Get-SecurityPosture {
     return $posture
 }
 
+function Get-SecurityWebLogs {
+    # The new lines of the logs of the web servers and proxies of the host (web.log): every *.log in
+    # /var/log/nginx, apache2, httpd, lighttpd, caddy and traefik, the error logs (a name with "error")
+    # only when the policy names them (the file names its parsers ask for, null for all), each from
+    # the byte its previous read stopped at. The position is "hash of the path:offset:mark of the head" per
+    # file, joined by ";" (the server takes 512 characters: the 12 files written last).
+    param (
+        $Want,
+        [datetime]$Since,
+        $Cursor,
+        [int]$MaxRecords = 20000,
+        [string[]]$Directories = @('/var/log/nginx', '/var/log/apache2', '/var/log/httpd', '/var/log/lighttpd', '/var/log/caddy', '/var/log/traefik')
+    )
+
+    $none = @{ logs = @(); cursors = @{} }
+    if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
+    $directories = @($Directories | Where-Object { Test-Path -Path $_ -PathType Container })
+    if ($directories.Count -eq 0) { return $none }
+
+    $positions = @{}
+    foreach ($item in ("$Cursor" -split ';')) {
+        if ($item -match '^(\w{8}):(\d+):(\w+)$') { $positions[$Matches[1]] = @{ Offset = [int64]$Matches[2]; Mark = $Matches[3] } }
+    }
+    $files = @(Get-ChildItem -Path $directories -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+    $rows = New-Object System.Collections.Generic.List[object]
+    $moved = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $files) {
+        if ($Want.All) { if ($file.Name -match 'error') { continue } }
+        elseif (@($Want.Ids) -notcontains $file.Name) { continue }
+        $key = Get-SecurityShortHash $file.FullName
+        $key = $key.PadRight(8, '0').Substring(0, 8)
+        try { $stream = [System.IO.File]::Open($file.FullName, 'Open', 'Read', 'ReadWrite') } catch { continue }
+        try {
+            $head = New-Object byte[] ([Math]::Min(128, $stream.Length))
+            [void]$stream.Read($head, 0, $head.Length)
+            $mark = Get-SecurityShortHash ([System.Convert]::ToBase64String($head))
+            $offset = [int64]0
+            $known = $positions[$key]
+            if ($known -and $known.Mark -eq $mark -and $known.Offset -le $stream.Length) { $offset = $known.Offset }
+            elseif (-not $known) { $offset = [Math]::Max(0, $stream.Length - 4MB) }
+            if ($rows.Count -ge $MaxRecords) { if ($known) { $moved.Add("${key}:$($known.Offset):$($known.Mark)") }; continue }
+            [void]$stream.Seek($offset, 'Begin')
+            $buffer = New-Object byte[] ([int][Math]::Min(4MB, $stream.Length - $offset))
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            # Only whole lines: the rest is read next time.
+            $end = [Array]::LastIndexOf($buffer, [byte]10, [Math]::Max(0, $read - 1))
+            $consumed = if ($end -ge 0 -and $read -gt 0) { $end + 1 } else { 0 }
+            foreach ($line in ([System.Text.Encoding]::UTF8.GetString($buffer, 0, $consumed) -split "`n")) {
+                if (-not $line.Trim() -or $rows.Count -ge $MaxRecords) { continue }
+                # The access log has its time in "[04/Nov/2026:10:23:40 +0000]", the error log in "2026/11/04 10:23:40".
+                $time = $null
+                $parsed = [DateTimeOffset]::MinValue
+                if ($line -match '\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})\]') {
+                    if ([DateTimeOffset]::TryParseExact("$($Matches[1]) $($Matches[2]):$($Matches[3])", 'dd/MMM/yyyy:HH:mm:ss zzz', [System.Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$parsed)) { $time = $parsed.UtcDateTime }
+                }
+                elseif ($line -match '^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) ') {
+                    $local = [datetime]::MinValue
+                    if ([datetime]::TryParseExact($Matches[1], 'yyyy/MM/dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$local)) { $time = $local.ToUniversalTime() }
+                }
+                if (-not $time) { $time = [datetime]::UtcNow }
+                if ($time -lt $Since.ToUniversalTime()) { continue }
+                $rows.Add([object[]]@($time.ToString('o'), $file.Name, (ConvertTo-SecurityText $line.TrimEnd("`r") 2000)))
+            }
+            $moved.Add("${key}:$($offset + $consumed):$mark")
+        }
+        finally { $stream.Dispose() }
+    }
+
+    $logs = @()
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'web.log'; fields = @('Time', 'File', 'Message'); rows = $rows.ToArray() }) }
+    $cursors = @{}
+    if ($moved.Count -gt 0) { $cursors['web.log'] = ($moved -join ';') }
+    return @{ logs = $logs; cursors = $cursors }
+}
+
+function Get-SecurityDockerLogs {
+    # The lines the containers wrote to their log since the previous collection (docker.logs), only
+    # of the images the collection policy asks for (the short name of an image: no registry, no tag,
+    # "nginx" for "ghcr.io/acme/nginx:1.27"). The position is the end of the previous window (unix
+    # seconds): a window is [position, now), so no line is read twice or missed. Nothing without
+    # docker or without access to its socket.
+    param (
+        # What the policy asks for: the image names, null for every container.
+        $Want,
+        [datetime]$Since,
+        $Cursor,
+        [int]$MaxRecords = 20000
+    )
+
+    $none = @{ logs = @(); cursors = @{} }
+    if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
+    if (-not (Get-Command -Name docker -CommandType Application -ErrorAction SilentlyContinue)) { return $none }
+
+    $until = [int64]([DateTimeOffset]::UtcNow).ToUnixTimeSeconds()
+    $from = if ("$Cursor" -match '^\d+$' -and [int64]$Cursor -le $until) { [int64]$Cursor } else { [int64]([DateTimeOffset]$Since).ToUnixTimeSeconds() }
+    # A day back at most, whatever the position says (a device that was off for a long time).
+    $from = [Math]::Max($from, $until - 86400)
+
+    $containers = @(docker ps --no-trunc --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $none }
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in $containers) {
+        if ($rows.Count -ge $MaxRecords) { break }
+        $parts = "$line" -split '\|', 3
+        if ($parts.Count -ne 3) { continue }
+        $id = $parts[0]
+        $name = $parts[1]
+        # "registry:5000/acme/nginx:1.27@sha256:..." -> "nginx"
+        $image = ($parts[2] -replace '@.*$', '' -split '/')[-1] -replace ':[^:]*$', ''
+        if (-not $Want.All -and @($Want.Ids | ForEach-Object { "$_".ToLowerInvariant() }) -notcontains $image.ToLowerInvariant()) { continue }
+        # One second of margin on both sides, the exact window is cut below.
+        $output = @(docker logs --timestamps --since ($from - 1) --until ($until + 1) $id 2>&1)
+        foreach ($entry in $output) {
+            if ($rows.Count -ge $MaxRecords) { break }
+            # "2026-11-04T10:23:40.123456789Z the line" (the stderr of the container comes as an error record).
+            if ("$entry" -notmatch '^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z (.*)$') { continue }
+            $fraction = if ($Matches[2]) { $Matches[2].PadRight(8, '0').Substring(0, 8) } else { '' }
+            $time = [DateTimeOffset]::MinValue
+            if (-not [DateTimeOffset]::TryParse("$($Matches[1])${fraction}Z", [System.Globalization.CultureInfo]::InvariantCulture, 'AssumeUniversal', [ref]$time)) { continue }
+            $seconds = $time.ToUnixTimeSeconds()
+            if ($seconds -lt $from -or $seconds -ge $until) { continue }
+            $message = ConvertTo-SecurityText $Matches[3] 2000
+            if (-not $message) { continue }
+            $rows.Add([object[]]@($time.UtcDateTime.ToString('o'), $name, $image, $message))
+        }
+    }
+
+    $logs = @()
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'docker.logs'; fields = @('Time', 'Container', 'Image', 'Message'); rows = $rows.ToArray() }) }
+    # A window cut by the limit goes on from where its last line was, not from the end of it.
+    $position = $until
+    if ($rows.Count -ge $MaxRecords) { $position = [Math]::Max($from, [int64]([DateTimeOffset]::Parse($rows[$rows.Count - 1][0]).ToUnixTimeSeconds())) }
+    return @{ logs = $logs; cursors = @{ 'docker.logs' = "$position" } }
+}
+
 function Get-SecurityLogs {
     # The raw records of the logs the parsers of the server read, from the position the server
     # acknowledged last, only the ones the collection policy asks for (the identifiers / event ids
@@ -1836,8 +1972,11 @@ function Get-SecurityLogs {
     }
 
     if ($OnLinux) {
+        $docker = Get-SecurityDockerLogs -Want (& $wanted 'docker.logs') -Since $Since -Cursor $Cursors['docker.logs'] -MaxRecords $MaxRecords
+        $web = Get-SecurityWebLogs -Want (& $wanted 'web.log') -Since $Since -Cursor $Cursors['web.log'] -MaxRecords $MaxRecords
+        $extra = @{ logs = @(@($docker.logs) + @($web.logs)); cursors = @{} + $docker.cursors + $web.cursors }
         $want = & $wanted 'linux.auth'
-        if (-not $want.All -and $want.Ids.Count -eq 0) { return @{ logs = @(); cursors = @{} } }
+        if (-not $want.All -and $want.Ids.Count -eq 0) { return $extra }
         $ids = if ($want.All) { $null } else { $want.Ids }
         $rows = New-Object System.Collections.Generic.List[object]
         $cursor = $Cursors['linux.auth']
@@ -1904,6 +2043,8 @@ function Get-SecurityLogs {
             }
         }
         if ($rows.Count -gt 0) { $logs.Add(@{ source = 'linux.auth'; fields = @('Time', 'Identifier', 'Pid', 'Message'); rows = $rows.ToArray() }) }
+        foreach ($log in @($extra.logs)) { $logs.Add($log) }
+        foreach ($key in @($extra.cursors.Keys)) { $moved[$key] = $extra.cursors[$key] }
         return @{ logs = $logs.ToArray(); cursors = $moved }
     }
 
@@ -3981,7 +4122,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath

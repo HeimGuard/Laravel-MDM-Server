@@ -2,7 +2,7 @@
 # SQLite, keys and logs are kept in the storage volume. For MySQL see docker-compose.mysql.yml.
 services:
   mdm:
-    image: ghcr.io/panoptipulse/laravel-mdm-server:latest
+    image: ghcr.io/heimguard/laravel-mdm-server:latest
     container_name: mdm
     ports:
       - "8000:8000" # web and agent WebSocket (/app)

@@ -27,6 +27,8 @@ class SecurityParsers
     /** What the agents send (agents 1.17.0+), with the fields of a record. */
     public const LOG_SOURCES = [
         'linux.auth' => ['label' => 'Linux: auth log (journal or auth.log)', 'fields' => ['Time', 'Identifier', 'Pid', 'Message'], 'key' => 'Identifier'],
+        'docker.logs' => ['label' => 'Docker: container logs', 'fields' => ['Time', 'Container', 'Image', 'Message'], 'key' => 'Image'],
+        'web.log' => ['label' => 'Web servers and proxies: logs in /var/log (nginx, Apache, ...)', 'fields' => ['Time', 'File', 'Message'], 'key' => 'File'],
         'windows.security' => ['label' => 'Windows: Security log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.system' => ['label' => 'Windows: System log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.defender' => ['label' => 'Windows: Microsoft Defender log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
@@ -200,6 +202,23 @@ class SecurityParsers
         }
 
         return $records;
+    }
+
+    /**
+     * Whether the log of a container is read for the parsers: the policy of docker.logs (null for every
+     * container, else the short names of the images) against its image ("ghcr.io/acme/nginx:1.27" is nginx).
+     *
+     * @param  array<int, string|int>|null  $images
+     */
+    public static function readsImage(?array $images, string $image): bool
+    {
+        if ($images === null) {
+            return true;
+        }
+        $short = strtolower(preg_replace('/:[^:\/]*$/', '', explode('@', $image)[0]) ?? '');
+        $short = substr(strrchr('/'.$short, '/'), 1);
+
+        return in_array($short, array_map('strtolower', array_map('strval', $images)), true);
     }
 
     /**

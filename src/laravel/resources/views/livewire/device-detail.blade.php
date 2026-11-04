@@ -552,6 +552,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    @php($logImages = \App\Support\SecurityScanner::policy()['sources']['docker.logs'] ?? [])
                                     @foreach (collect($docker['containers'])->sortBy(fn ($c) => [($c['State'] ?? '') === 'running' ? 1 : 0, $c['Name'] ?? '']) as $container)
                                         @php
                                             $state = $container['State'] ?? 'unknown';
@@ -566,6 +567,9 @@
                                         <tr wire:key="container-{{ $loop->index }}" x-show="!search || @js(strtolower(($container['Name'] ?? '') . ' ' . ($container['Image'] ?? '') . ' ' . ($container['Ports'] ?? '') . ' ' . $state)).includes(search.toLowerCase())">
                                             <td class="text-break">
                                                 <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
+                                                @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
+                                                    <i class="fas fa-file-lines text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                @endif
                                                 <div class="small text-muted d-md-none">{{ $container['Image'] ?? '' }}</div>
                                             </td>
                                             <td class="d-none d-md-table-cell text-muted text-break">{{ $container['Image'] ?? '' }}</td>
