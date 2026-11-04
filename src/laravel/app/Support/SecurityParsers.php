@@ -204,6 +204,23 @@ class SecurityParsers
     }
 
     /**
+     * Whether the log of a container is read for the parsers: the policy of docker.logs (null for every
+     * container, else the short names of the images) against its image ("ghcr.io/acme/nginx:1.27" is nginx).
+     *
+     * @param  array<int, string|int>|null  $images
+     */
+    public static function readsImage(?array $images, string $image): bool
+    {
+        if ($images === null) {
+            return true;
+        }
+        $short = strtolower(preg_replace('/:[^:\/]*$/', '', explode('@', $image)[0]) ?? '');
+        $short = substr(strrchr('/'.$short, '/'), 1);
+
+        return in_array($short, array_map('strtolower', array_map('strval', $images)), true);
+    }
+
+    /**
      * What the agents have to send for the enabled parsers, so they filter at the source instead of
      * sending whole logs: per log the values of the field the parsers tell records apart by
      * (Identifier on Linux, the event Id on Windows), null when a parser takes any record of it, and an
