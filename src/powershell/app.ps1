@@ -1807,6 +1807,79 @@ function Get-SecurityPosture {
     return $posture
 }
 
+function Get-SecurityNginxLogs {
+    # The new lines of the logs in /var/log/nginx (nginx.log): every *.log of the directory, the error
+    # logs only when the policy names them (the file names its parsers ask for, null for all), each from
+    # the byte its previous read stopped at. The position is "hash of the path:offset:mark of the head" per
+    # file, joined by ";" (the server takes 512 characters: the 12 files written last).
+    param (
+        $Want,
+        [datetime]$Since,
+        $Cursor,
+        [int]$MaxRecords = 20000,
+        [string]$Directory = '/var/log/nginx'
+    )
+
+    $none = @{ logs = @(); cursors = @{} }
+    if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
+    if (-not (Test-Path -Path $Directory -PathType Container)) { return $none }
+
+    $positions = @{}
+    foreach ($item in ("$Cursor" -split ';')) {
+        if ($item -match '^(\w{8}):(\d+):(\w+)$') { $positions[$Matches[1]] = @{ Offset = [int64]$Matches[2]; Mark = $Matches[3] } }
+    }
+    $files = @(Get-ChildItem -Path $Directory -Filter '*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 12)
+    $rows = New-Object System.Collections.Generic.List[object]
+    $moved = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $files) {
+        if ($Want.All) { if ($file.Name -match '^error') { continue } }
+        elseif (@($Want.Ids) -notcontains $file.Name) { continue }
+        $key = Get-SecurityShortHash $file.FullName
+        $key = $key.PadRight(8, '0').Substring(0, 8)
+        try { $stream = [System.IO.File]::Open($file.FullName, 'Open', 'Read', 'ReadWrite') } catch { continue }
+        try {
+            $head = New-Object byte[] ([Math]::Min(128, $stream.Length))
+            [void]$stream.Read($head, 0, $head.Length)
+            $mark = Get-SecurityShortHash ([System.Convert]::ToBase64String($head))
+            $offset = [int64]0
+            $known = $positions[$key]
+            if ($known -and $known.Mark -eq $mark -and $known.Offset -le $stream.Length) { $offset = $known.Offset }
+            elseif (-not $known) { $offset = [Math]::Max(0, $stream.Length - 4MB) }
+            if ($rows.Count -ge $MaxRecords) { if ($known) { $moved.Add("${key}:$($known.Offset):$($known.Mark)") }; continue }
+            [void]$stream.Seek($offset, 'Begin')
+            $buffer = New-Object byte[] ([int][Math]::Min(4MB, $stream.Length - $offset))
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            # Only whole lines: the rest is read next time.
+            $end = [Array]::LastIndexOf($buffer, [byte]10, [Math]::Max(0, $read - 1))
+            $consumed = if ($end -ge 0 -and $read -gt 0) { $end + 1 } else { 0 }
+            foreach ($line in ([System.Text.Encoding]::UTF8.GetString($buffer, 0, $consumed) -split "`n")) {
+                if (-not $line.Trim() -or $rows.Count -ge $MaxRecords) { continue }
+                # The access log has its time in "[04/Nov/2026:10:23:40 +0000]", the error log in "2026/11/04 10:23:40".
+                $time = $null
+                $parsed = [DateTimeOffset]::MinValue
+                if ($line -match '\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})\]') {
+                    if ([DateTimeOffset]::TryParseExact("$($Matches[1]) $($Matches[2]):$($Matches[3])", 'dd/MMM/yyyy:HH:mm:ss zzz', [System.Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$parsed)) { $time = $parsed.UtcDateTime }
+                }
+                elseif ($line -match '^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) ') {
+                    $local = [datetime]::MinValue
+                    if ([datetime]::TryParseExact($Matches[1], 'yyyy/MM/dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$local)) { $time = $local.ToUniversalTime() }
+                }
+                if (-not $time) { $time = [datetime]::UtcNow }
+                if ($time -lt $Since.ToUniversalTime()) { continue }
+                $rows.Add([object[]]@($time.ToString('o'), $file.Name, (ConvertTo-SecurityText $line.TrimEnd("`r") 2000)))
+            }
+            $moved.Add("${key}:$($offset + $consumed):$mark")
+        }
+        finally { $stream.Dispose() }
+    }
+
+    $logs = @()
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'nginx.log'; fields = @('Time', 'File', 'Message'); rows = $rows.ToArray() }) }
+    $cursors = @{}
+    if ($moved.Count -gt 0) { $cursors['nginx.log'] = ($moved -join ';') }
+    return @{ logs = $logs; cursors = $cursors }
+}
+
 function Get-SecurityDockerLogs {
     # The lines the containers wrote to their log since the previous collection (docker.logs), only
     # of the images the collection policy asks for (the short name of an image: no registry, no tag,
@@ -1898,8 +1971,10 @@ function Get-SecurityLogs {
 
     if ($OnLinux) {
         $docker = Get-SecurityDockerLogs -Want (& $wanted 'docker.logs') -Since $Since -Cursor $Cursors['docker.logs'] -MaxRecords $MaxRecords
+        $nginx = Get-SecurityNginxLogs -Want (& $wanted 'nginx.log') -Since $Since -Cursor $Cursors['nginx.log'] -MaxRecords $MaxRecords
+        $extra = @{ logs = @(@($docker.logs) + @($nginx.logs)); cursors = @{} + $docker.cursors + $nginx.cursors }
         $want = & $wanted 'linux.auth'
-        if (-not $want.All -and $want.Ids.Count -eq 0) { return $docker }
+        if (-not $want.All -and $want.Ids.Count -eq 0) { return $extra }
         $ids = if ($want.All) { $null } else { $want.Ids }
         $rows = New-Object System.Collections.Generic.List[object]
         $cursor = $Cursors['linux.auth']
@@ -1966,8 +2041,8 @@ function Get-SecurityLogs {
             }
         }
         if ($rows.Count -gt 0) { $logs.Add(@{ source = 'linux.auth'; fields = @('Time', 'Identifier', 'Pid', 'Message'); rows = $rows.ToArray() }) }
-        foreach ($log in @($docker.logs)) { $logs.Add($log) }
-        foreach ($key in @($docker.cursors.Keys)) { $moved[$key] = $docker.cursors[$key] }
+        foreach ($log in @($extra.logs)) { $logs.Add($log) }
+        foreach ($key in @($extra.cursors.Keys)) { $moved[$key] = $extra.cursors[$key] }
         return @{ logs = $logs.ToArray(); cursors = $moved }
     }
 
@@ -4045,7 +4120,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityNginxLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
