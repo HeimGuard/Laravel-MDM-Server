@@ -552,7 +552,9 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @php($logImages = \App\Support\SecurityScanner::policy()['sources']['docker.logs'] ?? [])
+                                    @php
+                                        $logImages = \App\Support\SecurityScanner::policy()['sources']['docker.logs'] ?? [];
+                                    @endphp
                                     @foreach (collect($docker['containers'])->sortBy(fn ($c) => [($c['State'] ?? '') === 'running' ? 1 : 0, $c['Name'] ?? '']) as $container)
                                         @php
                                             $state = $container['State'] ?? 'unknown';
