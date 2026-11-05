@@ -196,7 +196,7 @@ Route::middleware(['device.signature', 'auth:api'])->group(function () {
         /** @var Device $device */
         $device = $request->user();
         abort_unless($device->signsRequests, 403);
-        $taken = App\Models\DeviceMetric::backfill($device->id, $request->json('samples'));
+        $taken = App\Support\DeviceUsage::backfill($device->id, $request->json('samples'));
         if ($taken > 0) {
             App\Support\LiveUpdates::device($device->id, 'metrics');
         }

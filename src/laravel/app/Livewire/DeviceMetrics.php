@@ -2,7 +2,8 @@
 
 namespace App\Livewire;
 
-use App\Models\DeviceMetric;
+use App\Models\ValueSample;
+use App\Support\DeviceUsage;
 use Carbon\CarbonImmutable;
 use Livewire\Attributes\Url;
 use Livewire\Attributes\On;
@@ -51,28 +52,34 @@ class DeviceMetrics extends Component
         $start = $end->subSeconds($length);
 
         $sums = [];
-        $query = DeviceMetric::query()->where('device_id', $this->selectedDeviceId);
-        if ($length > 86400) {
-            // Up to 30 days of samples every 30 s: averaged by the database, one interval at a time
-            // (portable, each one an index range).
-            for ($i = 0; $i < $points; $i++) {
-                $row = (clone $query)->where('created_at', '>=', $start->addSeconds($i * $bucket))->where('created_at', '<', $start->addSeconds(($i + 1) * $bucket))
-                    ->toBase()->selectRaw('avg(cpu) as cpu, avg(case when memory_total > 0 then 100.0 * memory_used / memory_total else 0 end) as memory, count(*) as samples')->first();
-                if ($row && $row->samples > 0) {
-                    $sums[$i] = ['cpu' => [(float) $row->cpu], 'memory' => [(float) $row->memory]];
+        $definitions = DeviceUsage::definitions((int) $this->selectedDeviceId);
+        if (isset($definitions['cpu'], $definitions['memory.used'], $definitions['memory.total'])) {
+            $ids = ['cpu' => $definitions['cpu']->id, 'used' => $definitions['memory.used']->id, 'total' => $definitions['memory.total']->id];
+            $query = ValueSample::query()->whereIn('definition_id', array_values($ids));
+            if ($length > 86400) {
+                // Up to 30 days of samples every 30 s: averaged by the database, one interval at a time
+                // (portable, each one an index range).
+                for ($i = 0; $i < $points; $i++) {
+                    $average = (clone $query)->where('recorded_at', '>=', $start->addSeconds($i * $bucket))->where('recorded_at', '<', $start->addSeconds(($i + 1) * $bucket))
+                        ->toBase()->selectRaw('definition_id, avg(value) as average, count(*) as samples')->groupBy('definition_id')->get()->keyBy('definition_id');
+                    if (isset($average[$ids['cpu']]) && $average[$ids['cpu']]->samples > 0) {
+                        $total = (float) ($average[$ids['total']]->average ?? 0);
+                        $sums[$i] = ['cpu' => [(float) $average[$ids['cpu']]->average], 'memory' => [$total > 0 ? 100.0 * (float) ($average[$ids['used']]->average ?? 0) / $total : 0]];
+                    }
+                }
+            } else {
+                // The three values of a heartbeat have one time.
+                $moments = [];
+                (clone $query)->where('recorded_at', '>=', $start)->orderBy('recorded_at')->toBase()->get(['definition_id', 'value', 'recorded_at'])
+                    ->each(function ($row) use (&$moments, $ids) {
+                        $moments[$row->recorded_at][array_search($row->definition_id, $ids, true)] = (float) $row->value;
+                    });
+                foreach ($moments as $time => $moment) {
+                    $index = min($points - 1, intdiv(CarbonImmutable::parse($time)->getTimestamp() - $start->getTimestamp(), $bucket));
+                    $sums[$index]['cpu'][] = $moment['cpu'] ?? 0;
+                    $sums[$index]['memory'][] = ($moment['total'] ?? 0) > 0 ? ($moment['used'] ?? 0) / $moment['total'] * 100 : 0;
                 }
             }
-        } else {
-            (clone $query)
-                ->where('created_at', '>=', $start)
-                ->orderBy('created_at')
-                ->toBase()
-                ->lazy()
-                ->each(function ($row) use (&$sums, $start, $bucket, $points) {
-                    $index = min($points - 1, intdiv(CarbonImmutable::parse($row->created_at)->getTimestamp() - $start->getTimestamp(), $bucket));
-                    $sums[$index]['cpu'][] = (float) $row->cpu;
-                    $sums[$index]['memory'][] = $row->memory_total > 0 ? $row->memory_used / $row->memory_total * 100 : 0;
-                });
         }
 
         $format = $length >= 86400 ? 'd.m. H:i' : 'H:i';
@@ -83,7 +90,7 @@ class DeviceMetrics extends Component
             $labels[] = $start->addSeconds(($i + 1) * $bucket)->format($format);
         }
 
-        $latest = DeviceMetric::query()->where('device_id', $this->selectedDeviceId)->latest('created_at')->first();
+        $latest = DeviceUsage::latest((int) $this->selectedDeviceId);
 
         return view('livewire.device-metrics', [
             'cpu' => $cpu,
