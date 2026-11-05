@@ -10,6 +10,10 @@ return [
     // key and accept only responses, commands and agent updates signed with it.
     'signing_key' => env('MDM_SIGNING_KEY'),
 
+    // The SQLite file copied into PostgreSQL when DB_CONNECTION is pgsql (see App\Support\SqliteImport); the
+    // database.sqlite of database/ or storage/ when not set.
+    'sqlite_import_file' => env('SQLITE_IMPORT_FILE'),
+
     // Reject agents that do not sign their requests yet (older than 1.7.0). They can no longer be
     // updated remotely then, only reinstalled.
     'require_signed_agents' => (bool) env('MDM_REQUIRE_SIGNED_AGENTS', false),

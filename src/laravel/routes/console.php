@@ -33,6 +33,18 @@ Artisan::command('mdm:signing-key', function () {
     $this->info('Fingerprint: '.App\Support\Signing::fingerprint());
 })->purpose('Create the server signing key (if needed) and show its fingerprint');
 
+// Prints the SQLite file that has to be copied into the PostgreSQL database (the entrypoint does it with pgloader),
+// exit code 1 and no output when there is nothing to copy.
+Artisan::command('mdm:sqlite-import-source', function () {
+    $path = App\Support\SqliteImport::pending();
+    if ($path === null) {
+        return 1;
+    }
+    $this->line($path);
+
+    return 0;
+})->purpose('Show the SQLite database to import into PostgreSQL, if any');
+
 // Creates a user or sets a new password, e.g. docker exec -it mdm php artisan mdm:user admin@example.com
 Artisan::command('mdm:user {email} {--name= : Name of a new user} {--password= : Password (asked when left out)}', function (string $email) {
     $validator = Illuminate\Support\Facades\Validator::make(['email' => $email], ['email' => 'required|email|max:255']);
