@@ -18,6 +18,7 @@ RUN apk add --no-cache \
         php84-openssl \
         php84-pcntl \
         php84-pdo_mysql \
+        php84-pdo_pgsql \
         php84-pdo_sqlite \
         php84-posix \
         php84-session \
@@ -58,7 +59,8 @@ RUN npm run build
 
 FROM php AS runtime
 
-RUN apk add --no-cache nginx php84-fpm supervisor \
+# pgloader: copies an SQLite database into PostgreSQL once, when DB_CONNECTION is changed to pgsql (entrypoint).
+RUN apk add --no-cache nginx php84-fpm supervisor pgloader \
     && adduser -D -H -u 1000 -s /sbin/nologin app \
     && mkdir -p /run/nginx /var/lib/nginx/tmp /var/log/nginx \
     && chown -R app:app /run/nginx /var/lib/nginx /var/log/nginx

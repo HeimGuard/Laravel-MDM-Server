@@ -143,4 +143,41 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     done
 fi
 
+# DB_CONNECTION was changed from SQLite to PostgreSQL: the migrations above have created the tables, now the
+# data of the SQLite database is copied into them once (pgloader, data only, tables truncated first, sequences
+# reset). `php artisan mdm:sqlite-import-source` names the file, and only when the PostgreSQL database has no user
+# yet, so a database that is in use is never overwritten. The SQLite file stays next to its place as *.imported.
+# SQLITE_IMPORT=off switches it off. pgloader takes the connection from PG* (no password in a file or arguments);
+# it disables the triggers of the tables while it loads, which PostgreSQL allows a superuser only (the user of
+# POSTGRES_USER of the postgres image is one).
+if [ "$DB_CONNECTION" = "pgsql" ] && [ "${SQLITE_IMPORT:-auto}" != "off" ] && [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+    source=$(php artisan mdm:sqlite-import-source 2>/dev/null) || source=""
+    source=$(printf '%s\n' "$source" | tail -n 1)
+    if [ -n "$source" ] && [ -f "$source" ]; then
+        if [ -n "${DB_URL:-}" ]; then
+            echo "Warning: DB_URL is set, the SQLite database $source is not copied (set DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME and DB_PASSWORD instead)" >&2
+        else
+            echo "Copying $source into PostgreSQL (${DB_DATABASE:-laravel} on ${DB_HOST:-127.0.0.1}) with pgloader"
+            echo "started $source" > storage/sqlite-import.state
+            load=storage/sqlite-import.load
+            cat > "$load" <<EOF_LOAD
+LOAD DATABASE
+    FROM sqlite://$source
+    INTO postgresql:///${DB_DATABASE:-laravel}
+WITH include no drop, data only, truncate, reset sequences, create no tables, create no indexes
+EXCLUDING TABLE NAMES MATCHING 'migrations', 'sqlite_sequence', ~/^sqlite_/
+;
+EOF_LOAD
+            if PGHOST="${DB_HOST:-127.0.0.1}" PGPORT="${DB_PORT:-5432}" PGUSER="${DB_USERNAME:-}" PGPASSWORD="${DB_PASSWORD:-}" pgloader --on-error-stop "$load"; then
+                echo "done $source" > storage/sqlite-import.state
+                mv "$source" "$source.imported" 2>/dev/null || echo "Warning: could not rename $source, it is not copied again (storage/sqlite-import.state)" >&2
+                echo "SQLite database copied, the file is kept as $source.imported"
+            else
+                echo "Copying the SQLite database failed (the next start tries again; SQLITE_IMPORT=off skips it)" >&2
+                exit 1
+            fi
+        fi
+    fi
+fi
+
 exec supervisord -c /etc/supervisord.conf

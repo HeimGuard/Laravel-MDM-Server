@@ -1,0 +1,43 @@
+# PostgreSQL instead of SQLite: DB_PASSWORD=... docker compose -f docker-compose.postgres.yml up -d
+# An existing SQLite database (storage/database.sqlite of the storage volume) is copied into PostgreSQL once on
+# the first start with it (pgloader, see docs/server.md); the file is kept as database.sqlite.imported.
+services:
+  app:
+    image: ghcr.io/heimguard/laravel-mdm-server:latest
+    build:
+      context: .
+      dockerfile: src/docker/Dockerfile
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-mdm}
+      DB_USERNAME: ${DB_USERNAME:-mdm}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    ports:
+      - "8000:8000"  # web and Reverb WebSocket (/app)
+    volumes:
+      - storage:/var/www/storage
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-mdm}
+      POSTGRES_USER: ${DB_USERNAME:-mdm}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  storage:
+  db-data:
