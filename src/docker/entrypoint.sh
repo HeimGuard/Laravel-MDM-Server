@@ -174,8 +174,11 @@ EOF_LOAD
                 [ ! -e "$backup" ] || backup="$source.$(date +%Y%m%d%H%M%S).bkp"
                 if mv "$source" "$backup" 2>/dev/null; then
                     echo "SQLite database copied, the file is kept as $backup"
+                elif cp "$source" "$backup" 2>/dev/null; then
+                    # A file mounted into the container (bind mount) cannot be renamed: keep a copy next to it.
+                    echo "SQLite database copied, $source could not be renamed (mounted file?), a copy is kept as $backup; it is not copied again (storage/sqlite-import.state)"
                 else
-                    echo "Warning: could not rename $source, it is not copied again (storage/sqlite-import.state)" >&2
+                    echo "Warning: could not rename or copy $source, it is not copied again (storage/sqlite-import.state)" >&2
                 fi
             else
                 echo "Copying the SQLite database failed (the next start tries again; SQLITE_IMPORT=off skips it)" >&2
