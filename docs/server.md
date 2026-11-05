@@ -80,7 +80,7 @@ data is copied once on the next start: after the migrations have created the tab
 database (`database/database.sqlite` or `storage/database.sqlite`, or `SQLITE_IMPORT_FILE`) into them (data only,
 tables truncated first, sequences reset). It is done only when the SQLite database has users or devices and the
 PostgreSQL database has no user yet, so a database that is in use is never overwritten. The SQLite file is kept as
-`*.imported`; `storage/sqlite-import.state` says what was done. A copy that failed stops the start with the error of
+`*.bkp`; `storage/sqlite-import.state` says what was done. A copy that failed stops the start with the error of
 pgloader and is tried again on the next one; `SQLITE_IMPORT=off` skips it. It needs `DB_HOST`, `DB_PORT`,
 `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD` (not `DB_URL`), and a user that may disable triggers while the data
 is loaded (a superuser, such as `POSTGRES_USER` of the official image). Make a copy of the `storage` volume first.

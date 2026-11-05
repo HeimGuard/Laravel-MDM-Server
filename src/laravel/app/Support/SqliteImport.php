@@ -10,7 +10,7 @@ use Throwable;
  * What to copy when DB_CONNECTION is changed from SQLite to PostgreSQL. The entrypoint asks for it (artisan
  * mdm:sqlite-import-source) after the migrations have created the tables of the PostgreSQL database, and copies the data
  * with pgloader (data only, tables truncated first, sequences reset). The file is not deleted afterwards, it gets the
- * extension .imported.
+ * extension .bkp.
  *
  * Copied once: when the SQLite file has users or devices and the PostgreSQL database has no users (a database that is in use
  * is never overwritten). The state file says what the entrypoint did: "started <file>" (an interrupted copy is repeated: it

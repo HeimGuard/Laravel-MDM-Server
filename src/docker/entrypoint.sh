@@ -146,7 +146,7 @@ fi
 # DB_CONNECTION was changed from SQLite to PostgreSQL: the migrations above have created the tables, now the
 # data of the SQLite database is copied into them once (pgloader, data only, tables truncated first, sequences
 # reset). `php artisan mdm:sqlite-import-source` names the file, and only when the PostgreSQL database has no user
-# yet, so a database that is in use is never overwritten. The SQLite file stays next to its place as *.imported.
+# yet, so a database that is in use is never overwritten. The SQLite file stays next to its place as *.bkp.
 # SQLITE_IMPORT=off switches it off. pgloader takes the connection from PG* (no password in a file or arguments);
 # it disables the triggers of the tables while it loads, which PostgreSQL allows a superuser only (the user of
 # POSTGRES_USER of the postgres image is one).
@@ -170,8 +170,13 @@ EXCLUDING TABLE NAMES LIKE 'migrations', 'sqlite_%'
 EOF_LOAD
             if PGHOST="${DB_HOST:-127.0.0.1}" PGPORT="${DB_PORT:-5432}" PGUSER="${DB_USERNAME:-}" PGPASSWORD="${DB_PASSWORD:-}" pgloader --on-error-stop "$load"; then
                 echo "done $source" > storage/sqlite-import.state
-                mv "$source" "$source.imported" 2>/dev/null || echo "Warning: could not rename $source, it is not copied again (storage/sqlite-import.state)" >&2
-                echo "SQLite database copied, the file is kept as $source.imported"
+                backup="$source.bkp"
+                [ ! -e "$backup" ] || backup="$source.$(date +%Y%m%d%H%M%S).bkp"
+                if mv "$source" "$backup" 2>/dev/null; then
+                    echo "SQLite database copied, the file is kept as $backup"
+                else
+                    echo "Warning: could not rename $source, it is not copied again (storage/sqlite-import.state)" >&2
+                fi
             else
                 echo "Copying the SQLite database failed (the next start tries again; SQLITE_IMPORT=off skips it)" >&2
                 exit 1
