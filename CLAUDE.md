@@ -34,3 +34,4 @@
 ## Git
 
 - Develop on the branch the session names, push there, open a pull request only when asked.
+- No `Co-Authored-By:` line in commit messages, pull request descriptions or any other message.
