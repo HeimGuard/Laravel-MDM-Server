@@ -779,6 +779,7 @@
     "The first parser that matches a record makes its event; events are grouped by type, user and source and go to the detection rules of the events source.": "Událost vytvoří první parser, který na záznam pasuje; události se seskupují podle typu, uživatele a zdroje a jdou do detekčních pravidel zdroje událostí.",
     "The latest run of a remediation script failed": "Poslední spuštění nápravného skriptu selhalo",
     "The list of updates changed, try again.": "Seznam aktualizací se změnil, zkuste to znovu.",
+    "The log of this container is read and parsed for events": "Log tohoto kontejneru se čte a zpracovává na události",
     "The network is not known.": "Síť není známá.",
     "The parser does not match this record.": "Parser na tento záznam nepasuje.",
     "The portal takes no ARP tables from the agents and sends no scans, so unknown devices are not updated.": "Portál nepřebírá od agentů tabulky ARP a neposílá skeny, takže neznámá zařízení se neaktualizují.",
