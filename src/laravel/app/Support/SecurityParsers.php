@@ -24,7 +24,7 @@ namespace App\Support;
  */
 class SecurityParsers
 {
-    /** What the agents send (agents 1.17.0+), with the fields of a record. */
+    /** What the agents send (agents 1.17.0+; docker.logs and web.log 1.31.0+), with the fields of a record. */
     public const LOG_SOURCES = [
         'linux.auth' => ['label' => 'Linux: auth log (journal or auth.log)', 'fields' => ['Time', 'Identifier', 'Pid', 'Message'], 'key' => 'Identifier'],
         'docker.logs' => ['label' => 'Docker: container logs', 'fields' => ['Time', 'Container', 'Image', 'Message'], 'key' => 'Image'],
