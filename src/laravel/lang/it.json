@@ -779,6 +779,7 @@
     "The first parser that matches a record makes its event; events are grouped by type, user and source and go to the detection rules of the events source.": "Il primo parser che corrisponde a una voce crea il suo evento; gli eventi sono raggruppati per tipo, utente e sorgente e vanno alle regole di rilevamento della sorgente eventi.",
     "The latest run of a remediation script failed": "L'ultima esecuzione di uno script di correzione non è riuscita",
     "The list of updates changed, try again.": "L'elenco degli aggiornamenti è cambiato, riprova.",
+    "The log of this container is read and parsed for events": "Il log di questo container viene letto e analizzato per generare eventi",
     "The network is not known.": "La rete non è nota.",
     "The parser does not match this record.": "Il parser non corrisponde a questa voce.",
     "The portal takes no ARP tables from the agents and sends no scans, so unknown devices are not updated.": "Il portale non prende tabelle ARP dagli agent e non invia scansioni, quindi i dispositivi sconosciuti non vengono aggiornati.",

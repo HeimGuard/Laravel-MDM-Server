@@ -779,6 +779,7 @@
     "The first parser that matches a record makes its event; events are grouped by type, user and source and go to the detection rules of the events source.": "El primer analizador que coincide con una entrada crea su evento; los eventos se agrupan por tipo, usuario y fuente y van a las reglas de detección de la fuente de eventos.",
     "The latest run of a remediation script failed": "La última ejecución de un script de corrección falló",
     "The list of updates changed, try again.": "La lista de actualizaciones cambió, inténtelo de nuevo.",
+    "The log of this container is read and parsed for events": "El registro de este contenedor se lee y se analiza para generar eventos",
     "The network is not known.": "La red no se conoce.",
     "The parser does not match this record.": "El analizador no coincide con esta entrada.",
     "The portal takes no ARP tables from the agents and sends no scans, so unknown devices are not updated.": "El portal no toma tablas ARP de los agentes ni envía escaneos, así que los dispositivos desconocidos no se actualizan.",
