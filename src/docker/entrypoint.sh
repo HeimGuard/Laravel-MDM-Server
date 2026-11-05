@@ -165,7 +165,7 @@ LOAD DATABASE
     FROM sqlite://$source
     INTO postgresql:///${DB_DATABASE:-laravel}
 WITH include no drop, data only, truncate, reset sequences, create no tables, create no indexes
-EXCLUDING TABLE NAMES MATCHING 'migrations', 'sqlite_sequence', ~/^sqlite_/
+EXCLUDING TABLE NAMES LIKE 'migrations', 'sqlite_%'
 ;
 EOF_LOAD
             if PGHOST="${DB_HOST:-127.0.0.1}" PGPORT="${DB_PORT:-5432}" PGUSER="${DB_USERNAME:-}" PGPASSWORD="${DB_PASSWORD:-}" pgloader --on-error-stop "$load"; then
