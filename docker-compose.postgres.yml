@@ -16,6 +16,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
     ports:
       - "8000:8000"  # web and Reverb WebSocket (/app)
+      - "514:5514/udp"  # syslog from other servers and devices (only from the IP addresses of devices)
+      - "514:5514/tcp"
     volumes:
       - storage:/var/www/storage
     restart: unless-stopped

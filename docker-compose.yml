@@ -6,6 +6,8 @@ services:
     container_name: mdm
     ports:
       - "8000:8000" # web and agent WebSocket (/app)
+      - "514:5514/udp"  # syslog from other servers and devices (only from the IP addresses of devices)
+      - "514:5514/tcp"
     volumes:
       - storage:/var/www/storage
     restart: unless-stopped
