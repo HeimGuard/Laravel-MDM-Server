@@ -3,7 +3,11 @@
 namespace App\Models;
 
 use App\Support\AgentScript;
+use App\Support\DeviceUsage;
+use App\Support\PingUsage;
+use App\Support\ValueRecorder;
 use Carbon\CarbonInterval;
+use App\Models\Concerns\HasValue;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 
 class Device extends Model
 {
-    use HasFactory;
+    use HasFactory, HasValue;
 
     public const COMMANDS = DeviceCommand::COMMANDS;
 
@@ -128,8 +132,8 @@ class Device extends Model
         // does not touch updated_at (time of the last report) or the report data.
         $updated = static::query()->whereKey($id)->toBase()->update($values);
 
-        if ($updated && $metrics = DeviceMetric::sanitize($metrics)) {
-            DeviceMetric::query()->create($metrics + ['device_id' => $id]);
+        if ($updated && $metrics = DeviceUsage::sanitize($metrics)) {
+            DeviceUsage::record($id, $metrics);
         }
         // Inside Reverb the listener announces it itself (see LiveUpdates::fromReverb).
         if ($updated && $announce) {
@@ -378,11 +382,6 @@ class Device extends Model
         $target = $params ? DeviceCommand::targetOf($command, $params) : null;
 
         return $commands->first(fn (DeviceCommand $active) => $active->command === $command && ($target === null || $active->target === $target));
-    }
-
-    public function metrics(): HasMany
-    {
-        return $this->hasMany(DeviceMetric::class);
     }
 
     /**
@@ -1546,7 +1545,7 @@ class Device extends Model
                 DeviceCommand::completeWakes($id);
             }
             static::query()->whereKey($id)->toBase()->update($values);
-            PingResult::query()->create(['device_id' => $id, 'up' => $up, 'rtt' => $up ? $rtt : null, 'relay_id' => $relay->id]);
+            PingUsage::record($id, $up, $rtt);
             \App\Support\LiveUpdates::device($id, 'ping');
             $taken++;
         }
@@ -1569,26 +1568,37 @@ class Device extends Model
             return 0;
         }
         $allowed = collect(self::pingTargetsFor($relay))->pluck('id')->all();
-        $oldest = now()->subDays(PingResult::RETENTION_DAYS)->getTimestamp();
+        $oldest = now()->subDays(DeviceUsage::retentionDays())->getTimestamp();
         $newest = now()->addMinute()->getTimestamp();
-        $taken = 0;
-        $touched = [];
+        // What can be taken, per device and time (a ping next to one already stored is skipped below).
+        $accepted = [];
         foreach (array_slice($results, 0, self::PING_BACKFILL_MAX) as $result) {
             $id = is_array($result) && is_int($result['id'] ?? null) ? $result['id'] : null;
             $at = is_array($result) && is_numeric($result['at'] ?? null) ? (int) $result['at'] : null;
             if ($id === null || $at === null || ! in_array($id, $allowed, true) || $at < $oldest || $at > $newest) {
                 continue;
             }
-            $near = PingResult::query()->where('device_id', $id)
-                ->whereBetween('created_at', [Carbon::createFromTimestamp($at - 10, config('app.timezone')), Carbon::createFromTimestamp($at + 10, config('app.timezone'))])->exists();
-            if ($near) {
-                continue;
-            }
             $up = filter_var($result['up'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $rtt = is_numeric($result['rtt'] ?? null) ? max(0, min(60000, round((float) $result['rtt'], 1))) : null;
-            PingResult::query()->insert(['device_id' => $id, 'up' => $up, 'rtt' => $up ? $rtt : null, 'relay_id' => $relay->id, 'created_at' => Carbon::createFromTimestamp($at, config('app.timezone'))]);
-            $touched[$id] = true;
-            $taken++;
+            $accepted[$id][$at] = [$up, $rtt];
+        }
+        $taken = 0;
+        $touched = [];
+        foreach ($accepted as $id => $byTime) {
+            ksort($byTime);
+            $stored = DeviceUsage::storedAt($id, 'ping.up', array_key_first($byTime) - 10, array_key_last($byTime) + 10);
+            $moments = [];
+            foreach ($byTime as $at => [$up, $rtt]) {
+                if (! DeviceUsage::near($stored, $at)) {
+                    $moments[] = [Carbon::createFromTimestamp($at, config('app.timezone')), PingUsage::values($up, $rtt)];
+                    $stored[] = $at;
+                    $taken++;
+                }
+            }
+            if ($moments !== []) {
+                ValueRecorder::recordMany((new static)->getMorphClass(), $id, $moments);
+                $touched[$id] = true;
+            }
         }
         foreach (array_keys($touched) as $id) {
             \App\Support\LiveUpdates::device($id, 'ping');

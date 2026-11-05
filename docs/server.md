@@ -139,3 +139,26 @@ Edge or Safari over HTTPS and choose *Install* / *Add to Home Screen*. The servi
 nothing but an offline page. Change the icon with
 `php artisan pwa:make-icons --icon=resources/images/icon.png` (the vector source is
 `resources/images/icon.svg`, also served as `favicon.svg`).
+
+## Measured values
+
+CPU, memory and ping (and later anything else that is measured, e.g. the usage of each disk) are stored as measured
+values of a model (`App\Models\Concerns\HasValue`, used by `Device`): a **definition** says what is measured, its
+**samples** are the history.
+
+| Table | One row is | Columns |
+|-------|-----------|---------|
+| `value_definitions` | one measured value of one model, e.g. device 9, `disk.used_pct`, `C:` | `valuable_type`, `valuable_id`, `key`, `name` (empty for what there is one of), `unit`, `last_value`, `last_at` (the newest sample: the current value costs no query of the history) |
+| `value_samples` | one measurement | `definition_id`, `value`, `recorded_at` |
+
+```php
+$device->recordValues(['cpu' => 41.5, 'memory.used' => 3221225472]);
+$device->recordValues([['key' => 'disk.used_pct', 'name' => 'C:', 'value' => 61, 'unit' => '%']]);
+$device->latestValue('disk.used_pct', 'C:');                         // 61.0
+$device->valueHistory('cpu', since: now()->subHour())->get();         // the samples
+```
+
+A new kind of value is a new key: no table and no migration. Keys in use: `cpu` (%), `memory.used` and `memory.total`
+(bytes) from the heartbeats of the agents, `ping.up` (1 / 0) and `ping.rtt` (ms) from the pings of ping-only
+devices. How many days the history is kept per key is in `config/values.php` (30 days for all of them, pruned
+daily). The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
