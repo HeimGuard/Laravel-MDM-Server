@@ -24,10 +24,11 @@ namespace App\Support;
  */
 class SecurityParsers
 {
-    /** What the agents send (agents 1.17.0+; docker.logs and web.log 1.31.0+), with the fields of a record. */
+    /** What the agents send (agents 1.17.0+; docker.logs and web.log 1.31.0+, files 1.32.0+), with the fields of a record. */
     public const LOG_SOURCES = [
         'linux.auth' => ['label' => 'Linux: auth log (journal or auth.log)', 'fields' => ['Time', 'Identifier', 'Pid', 'Message'], 'key' => 'Identifier'],
         'docker.logs' => ['label' => 'Docker: container logs', 'fields' => ['Time', 'Container', 'Image', 'Message'], 'key' => 'Image'],
+        'files' => ['label' => 'Linux: watched files (accounts, sudo, sshd)', 'fields' => ['Time', 'Path', 'Hash', 'Previous'], 'key' => 'Path'],
         'web.log' => ['label' => 'Web servers and proxies: logs in /var/log (nginx, Apache, ...)', 'fields' => ['Time', 'File', 'Message'], 'key' => 'File'],
         'windows.security' => ['label' => 'Windows: Security log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.system' => ['label' => 'Windows: System log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],

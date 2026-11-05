@@ -674,6 +674,23 @@ class SecurityScannerTest extends TestCase
         $this->assertSame([], SecurityParsers::policy([])['sources']['docker.logs']);
     }
 
+    public function test_parsers_read_the_changes_of_watched_files(): void
+    {
+        $parser = [
+            'kind' => 'parser', 'key' => 'org.files-changed', 'name' => 'File changed', 'source' => 'files',
+            'when' => ['field' => 'Path', 'op' => 'in', 'value' => ['/etc/passwd', '/etc/shadow']],
+            'event' => ['type' => 'file_changed', 'source' => '{Path}', 'message' => '{Path} changed ({Previous} -> {Hash})'],
+        ];
+        $this->assertSame([], SecurityParsers::errors($parser));
+        $record = fn (string $path) => ['Time' => '2026-11-05T10:00:00Z', 'Path' => $path, 'Hash' => 'bbbb', 'Previous' => 'aaaa'];
+        $events = SecurityParsers::run([['source' => 'files', 'records' => [$record('/etc/passwd'), $record('/etc/shadow'), $record('/etc/hosts')]]], [$parser]);
+
+        $this->assertSame(['/etc/passwd', '/etc/shadow'], array_column($events, 'Source'));
+        $this->assertSame('/etc/passwd changed (aaaa -> bbbb)', $events[0]['Message']);
+        // Only the watched paths the parsers name are asked for.
+        $this->assertSame(['/etc/passwd', '/etc/shadow'], SecurityParsers::policy([$parser])['sources']['files']);
+    }
+
     public function test_the_policy_tells_the_agent_which_log_records_to_send(): void
     {
         $this->device();

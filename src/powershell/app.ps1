@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.31.0'
+$AgentVersion = '1.32.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1645,13 +1645,13 @@ function Get-SecurityAdmins {
             $entry = $line -split ':'
             if ($entry.Count -lt 7) { continue }
             $shells[$entry[0]] = $entry[6]
-            if ($entry[2] -eq '0') { [PSCustomObject]@{ Name = $entry[0]; Source = 'uid 0'; Enabled = $entry[6] -notmatch '(nologin|false)$' } }
+            if ($entry[2] -eq '0') { [PSCustomObject]@{ Name = $entry[0]; Source = 'uid 0'; Enabled = $entry[6] -notmatch '(nologin|false)$'; Builtin = $entry[0] -eq 'root' } }
         }
         foreach ($group in 'sudo', 'wheel', 'admin') {
             $entry = "$(getent group $group 2>$null)" -split ':'
             if ($entry.Count -lt 4 -or -not $entry[3]) { continue }
             foreach ($name in ($entry[3] -split ',' | Where-Object { $_ })) {
-                [PSCustomObject]@{ Name = $name; Source = "group $group"; Enabled = -not ("$($shells[$name])" -match '(nologin|false)$') }
+                [PSCustomObject]@{ Name = $name; Source = "group $group"; Enabled = -not ("$($shells[$name])" -match '(nologin|false)$'); Builtin = $false }
             }
         }
         return
@@ -1676,7 +1676,7 @@ function Get-SecurityAdmins {
     $local = @{}
     try { foreach ($user in @(Get-LocalUser -ErrorAction Stop)) { $local["$($user.SID)"] = $user.Enabled } } catch { }
     foreach ($member in $members) {
-        [PSCustomObject]@{ Name = $member.Name; Source = $member.Source; Enabled = if ($member.Sid -and $local.ContainsKey($member.Sid)) { [bool]$local[$member.Sid] } else { $null } }
+        [PSCustomObject]@{ Name = $member.Name; Source = $member.Source; Enabled = if ($member.Sid -and $local.ContainsKey($member.Sid)) { [bool]$local[$member.Sid] } else { $null }; Builtin = if ($member.Sid) { [bool]("$($member.Sid)" -match '-500$') } else { $null } }
     }
 }
 
@@ -1720,6 +1720,14 @@ function Get-SecurityPosture {
                     if ($line -match '^passwordauthentication\s+(\S+)') { $posture.SshPasswordAuthentication = $Matches[1] -eq 'yes' }
                 }
             }
+        }
+        if (-not $InContainer -and (Test-Path -Path /etc/shadow)) {
+            # root has a password that can be used (not locked with ! and not disabled with *): su and the console accept it.
+            try {
+                $root = @(Get-Content -Path /etc/shadow -ErrorAction Stop | Where-Object { $_ -like 'root:*' } | Select-Object -First 1)
+                if ($root) { $secret = ("$($root[0])" -split ':')[1]; $posture.RootPasswordSet = [bool]($secret -and $secret -notmatch '^[!*]') }
+            }
+            catch { }
         }
         if (Test-Path -Path /etc/apt/apt.conf.d) {
             $periodic = (Get-Content -Path /etc/apt/apt.conf.d/* -Raw -ErrorAction SilentlyContinue) -join "`n"
@@ -1805,6 +1813,55 @@ function Get-SecurityPosture {
     if ($installed) { $posture.DaysSinceUpdate = [int]((Get-Date) - $installed[0].InstalledOn).TotalDays }
 
     return $posture
+}
+
+function Get-SecurityFileChanges {
+    # Linux: a record for each watched file (accounts, sudo, sshd, the keys of root) whose SHA-256 is not the one of the
+    # previous collection the server took. The position is "id=hash;..." of all of them (the first 16 digits of the hash,
+    # "-" for a file that is not there), so a record that did not reach the server is made again; without a position the
+    # first collection only remembers. Only the paths the collection policy asks for (null: all of them).
+    param (
+        $Want,
+        $Cursor
+    )
+
+    $none = @{ logs = @(); cursors = @{} }
+    if (-not $Want -or (-not $Want.All -and $Want.Ids.Count -eq 0)) { return $none }
+    $files = [ordered]@{ p = '/etc/passwd'; s = '/etc/shadow'; g = '/etc/group'; u = '/etc/sudoers'; d = '/etc/ssh/sshd_config'; k = '/root/.ssh/authorized_keys' }
+    $previous = @{}
+    foreach ($item in ("$Cursor" -split ';')) {
+        if ($item -match '^([a-z])=([0-9a-f]{16}|-)$') { $previous[$Matches[1]] = $Matches[2] }
+    }
+    $rows = New-Object System.Collections.Generic.List[object]
+    $position = New-Object System.Collections.Generic.List[string]
+    $now = [DateTime]::UtcNow.ToString('o')
+    foreach ($id in @($files.Keys)) {
+        $path = $files[$id]
+        if (-not $Want.All -and @($Want.Ids) -notcontains $path) { continue }
+        $hash = '-'
+        $failed = $false
+        try {
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant().Substring(0, 16)
+            }
+        }
+        catch { $failed = $true }
+        if ($failed) {
+            # Not readable now: what was known stays.
+            if ($previous.ContainsKey($id)) { $position.Add("$id=$($previous[$id])") }
+            continue
+        }
+        if ($previous.ContainsKey($id) -and $previous[$id] -ne $hash) {
+            $rows.Add([object[]]@($now, $path, $hash, $previous[$id]))
+        }
+        $position.Add("$id=$hash")
+    }
+
+    $logs = @()
+    if ($rows.Count -gt 0) { $logs = @(@{ source = 'files'; fields = @('Time', 'Path', 'Hash', 'Previous'); rows = $rows.ToArray() }) }
+    $cursors = @{}
+    if ($position.Count -gt 0) { $cursors['files'] = ($position -join ';') }
+    return @{ logs = $logs; cursors = $cursors }
 }
 
 function Get-SecurityWebLogs {
@@ -1974,7 +2031,8 @@ function Get-SecurityLogs {
     if ($OnLinux) {
         $docker = Get-SecurityDockerLogs -Want (& $wanted 'docker.logs') -Since $Since -Cursor $Cursors['docker.logs'] -MaxRecords $MaxRecords
         $web = Get-SecurityWebLogs -Want (& $wanted 'web.log') -Since $Since -Cursor $Cursors['web.log'] -MaxRecords $MaxRecords
-        $extra = @{ logs = @(@($docker.logs) + @($web.logs)); cursors = @{} + $docker.cursors + $web.cursors }
+        $changes = Get-SecurityFileChanges -Want (& $wanted 'files') -Cursor $Cursors['files']
+        $extra = @{ logs = @(@($docker.logs) + @($web.logs) + @($changes.logs)); cursors = @{} + $docker.cursors + $web.cursors + $changes.cursors }
         $want = & $wanted 'linux.auth'
         if (-not $want.All -and $want.Ids.Count -eq 0) { return $extra }
         $ids = if ($want.All) { $null } else { $want.Ids }
@@ -4122,7 +4180,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityFileChanges', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
@@ -4180,9 +4238,9 @@ $SecurityFields = @{
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
-    admins    = @('Name', 'Source', 'Enabled')
+    admins    = @('Name', 'Source', 'Enabled', 'Builtin')
     os        = @('Name', 'Version', 'Id', 'Kernel', 'Codename', 'Arch')
-    posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors')
+    posture   = @('FirewallEnabled', 'AntivirusName', 'AntivirusEnabled', 'AntivirusUpToDate', 'RealTimeProtection', 'DiskEncrypted', 'SecureBoot', 'RdpEnabled', 'RdpNla', 'Smb1Enabled', 'UacEnabled', 'GuestEnabled', 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors', 'RootPasswordSet')
 }
 $SecurityKeyFields = @{
     software  = @('Name', 'Source')
@@ -4215,7 +4273,7 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors', 'Builtin', 'RootPasswordSet'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
         if ($field -in $optional -and $value -eq '') { continue }

@@ -42,7 +42,7 @@ class SecurityRules
      */
     public const OPTIONAL_FIELDS = [
         'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening',
-        'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
+        'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors', 'Builtin', 'RootPasswordSet',
     ];
 
     /**
@@ -79,7 +79,8 @@ class SecurityRules
         ],
         'admins' => [
             'label' => 'Administrators',
-            'fields' => ['Name', 'Source', 'Enabled'],
+            // Builtin (agents 1.32.0+): the built-in account (Windows RID 500, root on Linux).
+            'fields' => ['Name', 'Source', 'Enabled', 'Builtin'],
             'key' => ['Name'],
         ],
         'os' => [
@@ -97,6 +98,8 @@ class SecurityRules
                 'AutoLogon', 'SshRootLogin', 'SshPasswordAuthentication', 'AutomaticUpdates', 'DaysSinceUpdate',
                 // Agents 1.28.0+: the firewall that is on (or the ones installed and off), the mount points that are not encrypted, the result of apt-get update.
                 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
+                // Agents 1.32.0+ (Linux): root has a password that can be used (not locked, not disabled).
+                'RootPasswordSet',
             ],
             'key' => [],
         ],
