@@ -15,6 +15,12 @@
   otherwise it does not exist in the job.
 - `pwsh` is not available in the cloud session: say that the agent code was not run.
 
+## UI texts
+
+- Every new text of the UI (`__('...')`, `@lang`, `{{ __(...) }}`) needs a translation in **every** file of
+  `src/laravel/lang/*.json` (cs, de, es, fr, it): `LocaleTest::test_every_text_is_translated` fails otherwise.
+  One line per language, same placeholders (`:name`), in the place where the neighbouring keys are.
+
 ## Log sources and parsers
 
 - The agent does not interpret logs. A source (`linux.auth`, `docker.logs`, `web.log`, `windows.*`) is
