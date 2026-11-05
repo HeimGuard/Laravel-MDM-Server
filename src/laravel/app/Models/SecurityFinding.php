@@ -109,9 +109,10 @@ class SecurityFinding extends Model
         }
         if (($search = trim($search)) !== '') {
             $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
-            $query->where(fn ($q) => $q->where('message', 'like', $like)
-                ->orWhereHas('device', fn ($device) => $device->where('name', 'like', $like)->orWhere('friendly_name', 'like', $like))
-                ->orWhereHas('rule', fn ($rule) => $rule->where('name', 'like', $like)));
+            // whereLike is case-insensitive on every database (PostgreSQL's LIKE is not).
+            $query->where(fn ($q) => $q->whereLike('message', $like)
+                ->orWhereHas('device', fn ($device) => $device->whereLike('name', $like)->orWhereLike('friendly_name', $like))
+                ->orWhereHas('rule', fn ($rule) => $rule->whereLike('name', $like)));
         }
 
         return $query;
