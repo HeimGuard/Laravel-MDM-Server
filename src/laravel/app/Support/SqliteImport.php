@@ -50,6 +50,37 @@ class SqliteImport
         return self::hasAccounts($path) && self::targetIsEmpty($connection) ? $path : null;
     }
 
+    /** Why there is nothing to copy (for the log of the entrypoint); empty when there is. */
+    public static function reason(): string
+    {
+        $connection = (string) config('database.default');
+        $driver = config("database.connections.$connection.driver");
+        if ($driver !== 'pgsql') {
+            return "the database connection is \"$connection\" (driver $driver), not pgsql";
+        }
+        $state = self::state();
+        if (($state['status'] ?? null) === 'done') {
+            return 'storage/sqlite-import.state says it was done ('.$state['file'].')';
+        }
+        $path = self::sourcePath();
+        if ($path === null) {
+            $tried = array_filter([config('mdm.sqlite_import_file'), database_path('database.sqlite'), storage_path('database.sqlite')]);
+
+            return 'no SQLite file with data found in: '.implode(', ', $tried).' (set SQLITE_IMPORT_FILE to another path)';
+        }
+        if (($state['status'] ?? null) === 'started') {
+            return '';
+        }
+        if (! self::hasAccounts($path)) {
+            return "$path has no users and no devices";
+        }
+        if (! self::targetIsEmpty($connection)) {
+            return 'the PostgreSQL database already has users (or its tables are missing), it is never overwritten';
+        }
+
+        return '';
+    }
+
     /** @return array{status?: string, file?: string} */
     public static function state(): array
     {

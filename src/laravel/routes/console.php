@@ -34,10 +34,12 @@ Artisan::command('mdm:signing-key', function () {
 })->purpose('Create the server signing key (if needed) and show its fingerprint');
 
 // Prints the SQLite file that has to be copied into the PostgreSQL database (the entrypoint does it with pgloader),
-// exit code 1 and no output when there is nothing to copy.
+// exit code 1 (the reason on stderr) when there is nothing to copy.
 Artisan::command('mdm:sqlite-import-source', function () {
     $path = App\Support\SqliteImport::pending();
     if ($path === null) {
+        fwrite(STDERR, 'SQLite import skipped: '.App\Support\SqliteImport::reason()."\n");
+
         return 1;
     }
     $this->line($path);

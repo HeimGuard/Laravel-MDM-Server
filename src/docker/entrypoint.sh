@@ -151,7 +151,7 @@ fi
 # it disables the triggers of the tables while it loads, which PostgreSQL allows a superuser only (the user of
 # POSTGRES_USER of the postgres image is one).
 if [ "$DB_CONNECTION" = "pgsql" ] && [ "${SQLITE_IMPORT:-auto}" != "off" ] && [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-    source=$(php artisan mdm:sqlite-import-source 2>/dev/null) || source=""
+    source=$(php artisan mdm:sqlite-import-source) || source=""
     source=$(printf '%s\n' "$source" | tail -n 1)
     if [ -n "$source" ] && [ -f "$source" ]; then
         if [ -n "${DB_URL:-}" ]; then
