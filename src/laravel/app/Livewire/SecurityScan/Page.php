@@ -182,7 +182,7 @@ class Page extends Component
                 ->when($this->eventDays > 0, fn ($q) => $q->where('occurred_at', '>=', now()->subDays($this->eventDays)))
                 ->when(trim($this->eventSearch) !== '', function ($q) {
                     $like = '%'.addcslashes(trim($this->eventSearch), '%_\\').'%';
-                    $q->where(fn ($q) => $q->where('user', 'like', $like)->orWhere('source', 'like', $like)->orWhere('message', 'like', $like));
+                    $q->where(fn ($q) => $q->whereLike('user', $like)->orWhereLike('source', $like)->orWhereLike('message', $like));
                 })
                 ->limit($this->eventLimit + 1)->get();
             $moreEvents = $events->count() > $this->eventLimit;
@@ -195,7 +195,7 @@ class Page extends Component
             'events' => $events,
             'moreEvents' => $moreEvents ?? false,
             'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->select('device_id')->distinct())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
-            'rules' => $this->tab === 'rules' ? SecurityRule::query()->detection()->addSelect(['open_count' => SecurityFinding::query()->active()->selectRaw('count(distinct coalesce(device_id, target_ip))')->whereColumn('security_rule_id', 'security_rules.id')])->orderBy('source')->orderBy('name')->get() : collect(),
+            'rules' => $this->tab === 'rules' ? SecurityRule::query()->detection()->addSelect(['open_count' => SecurityFinding::query()->active()->selectRaw('count(distinct device_id) + count(distinct case when device_id is null then target_ip end)')->whereColumn('security_rule_id', 'security_rules.id')])->orderBy('source')->orderBy('name')->get() : collect(),
             'parsers' => $this->tab === 'rules' ? SecurityRule::query()->parsers()->orderBy('source')->orderBy('name')->get() : collect(),
             'eventTypes' => $this->tab === 'events' ? SecurityEvent::query()->distinct()->orderBy('type')->pluck('type')->mapWithKeys(fn ($type) => [$type => (new SecurityEvent(['type' => $type]))->label]) : collect(),
             'pending' => SecurityInbox::pending(),
