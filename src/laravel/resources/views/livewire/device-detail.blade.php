@@ -546,7 +546,6 @@
                                 <thead>
                                     <tr>
                                         <th>{{ __('Container') }}</th>
-                                        <th class="d-none d-md-table-cell">{{ __('Image') }}</th>
                                         <th class="d-none d-lg-table-cell">{{ __('Ports') }}</th>
                                         <th class="text-end">{{ __('State') }}</th>
                                     </tr>
@@ -570,11 +569,10 @@
                                             <td class="text-break">
                                                 <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
                                                 @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
-                                                    <i class="fas fa-file-lines text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                    <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
                                                 @endif
-                                                <div class="small text-muted d-md-none">{{ $container['Image'] ?? '' }}</div>
+                                                <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
                                             </td>
-                                            <td class="d-none d-md-table-cell text-muted text-break">{{ $container['Image'] ?? '' }}</td>
                                             <td class="d-none d-lg-table-cell small text-muted text-break">{{ $container['Ports'] ?? '' }}</td>
                                             <td class="text-end">
                                                 <x-badge :color="$color" variant="subtle">{{ ($container['Health'] ?? null) === 'unhealthy' ? __('Unhealthy') : __(ucfirst($state)) }}</x-badge>
