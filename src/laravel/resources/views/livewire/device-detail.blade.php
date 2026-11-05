@@ -70,6 +70,9 @@
                         @else
                             <x-badge color="success" size="sm" variant="subtle">{{ __('Online') }}</x-badge>
                         @endif
+                        @if ($selectedDevice->sendsSyslog)
+                            <span title="{{ __('Sends syslog to the server') }}"><i class="fas fa-stream me-1"></i>{{ __('Syslog') }}</span>
+                        @endif
                         @if (! $selectedDevice->offline && $power !== null)
                             {{-- On phones here, beside the buttons on wider screens. --}}
                             <span class="d-sm-none" title="{{ $pluggedIn ? __('Charging') : ($pluggedIn === false ? __('On battery') : __('Battery')) }}">

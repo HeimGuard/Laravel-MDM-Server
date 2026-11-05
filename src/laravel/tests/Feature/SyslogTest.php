@@ -132,6 +132,24 @@ class SyslogTest extends TestCase
         $this->assertSame(0, SecurityEvent::query()->where('device_id', '!=', $router->id)->count());
     }
 
+    public function test_a_device_that_sends_syslog_is_marked(): void
+    {
+        $router = $this->pingDevice('192.168.1.1');
+        $other = $this->pingDevice('192.168.1.2');
+        $this->assertFalse($router->sendsSyslog);
+
+        // Even without a parser: the device sends syslog.
+        Syslog::ingest([$this->message('192.168.1.1', 'cron', 'job started'), $this->message('192.168.1.9', 'cron', 'job started')]);
+
+        $this->assertTrue($router->fresh()->sendsSyslog);
+        $this->assertFalse($other->fresh()->sendsSyslog);
+        $this->assertTrue($router->fresh()->updated_at->equalTo($router->updated_at));
+
+        // Not for ever: a device that stopped does not keep the icon.
+        $router->forceFill(['syslog_at' => now()->subDays(2)])->saveQuietly();
+        $this->assertFalse($router->fresh()->sendsSyslog);
+    }
+
     public function test_nothing_is_stored_while_the_portal_takes_no_logs(): void
     {
         $this->enableParser();

@@ -156,6 +156,12 @@ class Syslog
             }
             $byDevice[$id][] = $record;
         }
+        // The icon of the device: it sends syslog (one UPDATE a minute at most, updated_at stays).
+        if ($byDevice !== []) {
+            Device::query()->whereIn('id', array_keys($byDevice))
+                ->where(fn ($query) => $query->whereNull('syslog_at')->orWhere('syslog_at', '<', now()->subMinute()))
+                ->toBase()->update(['syslog_at' => now()]);
+        }
         $result = ['events' => 0, 'devices' => 0, 'unknown' => $unknown];
         if ($byDevice === [] || ! SecurityScanner::logsAllowed()) {
             return $result;

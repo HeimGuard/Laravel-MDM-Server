@@ -706,6 +706,8 @@
     "Send password Reset": "Passwort-Zurücksetzung senden",
     "Send to": "Senden an",
     "Sends sign-in and system log records, so the sign-in checks (password guessing, new administrators) work.": "Sendet Anmelde- und Systemlog-Einträge, damit die Anmeldeprüfungen (Passwort-Raten, neue Administratoren) funktionieren.",
+    "Sends syslog to the server": "Sendet Syslog an den Server",
+    "Syslog": "Syslog",
     "Sent": "Gesendet",
     "Sent to :count device|Sent to :count devices": "An :count Gerät gesendet|An :count Geräte gesendet",
     "Sent to the channels on the": "An die Kanäle gesendet auf der",

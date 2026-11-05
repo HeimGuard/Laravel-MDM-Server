@@ -706,6 +706,8 @@
     "Send password Reset": "Poslat obnovení hesla",
     "Send to": "Poslat na",
     "Sends sign-in and system log records, so the sign-in checks (password guessing, new administrators) work.": "Posílá záznamy přihlášení a systémového logu, aby fungovaly kontroly přihlášení (hádání hesel, noví administrátoři).",
+    "Sends syslog to the server": "Posílá syslog na server",
+    "Syslog": "Syslog",
     "Sent": "Odesláno",
     "Sent to :count device|Sent to :count devices": "Odesláno na :count zařízení|Odesláno na :count zařízení|Odesláno na :count zařízení",
     "Sent to the channels on the": "Odesláno do kanálů na",
