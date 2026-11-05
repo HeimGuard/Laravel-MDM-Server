@@ -570,7 +570,7 @@
                                             <td class="text-break">
                                                 <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
                                                 @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
-                                                    <i class="fas fa-file-lines text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                    <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
                                                 @endif
                                                 <div class="small text-muted d-md-none">{{ $container['Image'] ?? '' }}</div>
                                             </td>
