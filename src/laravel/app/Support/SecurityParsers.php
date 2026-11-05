@@ -29,6 +29,8 @@ class SecurityParsers
         'linux.auth' => ['label' => 'Linux: auth log (journal or auth.log)', 'fields' => ['Time', 'Identifier', 'Pid', 'Message'], 'key' => 'Identifier'],
         'docker.logs' => ['label' => 'Docker: container logs', 'fields' => ['Time', 'Container', 'Image', 'Message'], 'key' => 'Image'],
         'web.log' => ['label' => 'Web servers and proxies: logs in /var/log (nginx, Apache, ...)', 'fields' => ['Time', 'File', 'Message'], 'key' => 'File'],
+        // Not read by the agents: the server receives it (rsyslog in the container, App\Support\Syslog), the policy leaves it out.
+        'syslog' => ['label' => 'Syslog: messages received from other servers and devices', 'fields' => ['Time', 'Host', 'Facility', 'Severity', 'App', 'Pid', 'Message'], 'key' => 'App', 'server' => true],
         'windows.security' => ['label' => 'Windows: Security log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.system' => ['label' => 'Windows: System log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
         'windows.defender' => ['label' => 'Windows: Microsoft Defender log', 'fields' => ['Time', 'Id', 'Provider', 'Level', 'Data'], 'key' => 'Id'],
@@ -232,9 +234,12 @@ class SecurityParsers
      */
     public static function policy(iterable $parsers): array
     {
-        $sources = array_fill_keys(array_keys(self::LOG_SOURCES), []);
+        $sources = array_fill_keys(array_keys(array_filter(self::LOG_SOURCES, fn (array $source) => empty($source['server']))), []);
         foreach ($parsers as $parser) {
             $source = $parser['source'];
+            if (! array_key_exists($source, $sources)) {
+                continue;
+            }
             $values = self::constraint($parser['when'] ?? null, self::LOG_SOURCES[$source]['key'] ?? 'Id');
             if ($values === null || $sources[$source] === null) {
                 $sources[$source] = null;

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Started by rsyslog (omprog): reads the messages from stdin.
+cd /var/www && exec php artisan mdm:syslog-ingest

@@ -89,6 +89,7 @@ class Device extends Model
     protected $casts = [
         'last_seen_at' => 'datetime',
         'last_ws_at' => 'datetime',
+        'syslog_at' => 'datetime',
         'last_http_at' => 'datetime',
         'live_state_at' => 'datetime',
         'public_key' => 'array',
@@ -1153,6 +1154,15 @@ class Device extends Model
 
         return $connected->where('Type', 'vpn')->isNotEmpty()
             && ! $connected->where('Type', '!=', 'vpn')->pluck('IPAddresses')->flatten()->map(fn ($ip) => explode('%', (string) $ip)[0])->contains($this->public_ip);
+    }
+
+    /** Syslog older than this does not count as "sends syslog". */
+    public const SYSLOG_SHOWN_HOURS = 24;
+
+    /** The device sends syslog to the portal (Syslog), shown as an icon next to it. */
+    public function getSendsSyslogAttribute(): bool
+    {
+        return $this->syslog_at !== null && $this->syslog_at->gte(now()->subHours(self::SYSLOG_SHOWN_HOURS));
     }
 
     /**

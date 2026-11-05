@@ -60,7 +60,8 @@ RUN npm run build
 FROM php AS runtime
 
 # pgloader: copies an SQLite database into PostgreSQL once, when DB_CONNECTION is changed to pgsql (entrypoint).
-RUN apk add --no-cache nginx php84-fpm supervisor pgloader \
+# rsyslog: receives syslog from other servers and devices (UDP/TCP 5514), see docs/server.md.
+RUN apk add --no-cache nginx php84-fpm supervisor pgloader rsyslog \
     && adduser -D -H -u 1000 -s /sbin/nologin app \
     && mkdir -p /run/nginx /var/lib/nginx/tmp /var/log/nginx \
     && chown -R app:app /run/nginx /var/lib/nginx /var/log/nginx
@@ -69,6 +70,8 @@ COPY src/docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY src/docker/php/php.ini /etc/php84/conf.d/zz-app.ini
 COPY src/docker/php/fpm.conf /etc/php84/php-fpm.d/www.conf
 COPY src/docker/supervisor/supervisord.conf /etc/supervisord.conf
+COPY src/docker/rsyslog/rsyslog.conf /etc/mdm-rsyslog.conf
+COPY --chmod=755 src/docker/rsyslog/mdm-syslog-ingest /usr/local/bin/mdm-syslog-ingest
 COPY src/docker/entrypoint.sh /usr/local/bin/entrypoint
 
 COPY --from=vendor --chown=app:app /var/www ./
@@ -90,9 +93,10 @@ ENV APP_ENV=production \
     APP_DEBUG=false \
     REVERB_ENABLED=true \
     SCHEDULER_ENABLED=true \
-    QUEUE_ENABLED=true
+    QUEUE_ENABLED=true \
+    SYSLOG_ENABLED=true
 
 VOLUME ["/var/www/storage"]
-EXPOSE 8000
+EXPOSE 8000 5514/udp 5514/tcp
 
 ENTRYPOINT ["entrypoint"]

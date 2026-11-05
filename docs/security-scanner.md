@@ -241,3 +241,20 @@ over feed over bundled), and a bundled rule the feed replaced comes back when it
   before the collection (kept 30 days).
 - Each matching item is its own finding, told apart by the key fields of its source (software:
   name and source; processes: name, path and command line; ports: protocol, address and port; ...).
+
+### Syslog from other servers and devices
+
+Servers without an agent, routers, firewalls and NAS devices can send their syslog (RFC 3164 and 5424) to the server. `rsyslog`
+in the Docker image receives it on port 5514 (UDP and TCP, published as 514 in the compose files) and hands every message to
+`php artisan mdm:syslog-ingest`, which makes records of the log source `syslog` (`Time`, `Host`, `Facility`, `Severity`, `App`,
+`Pid`, `Message`) and runs them through the same parsers and rules as the logs of the agents (parsers of the source `syslog`
+in the `detection-policy` feed read `App`, e.g. `sshd`, `sudo`).
+
+The sender is found by its IP address: it has to be the address of a device (an interface an agent reports, the address of a
+ping device, or the public address of exactly one device). An address that is no device's, or that two devices have (a Docker
+bridge, a NAT address), is dropped, and the container log names those senders every five minutes. Behind a proxy or a Docker
+setup that hides the source address (rootless Docker, `userland-proxy`), the address is the one of the proxy, so no device
+matches: use the host network or a setup that keeps the address. The agents are never asked for `syslog`.
+
+Point the sender at the server, e.g. in `/etc/rsyslog.d/mdm.conf` of a Linux server: `*.* @@mdm.example.com:514` (`@@` TCP,
+`@` UDP). `SYSLOG_ENABLED=false` switches the receiver off (it is on by default). There is no TLS: keep port 514 inside your network.

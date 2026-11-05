@@ -45,6 +45,7 @@ A small Alpine-based image (running as a non-root user) is built by GitHub Actio
 | Reverb | WebSocket server, served by nginx on the same port under `/app` | `REVERB_ENABLED=false` |
 | Queue worker | `php artisan queue:work --queue=security,default`: background jobs (security collections of the agents, rules feed) | `QUEUE_ENABLED=false` (jobs then run once the response has been sent) |
 | Scheduler | `php artisan schedule:work` | `SCHEDULER_ENABLED=false` |
+| Syslog | `rsyslogd` receives syslog on port 5514 (UDP and TCP, published as 514), see [Syslog](security-scanner.md#syslog-from-other-servers-and-devices) | `SYSLOG_ENABLED=false` |
 
 `docker-compose.yml` runs the image with SQLite and no settings (see [Quick start](../README.md#quick-start)).
 Settings are passed as `environment:` of the service, e.g. `APP_SYSTEM_ADMINS: 1,2`. For MySQL:

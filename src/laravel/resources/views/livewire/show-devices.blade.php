@@ -118,6 +118,9 @@
                                             <span aria-hidden="true" class="mdm-tags mt-1 invisible"><x-tag tag="-" /></span>
                                         @endif
                                     </span>
+                                    @if ($item->sendsSyslog)
+                                        <i class="fas fa-stream fa-fw text-body-secondary mt-1" title="{{ __('Sends syslog to the server') }}"></i>
+                                    @endif
                                     @if ($row['attention'] && ! $item->offline)
                                         <i class="fas fa-exclamation-circle text-warning mt-1" title="{{ collect($row['flags'])->pluck('label')->implode(', ') }}"></i>
                                     @endif
