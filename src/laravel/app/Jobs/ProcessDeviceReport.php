@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\NetworkNeighbour;
 use App\Models\NetworkSite;
 use App\Support\DeviceReportInbox;
+use App\Support\DiskUsage;
 use App\Support\LiveUpdates;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -51,6 +52,8 @@ class ProcessDeviceReport implements ShouldQueue
         if ($device === null) {
             return;
         }
+        // The usage of each disk, for the history.
+        rescue(fn () => DiskUsage::record($device));
         // What the agent sees in its networks (agents 1.16.0+, unless network_discovery is off).
         rescue(fn () => NetworkNeighbour::record($device, $data['neighbours'] ?? null));
         // The public addresses it is behind, kept for the network map.

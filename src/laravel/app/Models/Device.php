@@ -7,6 +7,7 @@ use App\Support\DeviceUsage;
 use App\Support\PingUsage;
 use App\Support\ValueRecorder;
 use Carbon\CarbonInterval;
+use App\Models\Concerns\HasDeviceSettings;
 use App\Models\Concerns\HasValue;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +20,10 @@ use Illuminate\Support\Facades\DB;
 
 class Device extends Model
 {
-    use HasFactory, HasValue;
+    use HasDeviceSettings, HasFactory, HasValue;
+
+    /** The settings are read with every device (a few rows each), so reading them costs no query per device. */
+    protected $with = ['settings'];
 
     public const COMMANDS = DeviceCommand::COMMANDS;
 
@@ -134,6 +138,10 @@ class Device extends Model
 
         if ($updated && $metrics = DeviceUsage::sanitize($metrics)) {
             DeviceUsage::record($id, $metrics);
+        }
+        // The battery of a laptop (the state the agent sends with the heartbeat).
+        if ($updated && is_array($state) && is_int($state['power']['battery'] ?? null)) {
+            ValueRecorder::record((new static)->getMorphClass(), $id, [['key' => 'battery.level', 'value' => $state['power']['battery'], 'unit' => '%']]);
         }
         // Inside Reverb the listener announces it itself (see LiveUpdates::fromReverb).
         if ($updated && $announce) {
@@ -1444,7 +1452,7 @@ class Device extends Model
         $load = [];
         $assignments = [];
         $routed = self::routedPingAgents($agents);
-        foreach (static::query()->where('kind', 'ping')->whereNotNull('ping_address')->orderBy('id')->get() as $device) {
+        foreach (static::query()->where('kind', 'ping')->whereHasSetting('lan.address')->orderBy('id')->get() as $device) {
             $best = null;
             foreach ($device->pingCandidates($agents, $routed) as $relay) {
                 $count = $load[$relay->id] ?? 0;

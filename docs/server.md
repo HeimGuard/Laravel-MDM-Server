@@ -159,6 +159,16 @@ $device->valueHistory('cpu', since: now()->subHour())->get();         // the sam
 ```
 
 A new kind of value is a new key: no table and no migration. Keys in use: `cpu` (%), `memory.used` and `memory.total`
-(bytes) from the heartbeats of the agents, `ping.up` (1 / 0) and `ping.rtt` (ms) from the pings of ping-only
-devices. How many days the history is kept per key is in `config/values.php` (30 days for all of them, pruned
+(bytes) and `battery.level` (%) from the heartbeats of the agents, `disk.used_pct` (%) and `disk.free_bytes` for
+each disk (named `C:` on Windows, the mount point on Linux) from the reports, `ping.up` (1 / 0) and `ping.rtt` (ms)
+from the pings of ping-only devices. How many days the history is kept per key is in `config/values.php` (30 days for all of them, pruned
 daily). The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
+
+## Settings of a device
+
+Where a ping-only device is pinged (`lan.address`, `lan.prefix`, `lan.mac`, and `lan.via_device_id`: the agent to ping
+through) and the Wake-on-LAN target of an agent (`lan.mac`, `lan.address`, `lan.prefix`) are rows of the `settings`
+table (`HasSettings`, `settable_type` is the device), not columns of `devices`. In code they stay attributes of the
+model: `$device->ping_address`, `$device->wake_mac`, ... are read from the settings and written with the device
+(`forceFill([...])->save()`), and `getDirty()` tells what changed. `ping_*` is for a ping-only device, `wake_*` for an
+agent. To find devices by a setting: `Device::whereSettingIn('lan.mac', [...])`, `Device::whereHasSetting('lan.address')`.
