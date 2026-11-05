@@ -784,9 +784,16 @@ class Device extends Model
         return $last !== null && $last->diffInSeconds() <= self::REPORT_TIMEOUT;
     }
 
+    /** The decoded report (data) of this instance: the accessors read it many times, it is decoded once per value. */
+    private ?array $decodedData = null;
+
     public function getDataAttribute($value)
     {
-        return (json_decode($value) ?? []);
+        if ($this->decodedData === null || $this->decodedData[0] !== $value) {
+            $this->decodedData = [$value, json_decode((string) $value) ?? []];
+        }
+
+        return $this->decodedData[1];
     }
 
     public function getDrivesAttribute($value)

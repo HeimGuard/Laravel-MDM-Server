@@ -43,7 +43,7 @@ A small Alpine-based image (running as a non-root user) is built by GitHub Actio
 |---------|-------------|--------------|
 | nginx + PHP-FPM | Web application on port 8000, migrations run on start | `RUN_MIGRATIONS=false` skips migrations |
 | Reverb | WebSocket server, served by nginx on the same port under `/app` | `REVERB_ENABLED=false` |
-| Queue worker | `php artisan queue:work --queue=security,default`: background jobs (security collections of the agents, rules feed) | `QUEUE_ENABLED=false` (jobs then run once the response has been sent) |
+| Queue worker | `php artisan queue:work --queue=security,default`: background jobs (reports and security collections of the agents, rules feed) | `QUEUE_ENABLED=false` (jobs then run once the response has been sent) |
 | Scheduler | `php artisan schedule:work` | `SCHEDULER_ENABLED=false` |
 | Syslog | `rsyslogd` receives syslog on port 5514 (UDP and TCP, published as 514), see [Syslog](security-scanner.md#syslog-from-other-servers-and-devices) | `SYSLOG_ENABLED=false` |
 

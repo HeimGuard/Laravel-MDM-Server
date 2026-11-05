@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\Script;
 use App\Models\ScriptRun;
+use App\Models\SecurityFinding;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,15 +32,37 @@ class SmartAlerts
     public const FAILED_COMMAND_WINDOW = 86400;
 
     /**
-     * @param  Collection<int, DeviceCommand>|null  $commands  the device's commands of the last day (loaded when null)
+     * What the list of devices needs for all of them at once: with it the alerts of a device are worked out without a
+     * query of their own (no actions to run, no clean-up of dismissals).
+     *
+     * @return array{commands: Collection, findings: Collection, runs: Collection, dismissed: Collection} each grouped by device id
      */
-    public static function for(Device $device, ?Collection $commands = null): array
+    public static function preload(): array
+    {
+        DeviceCommand::expireStale();
+
+        return [
+            'commands' => DeviceCommand::query()->where('updated_at', '>=', now()->subSeconds(self::FAILED_COMMAND_WINDOW))->orderBy('id')->get()->groupBy('device_id'),
+            'findings' => SecurityFinding::query()->active()->atLeast('medium')->bySeverity()->get()->groupBy('device_id'),
+            // The latest run of each script on each device.
+            'runs' => ScriptRun::query()->with('script')
+                ->whereIn('id', ScriptRun::query()->selectRaw('max(id)')->groupBy('device_id', 'script_id'))
+                ->whereIn('status', ['failed', 'error', 'rejected', 'noncompliant'])->get()->groupBy('device_id'),
+            'dismissed' => DB::table('device_alert_dismissals')->get()->groupBy('device_id'),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, DeviceCommand>|null  $commands  the device's commands of the last day (loaded when null)
+     * @param  array|null  $preloaded  from preload(): the alerts for the list of devices
+     */
+    public static function for(Device $device, ?Collection $commands = null, ?array $preloaded = null): array
     {
         // Ping-only devices have no report: only a failed wake.
         if (empty($device->data) && ! $device->isPingOnly) {
             return [];
         }
-        $commands ??= self::recentCommands($device);
+        $commands ??= $preloaded !== null ? $preloaded['commands']->get($device->id, collect()) : self::recentCommands($device);
         $active = $commands->filter->active;
         $alerts = [];
 
@@ -88,7 +111,7 @@ class SmartAlerts
         }
 
         if (empty($device->data)) {
-            return self::finish($device, $alerts, $active);
+            return self::finish($device, $alerts, $active, $preloaded);
         }
 
         if ($device->offline) {
@@ -187,7 +210,7 @@ class SmartAlerts
         }
 
         // Open findings of the security scanner nobody acknowledged (from medium severity).
-        $findings = $device->securityFindings()->active()->atLeast('medium')->bySeverity()->get();
+        $findings = $preloaded !== null ? $preloaded['findings']->get($device->id, collect()) : $device->securityFindings()->active()->atLeast('medium')->bySeverity()->get();
         if ($findings->isNotEmpty()) {
             $severe = $findings->whereIn('severity', ['critical', 'high'])->isNotEmpty();
             $alerts[] = [
@@ -215,7 +238,8 @@ class SmartAlerts
             ];
         }
 
-        $failedScripts = $device->scriptRuns()->with('script')
+        $runs = $preloaded !== null ? $preloaded['runs']->get($device->id, collect()) : null;
+        $failedScripts = $runs !== null ? $runs->whereIn('status', ['failed', 'error', 'rejected'])->values() : $device->scriptRuns()->with('script')
             ->whereIn('id', ScriptRun::query()->selectRaw('max(id)')->where('device_id', $device->id)->groupBy('script_id'))
             ->whereIn('status', ['failed', 'error', 'rejected'])->get();
         if ($failedScripts->isNotEmpty()) {
@@ -230,9 +254,9 @@ class SmartAlerts
         }
 
         // Scripts with manual remediation whose latest run here found something to remediate.
-        $toRemediate = $device->scriptRuns()->with('script')
+        $toRemediate = ($runs !== null ? $runs->where('status', 'noncompliant') : $device->scriptRuns()->with('script')
             ->whereIn('id', ScriptRun::query()->selectRaw('max(id)')->where('device_id', $device->id)->groupBy('script_id'))
-            ->where('status', 'noncompliant')->get()
+            ->where('status', 'noncompliant')->get())
             ->filter(fn ($run) => $run->script?->remediation !== null);
         foreach ($toRemediate as $run) {
             $alerts[] = [
@@ -275,12 +299,20 @@ class SmartAlerts
             ];
         }
 
-        return self::finish($device, $alerts, $active);
+        return self::finish($device, $alerts, $active, $preloaded);
     }
 
     /** The defaults, the commands on their way and the refusals; without the dismissed ones, sorted. */
-    private static function finish(Device $device, array $alerts, Collection $active): array
+    private static function finish(Device $device, array $alerts, Collection $active, ?array $preloaded = null): array
     {
+        if ($preloaded !== null) {
+            // The list of devices shows the alert, not what to do about it: no actions, refusals or commands on their way.
+            $alerts = array_map(fn (array $alert) => $alert + ['message' => null, 'details' => [], 'action' => null, 'tab' => null, 'copy' => null, 'failure' => null, 'refusal' => null, 'active' => null], $alerts);
+            $alerts = self::withoutDismissed($device, $alerts, $preloaded['dismissed']->get($device->id, collect())->pluck('signature', 'key'));
+            usort($alerts, fn ($a, $b) => [$a['key'] !== 'offline', self::SEVERITIES[$a['severity']]] <=> [$b['key'] !== 'offline', self::SEVERITIES[$b['severity']]]);
+
+            return $alerts;
+        }
         foreach ($alerts as &$alert) {
             $alert += ['message' => null, 'details' => [], 'action' => null, 'tab' => null, 'copy' => null, 'failure' => null, 'refusal' => null];
             $alert['active'] = null;
@@ -339,16 +371,17 @@ class SmartAlerts
      * Drops the dismissed alerts. Dismissals of alerts that are gone or say something else now
      * are removed, so the alert shows again the next time it comes up.
      */
-    private static function withoutDismissed(Device $device, array $alerts): array
+    /** @param  Collection|null  $known  signature by key, loaded for the whole list (then stale dismissals are left to the device's own page) */
+    private static function withoutDismissed(Device $device, array $alerts, ?Collection $known = null): array
     {
-        $dismissed = DB::table('device_alert_dismissals')->where('device_id', $device->id)->pluck('signature', 'key');
+        $dismissed = $known ?? DB::table('device_alert_dismissals')->where('device_id', $device->id)->pluck('signature', 'key');
         if ($dismissed->isEmpty()) {
             return $alerts;
         }
 
         $current = collect($alerts)->mapWithKeys(fn ($alert) => [$alert['key'] => self::signature($alert)]);
         $stale = $dismissed->filter(fn ($signature, $key) => ($current[$key] ?? null) !== $signature)->keys();
-        if ($stale->isNotEmpty()) {
+        if ($stale->isNotEmpty() && $known === null) {
             DB::table('device_alert_dismissals')->where('device_id', $device->id)->whereIn('key', $stale)->delete();
         }
 

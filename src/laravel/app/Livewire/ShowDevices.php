@@ -22,6 +22,13 @@ class ShowDevices extends Component
 {
     public $devices;
 
+    /**
+     * What the list shows of each device besides the device itself: [id => flags, ip, searchText]. It costs the alerts of
+     * every device, so it is worked out when the devices change (mount, devices-changed, tags), not when a device is
+     * selected or the list is filtered.
+     */
+    public array $listData = [];
+
     #[Url]
     public $selectedDeviceId;
 
@@ -118,6 +125,21 @@ class ShowDevices extends Component
     public function loadDevices(): void
     {
         $this->devices = Device::all();
+        $this->refreshList();
+    }
+
+    /** The alerts and the search text of every device (one set of queries for all of them). */
+    private function refreshList(): void
+    {
+        // The user's open alerts per device (the attention mark in the list).
+        $firing = AlertEvent::query()->with('rule')->whereNull('resolved_at')
+            ->whereIn('alert_rule_id', AlertRule::query()->where('user_id', auth()->id())->select('id'))
+            ->get()->groupBy('device_id');
+        $preloaded = SmartAlerts::preload();
+        $this->listData = [];
+        foreach ($this->devices as $device) {
+            $this->listData[$device->id] = $this->row($device, $firing, $preloaded);
+        }
     }
 
     public function filterTag(string $tag): void
@@ -142,9 +164,9 @@ class ShowDevices extends Component
     /**
      * One item of the device list: the device, what needs attention and what the search finds.
      */
-    private function row(Device $device, Collection $firing): array
+    private function row(Device $device, Collection $firing, array $preloaded): array
     {
-        $alerts = empty($device->data) ? [] : SmartAlerts::for($device);
+        $alerts = empty($device->data) ? [] : SmartAlerts::for($device, null, $preloaded);
         $flags = [];
         foreach ($alerts as $alert) {
             $key = str_starts_with($alert['key'], 'failed:') ? 'failed' : $alert['key'];
@@ -164,9 +186,7 @@ class ShowDevices extends Component
             ->first(fn ($ip) => filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4));
 
         return [
-            'device' => $device,
             'flags' => $flags,
-            'attention' => $device->offline || collect($flags)->contains(fn ($flag) => in_array($flag['severity'], ['danger', 'warning'], true)),
             'ip' => $addresses,
             'searchText' => mb_strtolower(implode(' ', [$device->displayName, $device->name, $device->os, $addresses, implode(' ', $device->publicAddresses), implode(' ', $device->tagList)])),
         ];
@@ -174,7 +194,10 @@ class ShowDevices extends Component
 
     /** Live update (resources/js/live.js): some device changed. */
     #[On('devices-changed')]
-    public function devicesChanged(): void {}
+    public function devicesChanged(): void
+    {
+        $this->loadDevices();
+    }
 
     /** Devices with the agent first, then the ping-only ones, each by name. */
     private static function listOrder(Device $device): string
@@ -193,12 +216,11 @@ class ShowDevices extends Component
             ]);
         }
 
-        // The user's open alerts per device (the attention mark in the list).
-        $firing = AlertEvent::query()->with('rule')->whereNull('resolved_at')
-            ->whereIn('alert_rule_id', AlertRule::query()->where('user_id', auth()->id())->select('id'))
-            ->get()->groupBy('device_id');
+        $rows = $this->devices->sortBy(fn (Device $device) => self::listOrder($device))->map(function (Device $device) {
+            $data = $this->listData[$device->id] ?? ['flags' => [], 'ip' => null, 'searchText' => mb_strtolower($device->displayName)];
 
-        $rows = $this->devices->sortBy(fn (Device $device) => self::listOrder($device))->map(fn (Device $device) => $this->row($device, $firing))->values();
+            return ['device' => $device, 'attention' => $device->offline || collect($data['flags'])->contains(fn ($flag) => in_array($flag['severity'], ['danger', 'warning'], true))] + $data;
+        })->values();
         $search = mb_strtolower(trim($this->search));
 
         return view('livewire.show-devices', $view + [
