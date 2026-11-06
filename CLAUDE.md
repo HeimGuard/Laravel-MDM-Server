@@ -48,6 +48,9 @@
   - Alerts and notifications stay in `alert_events`. Raw logs are not stored, only the events made of them.
 - History keeps **changes only** (a value that did not change adds no sample), for all of it one setting
   (`history_days`), no retention per key and no config file for it.
+- **Never discard data.** Where two sources report the same thing (the auth log of the agent and the same messages forwarded
+  as syslog), keep both: they are one event confirmed by the second source (`data.sources`, `verified`), not a filter that
+  drops one of them and not two events. Data is only removed by the retention (`history_days`), never by a rule of the code.
 - Owners are polymorphic (`*_type`, `*_id`): there is no foreign key, so deleting the owner must delete its rows
   (a `deleted` hook in the trait). Details that not every row has go to a `data` JSON, not to nullable columns.
 - New domain logic goes to `app/Services` (`XService`, static methods like the SteelAnts packages), not to
