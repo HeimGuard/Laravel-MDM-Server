@@ -19,6 +19,9 @@ class DockerIconService
     private const ALIASES = [
         'postgres' => 'postgresql',
         'mongo' => 'mongodb',
+        'pihole' => 'pi-hole',
+        'adguardhome' => 'adguard-home',
+        'homeassistant' => 'home-assistant',
     ];
 
     /**
