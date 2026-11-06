@@ -73,6 +73,12 @@ return new class extends Migration
                     DB::insert('insert into value_samples (definition_id, value, recorded_at) select ?, rtt, created_at from ping_results where device_id = ? and rtt is not null', [$rtt, $deviceId]);
                     $last($rtt, 'ping_results', $deviceId, 'rtt', 'rtt is not null');
                 }
+                // The agent that made each ping.
+                if (DB::table('ping_results')->where('device_id', $deviceId)->whereNotNull('relay_id')->exists()) {
+                    $relay = $define($deviceId, 'ping.relay_id', null);
+                    DB::insert('insert into value_samples (definition_id, value, recorded_at) select ?, relay_id, created_at from ping_results where device_id = ? and relay_id is not null', [$relay, $deviceId]);
+                    $last($relay, 'ping_results', $deviceId, 'relay_id', 'relay_id is not null');
+                }
             }
         }
     }

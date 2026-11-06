@@ -92,7 +92,6 @@ class DeviceSeeder extends Seeder
         $device->forceFill([
             'kind' => 'ping', 'name' => $name, 'os' => '', 'token' => 'seed-ping-'.$host,
             'ping_address' => self::NETWORK.'.'.$host, 'ping_prefix' => 24, 'ping_mac' => $mac,
-            'ping_rtt' => $online ? round(mt_rand(5, 40) / 10, 1) : null,
         ]);
         $device->save();
 

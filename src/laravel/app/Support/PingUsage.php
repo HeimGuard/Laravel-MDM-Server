@@ -13,20 +13,33 @@ use Illuminate\Support\Carbon;
  */
 class PingUsage
 {
-    /** The values of one ping. */
-    public static function values(bool $up, ?float $rtt): array
+    /** The keys of the values of a ping (the relation Device::pingValues reads them). */
+    public const KEYS = ['ping.up', 'ping.rtt', 'ping.relay_id'];
+
+    /** The values of one ping: whether it was answered, the response time of an answered one, the agent that pinged. */
+    public static function values(bool $up, ?float $rtt, ?int $relayId = null): array
     {
         $values = [['key' => 'ping.up', 'value' => $up ? 1 : 0]];
         if ($up && $rtt !== null) {
             $values[] = ['key' => 'ping.rtt', 'value' => $rtt, 'unit' => 'ms'];
         }
+        if ($relayId !== null) {
+            $values[] = ['key' => 'ping.relay_id', 'value' => $relayId];
+        }
 
         return $values;
     }
 
-    public static function record(int $deviceId, bool $up, ?float $rtt, ?\DateTimeInterface $at = null): void
+    public static function record(int $deviceId, bool $up, ?float $rtt, ?\DateTimeInterface $at = null, ?int $relayId = null): void
     {
-        ValueRecorder::record((new Device)->getMorphClass(), $deviceId, self::values($up, $rtt), $at);
+        ValueRecorder::record((new Device)->getMorphClass(), $deviceId, self::values($up, $rtt, $relayId), $at);
+    }
+
+    /** What the answers so far say nothing about any more (the address changed): the current state is forgotten, the history stays. */
+    public static function forgetCurrent(int $deviceId): void
+    {
+        ValueDefinition::query()->where('valuable_type', (new Device)->getMorphClass())->where('valuable_id', $deviceId)->whereIn('key', self::KEYS)
+            ->update(['last_value' => null, 'last_at' => null]);
     }
 
     private static function definition(int $deviceId, string $key): ?ValueDefinition

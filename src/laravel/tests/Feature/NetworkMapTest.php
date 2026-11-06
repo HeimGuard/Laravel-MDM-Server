@@ -51,7 +51,8 @@ class NetworkMapTest extends TestCase
         $office = $this->agent('OFFICE-SRV', '89.24.10.5', [$this->nic('eth0', 'lan', '10.0.0.2'), $this->nic('wg0', 'vpn', '10.8.0.3', 24)]);
         $vps = $this->agent('VPS', '185.12.4.9', [$this->nic('eth0', 'lan', '185.12.4.9')], online: false);
         $printer = new Device;
-        $printer->forceFill(['kind' => 'ping', 'name' => 'Printer', 'os' => '', 'token' => hash('sha256', 'p'), 'ping_address' => '192.168.1.30', 'ping_prefix' => 24, 'ping_relay_id' => $nas->id, 'last_seen_at' => now()])->save();
+        $printer->forceFill(['kind' => 'ping', 'name' => 'Printer', 'os' => '', 'token' => hash('sha256', 'p'), 'ping_address' => '192.168.1.30', 'ping_prefix' => 24, 'last_seen_at' => now()])->save();
+        \App\Support\PingUsage::record($printer->id, true, null, null, $nas->id);
 
         $map = NetworkMap::build();
         $nodes = collect($map['nodes'])->keyBy('id');

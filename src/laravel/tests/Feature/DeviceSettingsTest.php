@@ -103,11 +103,11 @@ class DeviceSettingsTest extends TestCase
             $queries++;
         });
 
-        $addresses = Device::all()->map(fn (Device $device) => $device->ping_address)->all();
+        $addresses = Device::all()->map(fn (Device $device) => [$device->ping_address, $device->ping_rtt, $device->ping_relay_id])->all();
 
         $this->assertCount(5, $addresses);
-        // The devices and all their settings: two queries, not six.
-        $this->assertSame(2, $queries);
+        // The devices, all their settings and the values of their pings: three queries, not eleven.
+        $this->assertSame(3, $queries);
         $first = Device::query()->first();
         $first->delete();
         $this->assertSame(0, Setting::query()->where('settable_type', Device::class)->where('settable_id', $first->id)->count());

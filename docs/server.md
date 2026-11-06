@@ -160,8 +160,9 @@ $device->valueHistory('cpu', since: now()->subHour())->get();         // the sam
 
 A new kind of value is a new key: no table and no migration. Keys in use: `cpu` (%), `memory.used` and `memory.total`
 (bytes) and `battery.level` (%) from the heartbeats of the agents, `disk.used_pct` (%) and `disk.free_bytes` for
-each disk (named `C:` on Windows, the mount point on Linux) from the reports, `ping.up` (1 / 0) and `ping.rtt` (ms)
-from the pings of ping-only devices. How many days the history is kept per key is in `config/values.php` (30 days for all of them, pruned
+each disk (named `C:` on Windows, the mount point on Linux) from the reports, `ping.up` (1 / 0), `ping.rtt` (ms) and
+`ping.relay_id` (the agent that pinged) from the pings of ping-only devices. The last ping of a device
+(`$device->ping_rtt`, `$device->ping_relay_id`) is read from these values, there is no column for it. How many days the history is kept per key is in `config/values.php` (30 days for all of them, pruned
 daily). The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
 
 ## Settings of a device

@@ -874,7 +874,7 @@ class FleetFeaturesTest extends TestCase
         // A device stays with the agent that pings it when that is as good (no moving around).
         $current = Device::pingAssignments();
         foreach ($current as $id => $relayId) {
-            Device::query()->whereKey($id)->update(['ping_relay_id' => $relayId]);
+            \App\Support\PingUsage::record($id, true, null, null, $relayId);
         }
         $this->assertSame($current, Device::pingAssignments());
 
