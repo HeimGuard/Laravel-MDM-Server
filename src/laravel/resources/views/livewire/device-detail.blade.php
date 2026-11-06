@@ -549,7 +549,9 @@
                                 <thead>
                                     <tr>
                                         <th>{{ __('Container') }}</th>
-                                        <th class="d-none d-lg-table-cell">{{ __('Ports') }}</th>
+                                        {{-- The columns that are as wide as their content (1%): the free room is the container's. --}}
+                                        <th class="d-none d-lg-table-cell text-nowrap" style="width: 1%">{{ __('Ports') }}</th>
+                                        <th class="d-none d-md-table-cell text-nowrap" style="width: 1%">{{ __('Last 12 hours') }}</th>
                                         <th class="text-end">{{ __('State') }}</th>
                                     </tr>
                                 </thead>
@@ -567,8 +569,10 @@
                                                 $state === 'dead' => 'danger',
                                                 default => 'secondary',
                                             };
+                                            $published = \App\Services\DockerPortsService::published($container['Ports'] ?? '');
+                                            $beats = $containerBeats[$container['Name'] ?? ''] ?? [];
                                         @endphp
-                                        <tr wire:key="container-{{ $loop->index }}" x-show="!search || @js(strtolower(($container['Name'] ?? '') . ' ' . ($container['Image'] ?? '') . ' ' . ($container['Ports'] ?? '') . ' ' . $state)).includes(search.toLowerCase())">
+                                        <tr wire:key="container-{{ $loop->index }}" x-show="!search || @js(strtolower(($container['Name'] ?? '') . ' ' . ($container['Image'] ?? '') . ' ' . implode(' ', $published) . ' ' . $state)).includes(search.toLowerCase())">
                                             <td class="text-break">
                                                 <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
                                                 @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
@@ -576,7 +580,21 @@
                                                 @endif
                                                 <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
                                             </td>
-                                            <td class="d-none d-lg-table-cell small text-muted text-break">{{ $container['Ports'] ?? '' }}</td>
+                                            <td class="d-none d-lg-table-cell small text-muted text-nowrap">{{ implode(', ', $published) }}</td>
+                                            <td class="d-none d-md-table-cell">
+                                                @if ($beats !== [])
+                                                    <div class="ping-beats ping-beats-xs" role="img" aria-label="{{ __('Last 12 hours') }}">
+                                                        @foreach ($beats as $beat)
+                                                            <span class="ping-beat {{ $beat['state'] === 'up' ? 'is-up' : ($beat['state'] === 'down' ? 'is-down' : '') }}"
+                                                                title="{{ $beat['from']->format('H:i') }}–{{ $beat['to']->format('H:i') }} · {{ match ($beat['state']) {
+                                                                    'up' => __('Running'),
+                                                                    'down' => __('Not running').' '.collect($beat['down'])->map(fn ($gap) => $gap['from']->format('H:i').'–'.$gap['to']->format('H:i').' '.__(ucfirst($gap['state'])))->implode(', '),
+                                                                    default => __('No data'),
+                                                                } }}"></span>
+                                                        @endforeach
+                                                    </div>
+                                                @endif
+                                            </td>
                                             <td class="text-end">
                                                 <x-badge :color="$color" variant="subtle">{{ ($container['Health'] ?? null) === 'unhealthy' ? __('Unhealthy') : __(ucfirst($state)) }}</x-badge>
                                                 <div class="small text-muted text-nowrap">{{ $container['Status'] ?? '' }}</div>
