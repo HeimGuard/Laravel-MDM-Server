@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
 
-/** What happened (the events table): of any model, where it came from, and in data what not every event has. */
+/** What happened (the events table): of any model, what it came from, and in data what not every event has. */
 class EventTest extends TestCase
 {
     use RefreshDatabase;
@@ -51,10 +51,10 @@ class EventTest extends TestCase
         SecurityEvent::record($device, $events);
 
         $event = SecurityEvent::query()->with('eventable')->sole();
-        $this->assertSame('syslog', $event->log_source);
+        $this->assertSame('syslog', $event->source_type);
         // What not every event has is in data, the pages and the rules read it as they always did.
-        $this->assertSame(['user' => 'root', 'origin' => '203.0.113.9', 'parser' => 'org.syslog-sshd-failed'], $event->data);
-        $this->assertSame(['root', '203.0.113.9', '203.0.113.9', 'org.syslog-sshd-failed'], [$event->user, $event->source, $event->origin, $event->parser]);
+        $this->assertSame(['user' => 'root', 'source_origin' => '203.0.113.9', 'parser' => 'org.syslog-sshd-failed'], $event->data);
+        $this->assertSame(['root', '203.0.113.9', '203.0.113.9', 'org.syslog-sshd-failed'], [$event->user, $event->source, $event->source_origin, $event->parser]);
         $this->assertSame([$device->id, $device->id], [$event->device_id, $event->device->id]);
         $this->assertSame($device->getMorphClass(), $event->eventable_type);
     }
@@ -68,7 +68,7 @@ class EventTest extends TestCase
         SecurityEvent::record($device, $events);
 
         // Nothing is dropped (and not summed into one either): each source has its event.
-        $this->assertSame(['linux.auth', 'syslog'], SecurityEvent::query()->orderBy('log_source')->pluck('log_source')->all());
+        $this->assertSame(['linux.auth', 'syslog'], SecurityEvent::query()->orderBy('source_type')->pluck('source_type')->all());
     }
 
     public function test_an_event_can_be_made_with_the_names_the_code_knows(): void

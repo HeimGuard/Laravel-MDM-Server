@@ -182,7 +182,7 @@ class Page extends Component
                 ->when($this->eventDays > 0, fn ($q) => $q->where('occurred_at', '>=', now()->subDays($this->eventDays)))
                 ->when(trim($this->eventSearch) !== '', function ($q) {
                     $like = '%'.addcslashes(trim($this->eventSearch), '%_\\').'%';
-                    $q->where(fn ($q) => $q->whereLike('data->user', $like)->orWhereLike('data->origin', $like)->orWhereLike('message', $like));
+                    $q->where(fn ($q) => $q->whereLike('data->user', $like)->orWhereLike('data->source_origin', $like)->orWhereLike('message', $like));
                 })
                 ->limit($this->eventLimit + 1)->get();
             $moreEvents = $events->count() > $this->eventLimit;

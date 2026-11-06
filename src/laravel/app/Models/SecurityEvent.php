@@ -37,9 +37,9 @@ class SecurityEvent extends Model
 
     /**
      * device_id, user and source are what the pages and the rules know an event by: the device is the eventable, the user and
-     * the address the event came from (source) are in data. log_source is where the event came from (linux.auth, syslog, ...).
+     * the address the event came from (source) are in data. source_type is what the event came from (linux.auth, syslog, ...: not only a log).
      */
-    protected $fillable = ['eventable_type', 'eventable_id', 'type', 'log_source', 'count', 'message', 'occurred_at', 'data', 'device_id', 'user', 'source', 'origin', 'parser'];
+    protected $fillable = ['eventable_type', 'eventable_id', 'type', 'source_type', 'count', 'message', 'occurred_at', 'data', 'device_id', 'user', 'source', 'source_origin', 'parser'];
 
     protected $casts = [
         'count' => 'integer',
@@ -102,25 +102,25 @@ class SecurityEvent extends Model
         $this->setDetail('user', $value);
     }
 
-    /** The address the event came from (data.origin); called source by the pages and the rules. */
+    /** The address the event came from (data.source_origin); called source by the pages and the rules. */
     public function getSourceAttribute(): ?string
     {
-        return $this->detail('origin');
+        return $this->detail('source_origin');
     }
 
     public function setSourceAttribute(?string $value): void
     {
-        $this->setDetail('origin', $value);
+        $this->setDetail('source_origin', $value);
     }
 
-    public function getOriginAttribute(): ?string
+    public function getSourceOriginAttribute(): ?string
     {
-        return $this->detail('origin');
+        return $this->detail('source_origin');
     }
 
-    public function setOriginAttribute(?string $value): void
+    public function setSourceOriginAttribute(?string $value): void
     {
-        $this->setDetail('origin', $value);
+        $this->setDetail('source_origin', $value);
     }
 
     /** The key of the parser that made the event (data.parser). */
@@ -153,12 +153,12 @@ class SecurityEvent extends Model
     {
         $rows = [];
         foreach (array_slice($events, 0, self::MAX_PER_COLLECTION) as $event) {
-            $data = array_filter(['user' => $event['User'], 'origin' => $event['Source'], 'parser' => $event['Parser'] ?? null], fn ($value) => $value !== null && $value !== '');
+            $data = array_filter(['user' => $event['User'], 'source_origin' => $event['Source'], 'parser' => $event['Parser'] ?? null], fn ($value) => $value !== null && $value !== '');
             $rows[] = [
                 'eventable_type' => $device->getMorphClass(),
                 'eventable_id' => $device->id,
                 'type' => $event['Type'],
-                'log_source' => (string) ($event['LogSource'] ?? ''),
+                'source_type' => (string) ($event['SourceType'] ?? ''),
                 'count' => $event['Count'],
                 'message' => $event['Message'],
                 'occurred_at' => $event['Last'] ?? now(),

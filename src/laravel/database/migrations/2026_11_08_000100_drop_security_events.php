@@ -36,7 +36,7 @@ return new class extends Migration
 
                 return [
                     'device_id' => $row->eventable_id, 'type' => $row->type, 'count' => $row->count, 'user' => $data['user'] ?? null,
-                    'source' => $data['origin'] ?? null, 'message' => $row->message, 'occurred_at' => $row->occurred_at,
+                    'source' => $data['source_origin'] ?? null, 'message' => $row->message, 'occurred_at' => $row->occurred_at,
                     'created_at' => $row->created_at, 'updated_at' => $row->updated_at,
                 ];
             })->values()->all());

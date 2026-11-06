@@ -123,25 +123,24 @@ disappeared has a sample with `data = null` and `last_data = null`.
 What happened, also without a user. Everything that not every event has is in `data`:
 
 ```json
-[{"id": 5501, "eventable_type": "App\\Models\\Device", "eventable_id": 7, "type": "failed_logon", "severity": "warning",
-  "source": "syslog", "message": "Failed SSH sign-in of root from 203.0.113.9", "count": 12, "occurred_at": "2026-11-06 09:04:12",
-  "data": {"parser": "org.syslog-sshd-failed", "user": "root", "origin": "203.0.113.9"}},
- {"id": 5502, "eventable_type": "App\\Models\\Device", "eventable_id": 7, "type": "went_offline", "severity": "info",
-  "source": "server", "message": "No heartbeat for 90 s", "count": 1, "occurred_at": "2026-11-06 09:10:00", "data": null}]
+[{"id": 5501, "eventable_type": "App\\Models\\Device", "eventable_id": 7, "type": "failed_logon",
+  "source_type": "syslog", "message": "Failed SSH sign-in of root from 203.0.113.9", "count": 12, "occurred_at": "2026-11-06 09:04:12",
+  "data": {"parser": "org.syslog-sshd-failed", "user": "root", "source_origin": "203.0.113.9"}},
+ {"id": 5502, "eventable_type": "App\\Models\\Device", "eventable_id": 7, "type": "went_offline",
+  "source_type": "server", "message": "No heartbeat for 90 s", "count": 1, "occurred_at": "2026-11-06 09:10:00", "data": null}]
 ```
 
-`source` is where it came from (`linux.auth`, `docker.logs`, `web.log`, `syslog`, `windows.security`, `agent`, `server`,
-`portscan`), `data.parser` the key of the parser that made it. It grows out of `security_events` (`source` there is the address
-the attack came from: it becomes `data.origin`). `alert_events` stays as it is: an alert has a lifetime, it belongs to the
-notifications.
+`source_type` is what it came from (`linux.auth`, `docker.logs`, `web.log`, `syslog`, `windows.security`, `agent`, `server`,
+`portscan`: not only a log), `data.source_origin` the address the event came from (the attacker), `data.parser` the key of
+the parser that made it. It grows out of `security_events` (its `source`, the address, is `data.source_origin`). `alert_events`
+stays as it is: an alert has a lifetime, it belongs to the notifications.
 
-**State.** The table is `events` (model `SecurityEvent`, it was `security_events`): `eventable_*`, `type`, `log_source` (where it
-came from: the source of the log of the parser, `''` for the events that were there before), `message`, `count`, `occurred_at` and
-`data` (`user`, `origin`, `parser`). There is no `severity` column yet: the colour of an event is by its type
-(`SecurityEvent::TONES`). The pages and the rules read an event as they always did: `$event->user`, `$event->source` (the address,
-`data.origin`) and `$event->device_id` are accessors, so templates and rules did not change; `SecurityEvent::forDevice($id)` is
-the scope. The events of two log sources that say the same thing are two events (each has its `log_source`), nothing is dropped;
-the merge below is the next step.
+**State.** The table is `events` (model `SecurityEvent`, it was `security_events`): `eventable_*`, `type`, `source_type` (`''`
+for the events that were there before), `message`, `count`, `occurred_at` and `data` (`user`, `source_origin`, `parser`). There
+is no `severity` column yet: the colour of an event is by its type (`SecurityEvent::TONES`). The pages and the rules read an
+event as they always did: `$event->user`, `$event->source` (the address, `data.source_origin`) and `$event->device_id` are
+accessors, so templates and rules did not change; `SecurityEvent::forDevice($id)` is the scope. The events of two sources that
+say the same thing are two events (each has its `source_type`), nothing is dropped; the merge below is the next step.
 
 ### Two sources report the same thing
 
@@ -149,10 +148,10 @@ A device can report the same event twice: an agent that reads the auth log (`lin
 (`syslog`) gives the failed sign-in once from each. Today that is two events, so the counts the rules look at are doubled.
 With `events` the second report is not a second event, it **confirms** the first:
 
-- The events are the same when the owner, `type`, `data.user` and `data.origin` are the same and their times overlap
+- The events are the same when the owner, `type`, `data.user` and `data.source_origin` are the same and their times overlap
   (about a minute).
 - `count` is not summed (the same sign-ins are counted once: the larger of the two counts), and `data.sources` lists
-  every source that reported it: `{"sources": ["linux.auth", "syslog"], "verified": true}`; `source` stays the first one.
+  every source that reported it: `{"sources": ["linux.auth", "syslog"], "verified": true}`; `source_type` stays the first one.
 - `verified` is true when two sources that do not depend on each other reported it. A later change of the pages can show it
   as a mark or the icon of the second source; the data is there before that.
 

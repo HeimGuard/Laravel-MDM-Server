@@ -858,7 +858,7 @@ class SecurityScanner
     private static function unseen(array $definition, array $events, ?int $before): array
     {
         // The user and the address the event came from are in data.
-        $columns = ['User' => 'data->user', 'Source' => 'data->origin'];
+        $columns = ['User' => 'data->user', 'Source' => 'data->source_origin'];
         $fields = $definition['unseen_by'] ?? array_keys($columns);
 
         return array_values(array_filter($events, function (array $event) use ($definition, $fields, $columns, $before) {
