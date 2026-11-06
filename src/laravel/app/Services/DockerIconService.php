@@ -6,17 +6,18 @@ use App\Jobs\RefreshDockerIcons;
 use App\Models\Device;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Icon of a container from the dashboard-icons (https://github.com/homarr-labs/dashboard-icons) and
  * selfh.st/icons (https://selfh.st/icons) databases.
  *
- * Nothing is loaded from the CDN by the browser: the index of the databases and the icons of the images
- * the devices run are downloaded by `refresh()` (job RefreshDockerIcons, `php artisan mdm:docker-icons`) into
- * the cache (CACHE_STORE, whatever store is chosen there) and served by the application (route docker-icon).
- * The names are compared without case and punctuation, so the image `pihole` finds `pi-hole`; a file that
- * exists only as a PNG is used as it is. An image without a stored icon shows the Docker icon, and a missing
- * icon (new image, cleared cache) asks for a refresh.
+ * Nothing is loaded from the CDN by the browser: the icons of the images the devices run are downloaded by
+ * `refresh()` (job RefreshDockerIcons, `php artisan mdm:docker-icons`) onto the public disk
+ * (storage/app/public/docker-icons, served by the web server as /storage/docker-icons/..., no PHP) and the index of
+ * the databases is kept in the cache (CACHE_STORE). The names are compared without case and punctuation, so the
+ * image `pihole` finds `pi-hole`; a file that exists only as a PNG is used as it is. An image without a stored
+ * icon shows the Docker icon, and a missing icon (new image, deleted file) asks for a refresh.
  */
 class DockerIconService
 {
@@ -32,6 +33,8 @@ class DockerIconService
     private const REQUEST_EVERY = 600;
 
     private const MAX_BYTES = 1_000_000;
+
+    private const DIRECTORY = 'docker-icons';
 
     /** Image names (last path segment) whose icon is named quite differently. */
     private const ALIASES = [
@@ -74,7 +77,7 @@ class DockerIconService
     }
 
     /**
-     * URLs (of this application) of the icons of the image that are stored, the most specific name first.
+     * URLs (of the web server, a file of the public disk) of the icons of the image that are stored, the most specific name first.
      * Empty: no icon (the Docker icon stays). An icon that exists in the databases but is not stored yet
      * asks for a refresh.
      *
@@ -86,8 +89,8 @@ class DockerIconService
         $urls = [];
         $missing = $index === [];
         foreach (self::match($index, $image) as $remote) {
-            if (self::file(self::fileName($remote)) !== null) {
-                $urls[] = route('docker-icon', ['file' => self::fileName($remote)]);
+            if (self::stored(self::fileName($remote))) {
+                $urls[] = asset('storage/'.self::DIRECTORY.'/'.self::fileName($remote));
             } else {
                 $missing = true;
             }
@@ -132,14 +135,9 @@ class DockerIconService
         return sha1($remote).'.'.pathinfo($remote, PATHINFO_EXTENSION);
     }
 
-    /** The stored icon: ['type' => 'image/svg+xml', 'body' => ...], null when it is not stored. */
-    public static function file(string $file): ?array
+    private static function stored(string $file): bool
     {
-        $stored = Cache::get('docker-icons:file:'.$file);
-
-        return is_array($stored) && isset($stored['type'], $stored['body']) && ($body = base64_decode($stored['body'], true)) !== false
-            ? ['type' => $stored['type'], 'body' => $body]
-            : null;
+        return Storage::disk('public')->exists(self::DIRECTORY.'/'.$file);
     }
 
     /** The names of the icons of both databases with the URL of each file; empty before the first refresh. @return array<string, array<string, string>> */
@@ -198,7 +196,7 @@ class DockerIconService
         }
         foreach (array_keys($wanted) as $remote) {
             $file = self::fileName($remote);
-            if (! $force && self::file($file) !== null) {
+            if (! $force && self::stored($file)) {
                 continue;
             }
             try {
@@ -207,7 +205,7 @@ class DockerIconService
                 if ($body === '' || strlen($body) > self::MAX_BYTES) {
                     throw new \RuntimeException('empty or too large');
                 }
-                Cache::forever('docker-icons:file:'.$file, ['type' => str_ends_with($remote, '.svg') ? 'image/svg+xml' : 'image/png', 'body' => base64_encode($body)]);
+                Storage::disk('public')->put(self::DIRECTORY.'/'.$file, $body);
                 $downloaded++;
             } catch (\Throwable $e) {
                 $failed[] = "$remote: ".$e->getMessage();

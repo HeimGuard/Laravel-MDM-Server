@@ -12,8 +12,6 @@ Route::auth();
 
 Route::get('/home', [App\Http\Controllers\HomeController::class, 'index'])->name('home');
 
-Route::get('/docker-icons/{file}', [App\Http\Controllers\DockerIconController::class, 'show'])->middleware(['auth'])->where('file', '[a-f0-9]{40}\.(svg|png)')->name('docker-icon');
-
 Route::get('/changelog', [App\Http\Controllers\ChangelogController::class, 'index'])->middleware(['auth'])->name('changelog');
 
 Route::prefix('profile')->name('profile.')->middleware(['auth'])->group(function () {
