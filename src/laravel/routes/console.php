@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\RefreshDockerIcons;
 use App\Jobs\SyncSecurityFeed;
 use App\Models\DeviceCommand;
 use App\Support\SecurityFeed;
@@ -26,8 +27,53 @@ Schedule::call(fn () => App\Support\AlertEvaluator::run())->everyMinute()->name(
 // The rules of the security rules feed (MDM_SECURITY_FEED_URL), once a day when one is set.
 Schedule::job(new SyncSecurityFeed)->dailyAt('03:17')->name('mdm:security-feed')->when(fn () => SecurityFeed::enabled());
 
+// Takes the rules of the feed now, as the Security page does. The files are fetched and applied by jobs of the queue (a worker has to run);
+// without --force nothing happens when the version did not change, --queue leaves even the check to the queue.
+Artisan::command('mdm:security-feed {--force : Take the rules even when the version did not change} {--queue : Run the check in the queue instead of here}', function () {
+    if (! SecurityFeed::enabled()) {
+        $this->warn('The security rules feed is not set (MDM_SECURITY_FEED_URL).');
+
+        return 1;
+    }
+    if ($this->option('queue')) {
+        SyncSecurityFeed::dispatch((bool) $this->option('force'));
+        $this->info('Queued.');
+
+        return 0;
+    }
+    $state = SecurityFeed::sync((bool) $this->option('force'));
+    $this->info('Feed '.(($state['ok'] ?? false) ? 'ok' : 'not applied yet').(isset($state['version']) ? ', version '.$state['version'] : '').'.');
+    if (! empty($state['error'])) {
+        $this->warn($state['error']);
+
+        return 1;
+    }
+
+    return 0;
+})->purpose('Take the rules of the security rules feed now');
+
 // Findings: acknowledged ones expire (when set), the ones of a rule that is gone are resolved, silent devices' ones are stale.
 Schedule::call(fn () => App\Support\SecurityScanner::sweep())->dailyAt('03:47')->name('mdm:security-sweep');
+
+// The icons of the containers (dashboard-icons, selfh.st/icons): the index and the icons of the images the devices run, into the cache.
+Schedule::job(new RefreshDockerIcons)->weeklyOn(1, '03:27')->name('mdm:docker-icons');
+
+// Reads the icon databases again and stores the icons of the containers, also the new ones. --force downloads the stored ones again, --queue leaves it to the queue.
+Artisan::command('mdm:docker-icons {--force : Download the stored icons again} {--queue : Run in the queue instead of here}', function () {
+    if ($this->option('queue')) {
+        RefreshDockerIcons::dispatch((bool) $this->option('force'));
+        $this->info('Queued.');
+
+        return 0;
+    }
+    $result = App\Services\DockerIconService::refresh((bool) $this->option('force'));
+    $this->info("Icons of the containers: {$result['icons']}, downloaded: {$result['downloaded']}.");
+    foreach ($result['failed'] as $failure) {
+        $this->warn($failure);
+    }
+
+    return $result['failed'] === [] ? 0 : 1;
+})->purpose('Refresh the icons of the containers (index of the icon databases and the icons in use)');
 
 // Creates the server signing key when it does not exist yet and shows its fingerprint.
 Artisan::command('mdm:signing-key', function () {
