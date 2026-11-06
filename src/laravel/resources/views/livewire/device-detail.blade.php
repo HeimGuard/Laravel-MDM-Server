@@ -549,8 +549,9 @@
                                 <thead>
                                     <tr>
                                         <th>{{ __('Container') }}</th>
-                                        <th class="d-none d-lg-table-cell">{{ __('Ports') }}</th>
-                                        <th class="d-none d-md-table-cell">{{ __('Last 12 hours') }}</th>
+                                        {{-- The columns that are as wide as their content (1%): the free room is the container's. --}}
+                                        <th class="d-none d-lg-table-cell text-nowrap" style="width: 1%">{{ __('Ports') }}</th>
+                                        <th class="d-none d-md-table-cell text-nowrap" style="width: 1%">{{ __('Last 12 hours') }}</th>
                                         <th class="text-end">{{ __('State') }}</th>
                                     </tr>
                                 </thead>
