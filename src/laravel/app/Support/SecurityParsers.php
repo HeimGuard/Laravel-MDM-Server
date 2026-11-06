@@ -167,9 +167,12 @@ class SecurityParsers
                     $event['Parser'] = $parser['key'] ?? null;
                     $key = $source.'|'.$event['Type'].'|'.mb_strtolower((string) $event['User']).'|'.$event['Source'];
                     if (! isset($groups[$key])) {
-                        $groups[$key] = $event;
+                        $groups[$key] = $event + ['First' => $event['Last']];
                     } else {
                         $groups[$key]['Count'] += $event['Count'];
+                        if ($event['Last'] !== null && ($groups[$key]['First'] === null || (string) $event['Last'] < (string) $groups[$key]['First'])) {
+                            $groups[$key]['First'] = $event['Last'];
+                        }
                         if ((string) $event['Last'] >= (string) $groups[$key]['Last']) {
                             $groups[$key]['Last'] = $event['Last'];
                             $groups[$key]['Message'] = $event['Message'] ?? $groups[$key]['Message'];

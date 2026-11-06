@@ -9,7 +9,7 @@ How the data of the devices is stored, and where new data goes. The rules for wo
 | Settings (set by someone) | `settings` | `HasSettings` | in use (`lan.*`) |
 | Measured numbers | `value_definitions`, `value_samples` | `HasValue` | in use |
 | Structured things a model has | `inventory_definitions`, `inventory_samples` | `HasInventory` | planned |
-| What happened | `events` | | in use (table; the merge of two sources is planned) |
+| What happened | `events` | | in use (two sources that report the same thing confirm each other) |
 | What a user did | `activities` | | in use |
 | Its execution | `device_commands`, `script_runs` | | in use |
 | Alerts, notifications | `alert_events` | | in use, unchanged |
@@ -145,15 +145,19 @@ say the same thing are two events (each has its `source_type`), nothing is dropp
 ### Two sources report the same thing
 
 A device can report the same event twice: an agent that reads the auth log (`linux.auth`) and also forwards it as syslog
-(`syslog`) gives the failed sign-in once from each. Today that is two events, so the counts the rules look at are doubled.
-With `events` the second report is not a second event, it **confirms** the first:
+(`syslog`) gives the failed sign-in once from each. Nothing is dropped and nothing is counted twice: the second report
+**confirms** the first (`EventService::corroborate`, when the events are stored).
 
-- The events are the same when the owner, `type`, `data.user` and `data.source_origin` are the same and their times overlap
-  (about a minute).
-- `count` is not summed (the same sign-ins are counted once: the larger of the two counts), and `data.sources` lists
-  every source that reported it: `{"sources": ["linux.auth", "syslog"], "verified": true}`; `source_type` stays the first one.
-- `verified` is true when two sources that do not depend on each other reported it. A later change of the pages can show it
-  as a mark or the icon of the second source; the data is there before that.
+- The events are **the same** when the owner, `type`, the user and the address (`data.source_origin`) are the same, the
+  `source_type` differs, and their times overlap: each event covers its first to its last occurrence (`data.first` and
+  `occurred_at`), a minute more each way (`EventService::TOLERANCE`). So the one summary of the agent (12 failures in an hour)
+  is the same thing as the messages of syslog that fall in that hour, whichever came first. Two events of one source are
+  never merged: they are different occurrences.
+- Both stay stored. The one with the larger `count` counts; the others have `data.duplicate_of` (its id). Every one of them has
+  `data.sources` (all the sources that reported it) and `data.verified: true`. The rules and the scan look only at what counts
+  (`duplicate_of` is empty), the pages list all of them as before.
+- `SecurityEvent::verified`, `sources` and `duplicate_of` read it. A later change of the pages can show it as a mark or the
+  icon of the second source; the data is there before that.
 
 The syslog parsers of `detection-policy` (`org.syslog-sshd-*`) stay as they are: the merge, not a filter, takes care of the
 duplicates, and an event only one source reports is still an event.

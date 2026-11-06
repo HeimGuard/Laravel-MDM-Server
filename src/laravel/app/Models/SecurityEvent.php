@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\EventService;
 use App\Support\SecurityRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
@@ -123,6 +124,32 @@ class SecurityEvent extends Model
         $this->setDetail('source_origin', $value);
     }
 
+    /** When the first of the occurrences the event sums up happened (data.first); the time of the event for one occurrence. */
+    public function getFirstAtAttribute(): \Illuminate\Support\Carbon
+    {
+        $first = $this->detail('first');
+
+        return $first === null ? $this->occurred_at : \Illuminate\Support\Carbon::parse($first, config('app.timezone'))->min($this->occurred_at);
+    }
+
+    /** Two sources reported it (EventService). */
+    public function getVerifiedAttribute(): bool
+    {
+        return (bool) (($this->data ?? [])['verified'] ?? false);
+    }
+
+    /** The sources that reported it. @return array<int, string> */
+    public function getSourcesAttribute(): array
+    {
+        return ($this->data ?? [])['sources'] ?? [$this->source_type];
+    }
+
+    /** The id of the event that counts for it, null for one that counts itself. */
+    public function getDuplicateOfAttribute(): ?int
+    {
+        return ($this->data ?? [])['duplicate_of'] ?? null;
+    }
+
     /** The key of the parser that made the event (data.parser). */
     public function getParserAttribute(): ?string
     {
@@ -149,12 +176,16 @@ class SecurityEvent extends Model
      *
      * @param  array<int, array>  $events
      */
-    public static function record(Device $device, array $events): void
+    public static function record(Device $device, array $events): array
     {
-        $rows = [];
+        $created = collect();
+        $counted = [];
         foreach (array_slice($events, 0, self::MAX_PER_COLLECTION) as $event) {
-            $data = array_filter(['user' => $event['User'], 'source_origin' => $event['Source'], 'parser' => $event['Parser'] ?? null], fn ($value) => $value !== null && $value !== '');
-            $rows[] = [
+            $data = array_filter([
+                'user' => $event['User'], 'source_origin' => $event['Source'], 'parser' => $event['Parser'] ?? null,
+                'first' => isset($event['First'], $event['Last']) && $event['First'] !== $event['Last'] ? $event['First'] : null,
+            ], fn ($value) => $value !== null && $value !== '');
+            $created->push(static::query()->create([
                 'eventable_type' => $device->getMorphClass(),
                 'eventable_id' => $device->id,
                 'type' => $event['Type'],
@@ -162,13 +193,14 @@ class SecurityEvent extends Model
                 'count' => $event['Count'],
                 'message' => $event['Message'],
                 'occurred_at' => $event['Last'] ?? now(),
-                'data' => $data === [] ? null : json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+                'data' => $data === [] ? null : $data,
+            ]));
+            $counted[] = $event;
         }
-        foreach (array_chunk($rows, 100) as $chunk) {
-            static::query()->insert($chunk);
-        }
+        // What two sources report as one thing counts once: the events that are another report of one are not scanned again.
+        $duplicates = EventService::corroborate($device, $created);
+        $ids = $created->pluck('id')->all();
+
+        return array_values(array_filter($counted, fn ($event, $i) => ! in_array($ids[$i], $duplicates, true), ARRAY_FILTER_USE_BOTH));
     }
 }
