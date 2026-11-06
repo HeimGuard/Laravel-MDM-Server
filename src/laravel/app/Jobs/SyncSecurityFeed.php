@@ -9,8 +9,10 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use SteelAnts\LaravelBoilerplate\Attributes\AllowManualRun;
 
 /** Takes the rules of the security rules feed (once a day, or on demand from the Security page). */
+#[AllowManualRun]
 class SyncSecurityFeed implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
