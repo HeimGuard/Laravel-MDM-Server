@@ -49,16 +49,18 @@ class PingValuesTest extends TestCase
         $this->assertSame([7.0, 8.0], $printer->valueHistory('ping.relay_id')->pluck('value')->all());
     }
 
-    public function test_a_changed_address_forgets_the_state_but_not_the_history(): void
+    public function test_a_changed_address_forgets_the_response_time_but_not_the_history(): void
     {
         $printer = $this->ping();
         PingUsage::record($printer->id, true, 2.4, null, 7);
 
         PingUsage::forgetCurrent($printer->id);
 
+        // As before: the response time is forgotten, the agent that pinged stays, and so does the history.
         $fresh = Device::find($printer->id);
-        $this->assertSame([null, null], [$fresh->ping_rtt, $fresh->ping_relay_id]);
+        $this->assertSame([null, 7], [$fresh->ping_rtt, $fresh->ping_relay_id]);
         $this->assertSame(1, $printer->valueHistory('ping.up')->count());
+        $this->assertSame(1, $printer->valueHistory('ping.rtt')->count());
     }
 
     public function test_a_backfill_does_not_change_the_current_state(): void

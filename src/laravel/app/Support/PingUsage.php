@@ -35,10 +35,13 @@ class PingUsage
         ValueRecorder::record((new Device)->getMorphClass(), $deviceId, self::values($up, $rtt, $relayId), $at);
     }
 
-    /** What the answers so far say nothing about any more (the address changed): the current state is forgotten, the history stays. */
+    /**
+     * The response time of the last ping says nothing about another address: it is forgotten (the history stays, and the agent
+     * that pinged last stays as it did before the settings were measured values).
+     */
     public static function forgetCurrent(int $deviceId): void
     {
-        ValueDefinition::query()->where('valuable_type', (new Device)->getMorphClass())->where('valuable_id', $deviceId)->whereIn('key', self::KEYS)
+        ValueDefinition::query()->where('valuable_type', (new Device)->getMorphClass())->where('valuable_id', $deviceId)->where('key', 'ping.rtt')->where('name', '')
             ->update(['last_value' => null, 'last_at' => null]);
     }
 
