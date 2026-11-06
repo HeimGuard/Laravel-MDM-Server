@@ -132,6 +132,8 @@ class DeviceDetail extends Component
         return view('livewire.device-detail', [
             'selectedDevice' => $device,
             'activeCommands' => $device->activeCommands(),
+            // The state of each container hour by hour for the last 12 hours (the bar in the table of the containers).
+            'containerBeats' => $device->docker !== null ? \App\Services\InventoryTimelineService::beats($device, 'container') : [],
             // The audit log of the device: its commands (and the wakes / pings other agents did for
             // it), the scans of its ports by another agent, and what was changed on it.
             'history' => \App\Support\Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])),
