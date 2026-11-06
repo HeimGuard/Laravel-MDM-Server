@@ -587,16 +587,12 @@
                                         <tr wire:key="container-{{ $loop->index }}" x-show="!search || @js(strtolower(($container['Name'] ?? '') . ' ' . ($container['Image'] ?? '') . ' ' . implode(' ', $published) . ' ' . $state)).includes(search.toLowerCase())">
                                             <td class="text-break">
                                                 <div class="d-flex align-items-center gap-2">
-                                                    <span class="position-relative flex-shrink-0 d-inline-flex align-items-center justify-content-center" style="width: 1.75rem; height: 1.75rem;">
-                                                        <i class="fab fa-docker text-muted fa-lg"></i>
+                                                    <span class="flex-shrink-0 d-inline-flex align-items-center justify-content-center" style="width: 1.75rem; height: 1.75rem;">
+                                                        {{-- The icon is a stored file (DockerIconService checks it), so it is rendered as it is: no script and no state that a refresh of the table (morph) would reset. Without one, the Docker icon. --}}
                                                         @if ($icons !== [])
-                                                            {{-- Icons by the image name; the next candidate when missing, the Docker icon at last. Not loading=lazy and not hidden: an image without a box is never fetched, so neither onload nor onerror would fire. --}}
-                                                            <img src="{{ $icons[0] }}" alt="" width="28" height="28"
-                                                                 data-next="{{ implode(' ', array_slice($icons, 1)) }}"
-                                                                 class="position-absolute top-50 start-50 translate-middle"
-                                                                 style="object-fit: contain; opacity: 0;"
-                                                                 onload="this.style.opacity = 1; this.previousElementSibling.style.visibility = 'hidden'"
-                                                                 onerror="var n = (this.dataset.next || '').split(' ').filter(Boolean); if (n.length) { this.dataset.next = n.slice(1).join(' '); this.src = n[0]; } else { this.remove(); }">
+                                                            <img src="{{ $icons[0] }}" alt="" width="28" height="28" style="object-fit: contain;">
+                                                        @else
+                                                            <i class="fab fa-docker text-muted fa-lg"></i>
                                                         @endif
                                                     </span>
                                                     <div class="min-w-0">
