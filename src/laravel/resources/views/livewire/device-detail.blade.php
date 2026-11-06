@@ -1,5 +1,5 @@
 {{-- Polls faster while a command is on its way (install buttons, history). data-keep-tab: see tabs-state.js. --}}
-<div data-keep-tab>
+<div data-keep-tab wire:init="loadTabs">
     @php
         $moduleUpdates = $selectedDevice->moduleUpdates;
         $hasUpdates = count($selectedDevice->updates) > 0 || count($selectedDevice->apps_packages_updates) > 0 || count($moduleUpdates) > 0;
@@ -41,6 +41,8 @@
         // Disk health was a tab of its own (old links: ?tab=health).
         $tab = $tab === 'health' ? 'drives' : $tab;
         $activeTab = in_array($tab, $tabs, true) ? $tab : ($tabs[0] ?? null);
+        // Only the shown tab is built on the first request, the others follow in the background (wire:init -> loadTabs).
+        $ready = fn (string $name) => $tabsLoaded || $activeTab === $name;
     @endphp
 
     <div class="card">
@@ -233,6 +235,7 @@
 
         <div class="tab-content pt-3">
             <div aria-labelledby="overview-tab" class="tab-pane fade {{ $activeTab === 'overview' ? 'show active' : '' }}" id="overview-tab-pane" role="tabpanel" tabindex="0">
+                @if ($ready('overview'))
                 {{-- Ping-only devices have no report, but alerts of their own, above the graph like the ones of the other devices (another address, a failed wake). --}}
                 @if (!empty($selectedDevice->data) || $selectedDevice->isPingOnly)
                     @livewire('device-alerts', ['selectedDeviceId' => $selectedDevice->id], key('device-alerts' . $selectedDevice->id))
@@ -243,9 +246,13 @@
                 @else
                     @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
                 @endif
+                @else
+                    <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                @endif
             </div>
             @if (!empty($selectedDevice->drives) || $diskHealth !== null)
                 <div aria-labelledby="drives-tab" class="tab-pane fade {{ $activeTab === 'drives' ? 'show active' : '' }}" id="drives-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($ready('drives'))
                     @if (!empty($selectedDevice->drives))
                     <div class="row g-3">
                         @foreach ($selectedDevice->drives as $drive)
@@ -327,6 +334,9 @@
                     @endif
                     <p class="small text-muted mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
                     @endif
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
@@ -338,6 +348,7 @@
                     $moduleSearch = array_map(fn ($module) => strtolower(($module['Name'] ?? '') . ' ' . ($module['Edition'] ?? '') . ' ' . ($module['User'] ?? '')), $moduleUpdates);
                 @endphp
                 <div aria-labelledby="updates-tab" class="tab-pane fade {{ $activeTab === 'updates' ? 'show active' : '' }}" id="updates-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($ready('updates'))
                     @if ($selectedDevice->data->os_updates_error ?? null)
                         <div class="alert alert-warning small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</div>
                     @endif
@@ -444,11 +455,15 @@
                         </ul>
                         </div>
                     @endforeach
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
             @if (count($selectedDevice->networks) > 0)
                 <div aria-labelledby="networks-tab" class="tab-pane fade {{ $activeTab === 'networks' ? 'show active' : '' }}" id="networks-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($ready('networks'))
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
                             <li class="list-group-item d-flex align-items-start gap-3">
@@ -492,11 +507,15 @@
                             </li>
                         @endforeach
                     </ul>
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
             @if (count($services) > 0)
                 <div aria-labelledby="services-tab" class="tab-pane fade {{ $activeTab === 'services' ? 'show active' : '' }}" id="services-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($ready('services'))
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
                         <span class="small text-muted ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
@@ -532,11 +551,15 @@
                             </tbody>
                         </table>
                     </div>
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
             @if ($docker !== null)
                 <div aria-labelledby="docker-tab" class="tab-pane fade {{ $activeTab === 'docker' ? 'show active' : '' }}" id="docker-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($ready('docker'))
                     @if ($docker['error'])
                         <div class="alert alert-warning mb-3" role="alert">
                             <i class="fab fa-docker me-2"></i>{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}
@@ -624,25 +647,37 @@
                     @elseif (! $docker['error'])
                         <p class="text-muted mb-0">{{ __('No containers.') }}</p>
                     @endif
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
             @if ($scriptRuns->isNotEmpty())
                 <div aria-labelledby="scripts-tab" class="tab-pane fade {{ $activeTab === 'scripts' ? 'show active' : '' }}" id="scripts-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($ready('scripts'))
                     @livewire('script-run.data-table', ['deviceId' => $selectedDevice->id], key('device-script-runs-'.$selectedDevice->id))
                     @unless ($selectedDevice->scriptsEnabled)
                         <p class="small text-muted mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
                     @endunless
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
             @if ($hasSecurity || $securityFindings->isNotEmpty())
                 <div aria-labelledby="security-tab" class="tab-pane fade {{ $activeTab === 'security' ? 'show active' : '' }}" id="security-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($ready('security'))
                     @livewire('device-security', ['deviceId' => $selectedDevice->id], key('device-security-'.$selectedDevice->id))
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @endif
 
                 <div aria-labelledby="history-tab" class="tab-pane fade {{ $activeTab === 'history' ? 'show active' : '' }}" id="history-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($ready('history'))
                     {{-- Parsed from the audit log (App\Support\Audit): commands with their status, other actions as they were logged. --}}
                     @if ($history->isEmpty())
                         <div class="text-body-secondary small">{{ __('Nothing done with the device yet.') }}</div>
@@ -706,9 +741,13 @@
                         </table>
                     </div>
                     @endif
+                    @else
+                        <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                    @endif
                 </div>
             @unless ($selectedDevice->isPingOnly)
             <div aria-labelledby="agent-tab" class="tab-pane fade {{ $activeTab === 'agent' ? 'show active' : '' }}" id="agent-tab-pane" role="tabpanel" tabindex="0">
+                @if ($ready('agent'))
                 @php
                     $lastReport = $selectedDevice->last_http_at ?? $selectedDevice->updated_at;
                     // Three cards: what runs, how it talks to the server, how the talk is protected.
@@ -830,6 +869,9 @@
                         </div>
                     </div>
                 </div>
+                @else
+                    <div class="d-flex justify-content-center py-5" aria-busy="true"><div class="spinner-border text-secondary"></div></div>
+                @endif
             </div>
             @endunless
         </div>

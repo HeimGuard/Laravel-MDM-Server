@@ -19,7 +19,7 @@
     <div class="flex-grow-1 min-w-0 d-flex flex-wrap align-items-start column-gap-3 row-gap-2">
     <div class="flex-grow-1 min-w-0" style="flex-basis: 14rem;">
         @if ($showDevice ?? false)
-            <a class="small fw-semibold text-decoration-none d-block text-truncate" href="{{ route('devices', array_filter(['selectedDeviceId' => $device->id, 'tab' => $alert['tab']])) }}">
+            <a class="small fw-semibold text-decoration-none d-block text-truncate" wire:navigate href="{{ route('devices', array_filter(['selectedDeviceId' => $device->id, 'tab' => $alert['tab']])) }}">
                 <i class="{{ $device->typeIcon }} me-1 text-body-secondary"></i>{{ $device->displayName }}
                 @if ($device->offline && $alert['key'] !== 'offline')
                     <x-badge class="ms-1" color="secondary" size="sm" variant="subtle">{{ __('Offline') }}</x-badge>

@@ -16,6 +16,12 @@ class DeviceDetail extends Component
     #[Url(except: 'overview')]
     public string $tab = 'overview';
 
+    /**
+     * False for the first render: only the shown tab is built, the page asks for the others right
+     * after it appeared (wire:init), so opening a device is as fast as its first tab.
+     */
+    public bool $tabsLoaded = false;
+
     /* Edit Mode*/
     public $editMode = false;
     public $friendlyName = "";
@@ -121,6 +127,12 @@ class DeviceDetail extends Component
         }
     }
 
+    /** The other tabs, in the background after the first one is shown. */
+    public function loadTabs(): void
+    {
+        $this->tabsLoaded = true;
+    }
+
     /** Live update (resources/js/live.js): this device changed. */
     #[On('device-changed.{selectedDeviceId}')]
     public function deviceChanged(): void {}
@@ -128,15 +140,17 @@ class DeviceDetail extends Component
     public function render()
     {
         $device = Device::find($this->selectedDeviceId);
+        // What only a tab needs is not built before that tab is (or all of them are) rendered.
+        $needs = fn (string $tab) => $this->tabsLoaded || $this->tab === $tab;
 
         return view('livewire.device-detail', [
             'selectedDevice' => $device,
             'activeCommands' => $device->activeCommands(),
             // The state of each container hour by hour for the last 12 hours (the bar in the table of the containers).
-            'containerBeats' => $device->docker !== null ? \App\Services\InventoryTimelineService::beats($device, 'container') : [],
+            'containerBeats' => $device->docker !== null && $needs('docker') ? \App\Services\InventoryTimelineService::beats($device, 'container') : [],
             // The audit log of the device: its commands (and the wakes / pings other agents did for
             // it), the scans of its ports by another agent, and what was changed on it.
-            'history' => \App\Support\Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])),
+            'history' => $needs('history') ? \App\Support\Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])) : collect(),
         ]);
     }
 }
