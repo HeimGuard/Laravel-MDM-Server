@@ -571,14 +571,31 @@
                                             };
                                             $published = \App\Services\DockerPortsService::published($container['Ports'] ?? '');
                                             $beats = $containerBeats[$container['Name'] ?? ''] ?? [];
+                                            $icons = \App\Services\DockerIconService::urls((string) ($container['Image'] ?? ''));
                                         @endphp
                                         <tr wire:key="container-{{ $loop->index }}" x-show="!search || @js(strtolower(($container['Name'] ?? '') . ' ' . ($container['Image'] ?? '') . ' ' . implode(' ', $published) . ' ' . $state)).includes(search.toLowerCase())">
                                             <td class="text-break">
-                                                <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
-                                                @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
-                                                    <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
-                                                @endif
-                                                <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="position-relative flex-shrink-0 d-inline-flex align-items-center justify-content-center" style="width: 1.75rem; height: 1.75rem;">
+                                                        <i class="fab fa-docker text-muted fa-lg"></i>
+                                                        @if ($icons !== [])
+                                                            {{-- dashboard-icons by the image name; the next candidate when missing, the Docker icon at last. --}}
+                                                            <img src="{{ $icons[0] }}" alt="" width="28" height="28" loading="lazy" hidden
+                                                                 data-next="{{ implode(' ', array_slice($icons, 1)) }}"
+                                                                 class="position-absolute top-50 start-50 translate-middle"
+                                                                 style="object-fit: contain;"
+                                                                 onload="this.hidden = false; this.previousElementSibling.style.visibility = 'hidden'"
+                                                                 onerror="var n = (this.dataset.next || '').split(' ').filter(Boolean); if (n.length) { this.dataset.next = n.slice(1).join(' '); this.src = n[0]; } else { this.remove(); }">
+                                                        @endif
+                                                    </span>
+                                                    <div class="min-w-0">
+                                                        <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
+                                                        @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
+                                                            <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                        @endif
+                                                        <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td class="d-none d-lg-table-cell small text-muted text-nowrap">{{ implode(', ', $published) }}</td>
                                             <td class="d-none d-md-table-cell">
