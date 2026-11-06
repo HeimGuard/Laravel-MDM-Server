@@ -53,6 +53,22 @@ class ReportInventoryTest extends TestCase
         $this->assertSame('healthy', $device->diskHealth['disks'][0]['Health']);
     }
 
+    public function test_the_report_the_agent_posts_is_stored_as_inventory(): void
+    {
+        $device = new Device;
+        $device->token = hash('sha256', 'secret-token');
+        $device->save();
+
+        $this->withToken('secret-token')->postJson('/api/device', $this->report([
+            'services' => [['Name' => 'nginx', 'State' => 'running']],
+            'neighbours' => [['Ip' => '192.168.1.77', 'Mac' => 'AA:BB:CC:DD:EE:77']],
+        ]))->assertOk();
+
+        // The lists are the inventory, not in the column; the ARP table of the agent is not kept.
+        $this->assertSame(['machine'], array_keys(json_decode(Device::find($device->id)->getRawOriginal('data'), true)));
+        $this->assertSame('running', Device::find($device->id)->latestInventory('service', 'nginx')['State']);
+    }
+
     public function test_the_order_of_a_list_is_the_order_of_the_report(): void
     {
         $rows = fn (array $ids) => array_map(fn ($id) => ['Id' => $id, 'Version' => '1', 'Available' => '2', 'Source' => 'winget'], $ids);
