@@ -4,34 +4,36 @@ namespace App\Support;
 
 use App\Models\ValueDefinition;
 use App\Models\ValueSample;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+use SteelAnts\LaravelBoilerplate\Models\Setting;
 
-/** Deletes the history of measured values that is older than config values.retention_days says (by key). */
+/**
+ * How long the history of measured values (CPU, memory, disks, ping, ...) is kept: one setting of the portal for all of it
+ * (System > Settings, days, default 30), and the daily clean-up that deletes what is older.
+ */
 class ValueRetention
 {
+    public const SETTING = 'main.general.history_days';
+
+    public const DEFAULT_DAYS = 30;
+
+    /** The days the history is kept. */
+    public static function days(): int
+    {
+        $value = Setting::query()->whereNull('settable_id')->where('index', self::SETTING)->value('value');
+
+        return $value === null || $value === '' ? self::DEFAULT_DAYS : max(1, (int) $value);
+    }
+
     /** @return int samples deleted */
     public static function prune(): int
     {
-        $configured = (array) config('values.retention_days', []);
-        $default = (int) config('values.default_retention_days', 30);
-        $deleted = 0;
-        foreach ($configured as $key => $days) {
-            $deleted += self::delete(fn (Builder $definitions) => $definitions->where('key', $key), (int) $days);
-        }
-        $deleted += self::delete(fn (Builder $definitions) => $configured === [] ? $definitions : $definitions->whereNotIn('key', array_keys($configured)), $default);
+        $before = now()->subDays(self::days());
+        $deleted = ValueSample::query()->where('recorded_at', '<', $before)->delete();
 
         // What is not measured any more (a disk that was removed) goes when its last sample would be pruned.
-        $longest = max([$default, ...array_map('intval', $configured)]);
-        ValueDefinition::query()->where('last_at', '<', now()->subDays($longest))->delete();
+        ValueDefinition::query()->where('last_at', '<', $before)->delete();
 
         return $deleted;
-    }
-
-    private static function delete(\Closure $definitions, int $days): int
-    {
-        return ValueSample::query()
-            ->whereIn('definition_id', $definitions(ValueDefinition::query()->select('id')))
-            ->where('recorded_at', '<', now()->subDays($days))
-            ->delete();
     }
 }

@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('model:prune', ['--model' => [DeviceCommand::class, App\Models\NetworkNeighbour::class, App\Models\SecurityEvent::class]])->daily();
 
-// The history of measured values (CPU, memory, ping, ...) is kept as long as config/values.php says.
+// The history of measured values (CPU, memory, ping, ...) is kept as long as the setting history_days says (System > Settings).
 Schedule::call(fn () => App\Support\ValueRetention::prune())->daily()->name('mdm:prune-values');
 
 // Commands the device never finished (it went offline, the agent was stopped) are given up.

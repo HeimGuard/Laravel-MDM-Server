@@ -190,7 +190,7 @@ class DeviceHeartbeatTest extends TestCase
     {
         $device = $this->createDevice();
         Device::recordHeartbeat($device->id, ['cpu' => 1, 'memory_used' => 1, 'memory_total' => 2]);
-        $this->travel((int) config('values.default_retention_days') + 1)->days();
+        $this->travel(ValueRetention::days() + 1)->days();
         Device::recordHeartbeat($device->id, ['cpu' => 2, 'memory_used' => 1, 'memory_total' => 2]);
 
         ValueRetention::prune();

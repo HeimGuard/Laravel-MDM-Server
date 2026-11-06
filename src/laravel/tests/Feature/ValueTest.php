@@ -7,6 +7,8 @@ use App\Models\ValueDefinition;
 use App\Models\ValueSample;
 use App\Support\ValueRecorder;
 use App\Support\ValueRetention;
+use SteelAnts\LaravelBoilerplate\Models\Setting;
+use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -99,26 +101,29 @@ class ValueTest extends TestCase
         $this->assertSame(1, ValueDefinition::query()->count());
     }
 
-    public function test_the_history_is_kept_as_long_as_the_configuration_says(): void
+    public function test_the_history_is_kept_as_long_as_the_setting_says(): void
     {
-        config(['values.retention_days' => ['cpu' => 1, 'ping.rtt' => 90], 'values.default_retention_days' => 30]);
         $device = $this->device();
-        foreach ([['cpu', 2], ['cpu', 0], ['ping.rtt', 60], ['ping.rtt', 100], ['other', 40], ['other', 10]] as [$key, $days]) {
+        $this->assertSame(30, ValueRetention::days());
+        foreach ([['cpu', 40], ['cpu', 10], ['ping.rtt', 45], ['ping.rtt', 0]] as [$key, $days]) {
             $device->recordValues([$key => 1], now()->subDays($days));
         }
 
-        $deleted = ValueRetention::prune();
-
-        // cpu kept 1 day, ping.rtt 90, the rest 30 (the default).
-        $this->assertSame(3, $deleted);
+        // The same for every value: 30 days by default.
+        $this->assertSame(2, ValueRetention::prune());
         $this->assertSame(1, $device->valueHistory('cpu')->count());
         $this->assertSame(1, $device->valueHistory('ping.rtt')->count());
-        $this->assertSame(1, $device->valueHistory('other')->count());
+
+        // One setting changes it for all of them.
+        Setting::query()->updateOrCreate(['index' => ValueRetention::SETTING, 'settable_id' => null, 'settable_type' => null], ['value' => '5', 'type' => SettingDataType::INT]);
+        $this->assertSame(5, ValueRetention::days());
+        $this->assertSame(1, ValueRetention::prune());
+        $this->assertSame(0, $device->valueHistory('cpu')->count());
+        $this->assertSame(1, $device->valueHistory('ping.rtt')->count());
     }
 
     public function test_a_value_that_is_not_measured_any_more_is_forgotten(): void
     {
-        config(['values.retention_days' => ['cpu' => 30], 'values.default_retention_days' => 30]);
         $device = $this->device();
         $device->recordValues([['key' => 'disk.used_pct', 'name' => 'F:', 'value' => 5]], now()->subDays(45));
         $device->recordValues(['cpu' => 1]);

@@ -22,10 +22,10 @@ class DeviceUsage
     /** Samples this far apart (seconds) are one: a batch sent again is skipped. */
     private const NEAR = 10;
 
-    /** Days the history is kept (config values.retention_days). */
+    /** Days the history is kept (the setting of the portal, see ValueRetention). */
     public static function retentionDays(): int
     {
-        return (int) config('values.retention_days.cpu', config('values.default_retention_days', 30));
+        return ValueRetention::days();
     }
 
     /** Validates metrics sent by the agent, returns null when they are missing or invalid. */
