@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\AgentScript;
 use App\Support\DeviceUsage;
 use App\Support\PingUsage;
+use App\Services\ReportInventoryService;
 use App\Support\ValueRecorder;
 use Carbon\CarbonInterval;
 use App\Models\Concerns\HasDeviceSettings;
@@ -792,16 +793,90 @@ class Device extends Model
         return $last !== null && $last->diffInSeconds() <= self::REPORT_TIMEOUT;
     }
 
+    /** @var array<string, mixed>|null the lists of a report that was set and is not stored yet (null: nothing waits) */
+    private ?array $pendingSections = null;
+
+    /** @var array<string, mixed> the sections this instance has read (decoded; null: the device has none) */
+    private array $sectionCache = [];
+
     /** The decoded report (data) of this instance: the accessors read it many times, it is decoded once per value. */
     private ?array $decodedData = null;
+
+    /**
+     * The report as a JSON string (or an array): devices.data keeps what is not a list, the lists of it (services, containers,
+     * updates, disk health) are the inventory of the device and are stored with it (ReportInventoryService).
+     */
+    public function setDataAttribute($value): void
+    {
+        $report = is_string($value) ? json_decode($value, true) : (is_array($value) ? $value : null);
+        if (! is_array($report)) {
+            $this->attributes['data'] = null;
+            $this->pendingSections = [];
+
+            return;
+        }
+        [$core, $sections] = ReportInventoryService::split($report);
+        $this->attributes['data'] = json_encode($core);
+        $this->pendingSections = $sections;
+    }
 
     public function getDataAttribute($value)
     {
         if ($this->decodedData === null || $this->decodedData[0] !== $value) {
-            $this->decodedData = [$value, json_decode((string) $value) ?? []];
+            $core = json_decode((string) $value);
+            $this->decodedData = [$value, is_object($core) ? new ReportData($core, $this) : []];
         }
 
         return $this->decodedData[1];
+    }
+
+    /** One list of the report (see ReportInventoryService::SECTIONS), decoded like json_decode; null when the device has none. */
+    public function reportSection(string $name): mixed
+    {
+        if ($this->pendingSections !== null) {
+            return isset($this->pendingSections[$name]) ? json_decode(json_encode($this->pendingSections[$name])) : null;
+        }
+        if (! array_key_exists($name, $this->sectionCache)) {
+            $this->sectionCache[$name] = $this->exists ? ReportInventoryService::read($this, $name) : null;
+        }
+
+        return $this->sectionCache[$name];
+    }
+
+    /** The lists of the reports of many devices in one query (a list that needs them for each device would ask once per device). */
+    public static function loadSections(iterable $devices, array $sections = ReportInventoryService::SECTIONS): void
+    {
+        $byId = [];
+        foreach ($devices as $device) {
+            if ($device->exists && $device->pendingSections === null) {
+                $byId[$device->id] = $device;
+            }
+        }
+        foreach (ReportInventoryService::readMany($byId, $sections) as $id => $values) {
+            foreach ($values as $section => $value) {
+                $byId[$id]->sectionCache[$section] = $value;
+            }
+        }
+    }
+
+    /** The lists that came with the report are stored once the device is (also for a save without events). */
+    protected function finishSave(array $options)
+    {
+        parent::finishSave($options);
+        if ($this->pendingSections !== null) {
+            $pending = $this->pendingSections;
+            $this->pendingSections = null;
+            $this->sectionCache = [];
+            ReportInventoryService::store($this, $pending);
+        }
+    }
+
+    public function refresh()
+    {
+        $this->sectionCache = [];
+        $this->decodedData = null;
+
+        return parent::refresh();
     }
 
     public function getDrivesAttribute($value)

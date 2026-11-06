@@ -15,7 +15,7 @@ class InventoryDefinition extends Model
 {
     public $timestamps = false;
 
-    protected $fillable = ['inventorable_type', 'inventorable_id', 'key', 'name', 'last_data', 'last_hash', 'last_at'];
+    protected $fillable = ['inventorable_type', 'inventorable_id', 'key', 'name', 'position', 'last_data', 'last_hash', 'last_at'];
 
     protected $casts = [
         'last_data' => 'array',

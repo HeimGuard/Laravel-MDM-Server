@@ -350,7 +350,8 @@ class DeviceCommandTest extends TestCase
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])->call('runAlert', 'updates')->assertHasErrors('alert.updates');
 
         // Another update: the alert says something new and shows again.
-        $data = json_decode($device->getRawOriginal('data'), true);
+        // The whole report (the lists of it are the inventory of the device, not in the column).
+        $data = json_decode(json_encode($device->fresh()->data), true);
         $data['packages_updates'][] = ['Id' => '7zip.7zip', 'Version' => '1', 'Avaliable' => '2', 'Source' => 'winget'];
         $device->forceFill(['data' => json_encode($data)])->saveQuietly();
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])->assertSee('2 updates available');

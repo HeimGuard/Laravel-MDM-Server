@@ -22,6 +22,8 @@ return new class extends Migration
             $table->unsignedBigInteger('inventorable_id');
             $table->string('key', 32);
             $table->string('name', 128)->default('');
+            // The place of a thing in a list the order of which matters (the report of an agent); null: no order.
+            $table->unsignedInteger('position')->nullable();
             // null: the thing is gone (a sample with null data says when).
             $table->longText('last_data')->nullable();
             $table->string('last_hash', 32)->nullable();

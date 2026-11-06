@@ -99,6 +99,12 @@ disappeared has a sample with `data = null` and `last_data = null`.
  {"definition_id": 8120, "data": {"DisplayName": "A high performance web server", "State": "stopped"}, "hash": "c4f0…", "recorded_at": "2026-11-02 02:14:09"}]
 ```
 
+- The lists of the report of an agent are inventory too (`ReportInventoryService`), in the order of the report (`position`):
+  `service` (named by its `Name`), `container` (by `Name`; `docker` is the one definition with the error, no `docker` means no
+  Docker), `os_update`, `package_update`, `module_update` (named by a hash of the row), `disk_health` (one record with the
+  disks). `devices.data` keeps the rest of the report (`machine`, ...), `$device->data->services` and the accessors read the
+  lists from the inventory in the shape they were sent. The ARP table (`neighbours`) is not kept. `Device::loadSections()`
+  reads them for many devices in one query.
 - Users (`key = user`): local accounts with `"Admin": true|false`. The agent reports administrators only, so the rows are
   those until it reports all accounts. The rules of the feed use the source `admins`: it reads the users with `Admin`.
 - What runs on a port is in the data of the port (`Process`, `Path`; of a scanned port `Service`, `Server`, `Title`, `Banner`).

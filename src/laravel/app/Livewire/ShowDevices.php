@@ -136,6 +136,8 @@ class ShowDevices extends Component
             ->whereIn('alert_rule_id', AlertRule::query()->where('user_id', auth()->id())->select('id'))
             ->get()->groupBy('device_id');
         $preloaded = SmartAlerts::preload();
+        // The lists of the reports the alerts look at (updates, services, containers, disk health): one query for all devices.
+        Device::loadSections($this->devices);
         $this->listData = [];
         foreach ($this->devices as $device) {
             $this->listData[$device->id] = $this->row($device, $firing, $preloaded);

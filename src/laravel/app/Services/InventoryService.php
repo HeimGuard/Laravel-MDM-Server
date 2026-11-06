@@ -49,7 +49,7 @@ class InventoryService
      * A change of a kind of things of a model, as the agents send it: the things that are new or changed, the ones that are
      * gone, or (full) everything, so what is not in it is gone. Only what differs is written.
      *
-     * @param  array<int, array{0: string, 1: string, 2: array}>  $upsert  [[name, hash, data], ...]
+     * @param  array<int, array{0: string, 1: string, 2: array, 3?: int}>  $upsert  [[name, hash, data, position?], ...]
      * @param  array<int, string>  $remove  names
      * @return array{old: array<int, array>, changed: int} old: the data of the things before (not for a full one)
      */
@@ -62,10 +62,10 @@ class InventoryService
         // What is there of the things concerned.
         $existing = collect();
         if ($full) {
-            $existing = (clone $base)->get(['id', 'name', 'last_data', 'last_hash']);
+            $existing = (clone $base)->get(['id', 'name', 'position', 'last_data', 'last_hash', 'last_at']);
         } else {
             foreach (array_chunk(array_values(array_unique([...$remove, ...$upsertNames])), 500) as $names) {
-                $existing = $existing->merge((clone $base)->whereIn('name', $names)->get(['id', 'name', 'last_data', 'last_hash']));
+                $existing = $existing->merge((clone $base)->whereIn('name', $names)->get(['id', 'name', 'position', 'last_data', 'last_hash', 'last_at']));
             }
         }
         $existing = $existing->keyBy('name');
@@ -75,8 +75,8 @@ class InventoryService
         $encode = fn (?array $data) => $data === null ? null : json_encode($data, self::JSON);
         $definitions = [];
         $samples = [];
-        $row = fn (string $name, ?array $data, ?string $hash) => [
-            'inventorable_type' => $type, 'inventorable_id' => $id, 'key' => $key, 'name' => $name,
+        $row = fn (string $name, ?array $data, ?string $hash, ?int $position = null) => [
+            'inventorable_type' => $type, 'inventorable_id' => $id, 'key' => $key, 'name' => $name, 'position' => $position,
             'last_data' => $encode($data), 'last_hash' => $hash, 'last_at' => $at,
         ];
         foreach ($gone as $name) {
@@ -85,12 +85,20 @@ class InventoryService
                 $samples[$name] = ['data' => null, 'hash' => null];
             }
         }
-        foreach ($upsert as [$name, $hash, $data]) {
+        foreach ($upsert as $item) {
+            [$name, $hash, $data] = $item;
+            $position = isset($item[3]) ? (int) $item[3] : null;
             $definition = $existing->get($name);
             if ($definition !== null && $definition->last_data !== null && $definition->last_hash === $hash) {
+                // The same content: no sample, only a new place in the list when that changed.
+                if ($position !== null && $definition->position !== $position) {
+                    $definitions[$name] = $row((string) $name, $data, $hash, $position);
+                    $definitions[$name]['last_at'] = $definition->last_at?->toDateTimeString() ?? $at;
+                }
+
                 continue;
             }
-            $definitions[$name] = $row((string) $name, $data, $hash);
+            $definitions[$name] = $row((string) $name, $data, $hash, $position);
             $samples[$name] = ['data' => $encode($data), 'hash' => $hash];
         }
         if ($definitions === []) {
@@ -98,7 +106,7 @@ class InventoryService
         }
 
         foreach (array_chunk(array_values($definitions), 200) as $chunk) {
-            InventoryDefinition::query()->upsert($chunk, ['inventorable_type', 'inventorable_id', 'key', 'name'], ['last_data', 'last_hash', 'last_at']);
+            InventoryDefinition::query()->upsert($chunk, ['inventorable_type', 'inventorable_id', 'key', 'name'], ['position', 'last_data', 'last_hash', 'last_at']);
         }
         $ids = [];
         foreach (array_chunk(array_keys($samples), 500) as $names) {
@@ -112,7 +120,7 @@ class InventoryService
             InventorySample::query()->insert($chunk);
         }
 
-        return ['old' => $old, 'changed' => count($definitions)];
+        return ['old' => $old, 'changed' => count($samples)];
     }
 
     /**
