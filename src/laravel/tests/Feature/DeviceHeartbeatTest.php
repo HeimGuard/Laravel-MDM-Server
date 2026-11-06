@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Listeners\RecordDeviceHeartbeat;
 use App\Livewire\DeviceMetrics;
 use App\Models\Device;
-use App\Models\DeviceMetric;
+use App\Models\ValueSample;
+use App\Support\DeviceUsage;
+use App\Support\ValueRetention;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Reverb\Application;
@@ -154,9 +156,11 @@ class DeviceHeartbeatTest extends TestCase
 
         $this->heartbeat($device, subscribed: true, data: ['cpu' => 12.5, 'memory_used' => 4 * 1024 ** 3, 'memory_total' => 16 * 1024 ** 3]);
 
-        $metric = $device->metrics()->sole();
+        $metric = DeviceUsage::latest($device->id);
         $this->assertSame(12.5, $metric->cpu);
         $this->assertSame(25.0, $metric->memory_percent);
+        // cpu, memory.used and memory.total: one sample of each.
+        $this->assertSame(3, ValueSample::query()->count());
     }
 
     public function test_http_heartbeat_records_metrics(): void
@@ -167,7 +171,7 @@ class DeviceHeartbeatTest extends TestCase
             'metrics' => ['cpu' => 150, 'memory_used' => 20, 'memory_total' => 10],
         ])->assertNoContent();
 
-        $metric = $device->metrics()->sole();
+        $metric = DeviceUsage::latest($device->id);
         $this->assertSame(100.0, $metric->cpu);
         $this->assertSame(10, $metric->memory_used);
     }
@@ -179,19 +183,19 @@ class DeviceHeartbeatTest extends TestCase
         $this->heartbeat($device, subscribed: true, data: ['cpu' => 'abc', 'memory_used' => 1, 'memory_total' => 0]);
 
         $this->assertNotNull($device->fresh()->last_seen_at);
-        $this->assertSame(0, $device->metrics()->count());
+        $this->assertSame(0, ValueSample::query()->count());
     }
 
     public function test_old_metrics_are_pruned(): void
     {
         $device = $this->createDevice();
         Device::recordHeartbeat($device->id, ['cpu' => 1, 'memory_used' => 1, 'memory_total' => 2]);
-        $this->travel(DeviceMetric::RETENTION_DAYS + 1)->days();
+        $this->travel(ValueRetention::days() + 1)->days();
         Device::recordHeartbeat($device->id, ['cpu' => 2, 'memory_used' => 1, 'memory_total' => 2]);
 
-        $this->artisan('model:prune', ['--model' => [DeviceMetric::class]]);
+        ValueRetention::prune();
 
-        $this->assertSame([2.0], $device->metrics()->pluck('cpu')->all());
+        $this->assertSame([2.0], $device->valueHistory('cpu')->pluck('value')->all());
     }
 
     public function test_metrics_charts_are_rendered(): void

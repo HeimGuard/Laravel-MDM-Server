@@ -242,7 +242,7 @@ class NetworkNeighbour extends Model
      */
     private static function followMacs(array $seen): void
     {
-        $devices = Device::query()->where('kind', 'ping')->whereIn('ping_mac', array_keys($seen))->get();
+        $devices = Device::query()->where('kind', 'ping')->whereSettingIn('lan.mac', array_keys($seen))->get();
         foreach ($devices as $device) {
             $now = $seen[$device->ping_mac];
             if (! ($now['sure'] || $device->offline) || $device->ping_address === $now['ip'] || ! $device->ping_address || ! NetworkMap::contains($now['network'], $device->ping_address)) {

@@ -12,7 +12,8 @@ use App\Livewire\ShowDevices;
 use App\Models\AlertRule;
 use App\Models\Device;
 use App\Models\DeviceCommand;
-use App\Models\DeviceMetric;
+use App\Support\DeviceUsage;
+use App\Support\PingUsage;
 use App\Models\NotificationSetting;
 use App\Models\Script;
 use App\Models\User;
@@ -289,8 +290,8 @@ class FleetFeaturesTest extends TestCase
         $idle = $this->device('b');
         $idle->forceFill(['tags' => ['lab']])->save();
         foreach (range(1, 20) as $i) {
-            DeviceMetric::create(['device_id' => $busy->id, 'cpu' => 95, 'memory_used' => 1, 'memory_total' => 10]);
-            DeviceMetric::create(['device_id' => $idle->id, 'cpu' => 5, 'memory_used' => 1, 'memory_total' => 10]);
+            $busy->recordValues(DeviceUsage::values(['cpu' => 95, 'memory_used' => 1, 'memory_total' => 10]));
+            $idle->recordValues(DeviceUsage::values(['cpu' => 5, 'memory_used' => 1, 'memory_total' => 10]));
         }
         $cpu = AlertRule::create(['user_id' => $user->id, 'type' => 'cpu', 'threshold' => 80, 'minutes' => 10, 'target' => ['all' => true]]);
         $disk = AlertRule::create(['user_id' => $user->id, 'type' => 'disk', 'threshold' => 90, 'target' => ['devices' => [$busy->id]]]);
@@ -319,7 +320,7 @@ class FleetFeaturesTest extends TestCase
             ['FriendlyName' => 'Data', 'DriveLetter' => 'D', 'Size' => 4000 * $gb, 'SizeRemaining' => 400 * $gb, 'DriveType' => 3],
         ]]);
         foreach (range(1, 20) as $i) {
-            DeviceMetric::create(['device_id' => $device->id, 'cpu' => 5, 'memory_used' => 15 * $gb, 'memory_total' => 16 * $gb]);
+            $device->recordValues(DeviceUsage::values(['cpu' => 5, 'memory_used' => 15 * $gb, 'memory_total' => 16 * $gb]));
         }
         // 90 % used on D would not alert in percent (400 GB free), 8 GB free on C does in GB.
         $disk = AlertRule::create(['user_id' => $user->id, 'type' => 'disk', 'unit' => 'gb', 'limit_gb' => 10, 'target' => ['all' => true]]);
@@ -645,10 +646,11 @@ class FleetFeaturesTest extends TestCase
             ->assertJson(['taken' => 1]);
         $this->assertFalse($printer->fresh()->offline);
         $this->assertSame([2.4, $nas->id], [$printer->fresh()->ping_rtt, $printer->fresh()->ping_relay_id]);
-        $this->assertSame([true], \App\Models\PingResult::where('device_id', $printer->id)->pluck('up')->all());
-        $this->assertSame(100.0, \App\Models\PingResult::uptime($printer->id, now()->subDay()));
-        \App\Models\PingResult::create(['device_id' => $printer->id, 'up' => false]);
-        $this->assertSame(50.0, \App\Models\PingResult::uptime($printer->id, now()->subDay()));
+        $this->assertSame([true], PingUsage::checks($printer->id, now()->subDay())->pluck('up')->all());
+        $this->assertSame(2.4, PingUsage::average($printer->id, now()->subDay()));
+        $this->assertSame(100.0, PingUsage::uptime($printer->id, now()->subDay()));
+        PingUsage::record($printer->id, false, null);
+        $this->assertSame(50.0, PingUsage::uptime($printer->id, now()->subDay()));
         // Another agent cannot report it.
         $this->signedJson('POST', '/api/device/pings', ['results' => [['id' => $printer->id, 'up' => true]]], 'laptop')->assertJson(['taken' => 0]);
 
@@ -780,9 +782,11 @@ class FleetFeaturesTest extends TestCase
         $this->signedJson('POST', '/api/device/metrics/backfill', ['samples' => $samples], 'a')->assertJson(['taken' => 2]);
         // Sent again (the answer got lost): nothing twice.
         $this->signedJson('POST', '/api/device/metrics/backfill', ['samples' => $samples], 'a')->assertJson(['taken' => 0]);
-        $stored = DeviceMetric::where('device_id', $device->id)->where('created_at', '<', now()->subHour())->orderBy('created_at')->get();
-        $this->assertSame([40.0, 41.0], $stored->pluck('cpu')->all());
-        $this->assertSame('2026-10-01 10:00:00', $stored->first()->created_at->format('Y-m-d H:i:s'));
+        $stored = $device->valueHistory('cpu')->where('recorded_at', '<', now()->subHour())->get();
+        $this->assertSame([40.0, 41.0], $stored->pluck('value')->all());
+        $this->assertSame('2026-10-01 10:00:00', $stored->first()->recorded_at->format('Y-m-d H:i:s'));
+        // Until a heartbeat comes the newest sample of the history is the current value.
+        $this->assertSame(41.0, $device->latestValue('cpu'));
 
         // Pings of the ping-only devices in its network, at the time they were made.
         $relay = $this->device('nas', ['Networks' => [$this->network('192.168.1.5')]], version: '1.11.0');
@@ -798,8 +802,8 @@ class FleetFeaturesTest extends TestCase
         ];
         $this->signedJson('POST', '/api/device/pings', ['results' => [], 'backlog' => $backlog], 'nas')->assertJson(['backfilled' => 2]);
         $this->signedJson('POST', '/api/device/pings', ['results' => [], 'backlog' => $backlog], 'nas')->assertJson(['backfilled' => 0]);
-        $this->assertSame([true, false], \App\Models\PingResult::where('device_id', $printer->id)->orderBy('created_at')->pluck('up')->all());
-        $this->assertSame(0, \App\Models\PingResult::where('device_id', $other->id)->count());
+        $this->assertSame([true, false], PingUsage::checks($printer->id, now()->subDay())->pluck('up')->all());
+        $this->assertSame(0, PingUsage::checks($other->id, now()->subDay())->count());
         // The history only: the device stays offline until a live ping answers.
         $this->assertTrue($printer->fresh()->offline);
         Carbon::setTestNow();
@@ -870,7 +874,7 @@ class FleetFeaturesTest extends TestCase
         // A device stays with the agent that pings it when that is as good (no moving around).
         $current = Device::pingAssignments();
         foreach ($current as $id => $relayId) {
-            Device::query()->whereKey($id)->update(['ping_relay_id' => $relayId]);
+            \App\Support\PingUsage::record($id, true, null, null, $relayId);
         }
         $this->assertSame($current, Device::pingAssignments());
 

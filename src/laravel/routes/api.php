@@ -38,16 +38,15 @@ Route::middleware(['device.signature', 'auth:api'])->post('/device', function (R
     $device->name = $data['machine']['Hostname'];
     $device->os = $data['machine']['os'] ?? '';
 
-    $device->data = json_encode($data);
+    $report = json_encode($data);
     $device->last_http_at = now();
-    // The commands column is not written here: queued commands are taken atomically below.
+    // The commands column is not written here: queued commands are taken atomically below. Nor is the report
+    // itself: it goes through the cache to a job (the rest of what depends on it is done there).
     $device->save();
     App\Models\DeviceCommand::completeWakes($device->id);
-    // What the agent sees in its networks (agents 1.16.0+, unless network_discovery is off).
-    rescue(fn () => App\Models\NetworkNeighbour::record($device, $data['neighbours'] ?? null));
-    // The public addresses it is behind, kept for the network map.
-    rescue(fn () => App\Models\NetworkSite::record(App\Models\NetworkSite::of($device)));
-    App\Support\LiveUpdates::device($device->id, 'report');
+    App\Support\DeviceReportInbox::push($device, $report);
+    // The answer below is worked out from this report (the networks of the device), not from the stored one.
+    $device->setAttribute('data', $report);
 
     return response()->json([
         // Commands not delivered over the WebSocket; queued meanwhile ones wait for the next report.
@@ -197,7 +196,7 @@ Route::middleware(['device.signature', 'auth:api'])->group(function () {
         /** @var Device $device */
         $device = $request->user();
         abort_unless($device->signsRequests, 403);
-        $taken = App\Models\DeviceMetric::backfill($device->id, $request->json('samples'));
+        $taken = App\Support\DeviceUsage::backfill($device->id, $request->json('samples'));
         if ($taken > 0) {
             App\Support\LiveUpdates::device($device->id, 'metrics');
         }

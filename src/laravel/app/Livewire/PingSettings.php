@@ -49,12 +49,16 @@ class PingSettings extends Component
         }
         $settings['ping_via_id'] = $via?->id;
         // Another address: the old answers say nothing about it.
-        if ($settings['ping_address'] !== $device->ping_address) {
-            $settings += ['last_seen_at' => null, 'ping_rtt' => null];
+        $addressChanged = $settings['ping_address'] !== $device->ping_address;
+        if ($addressChanged) {
+            $settings += ['last_seen_at' => null];
         }
         $device->forceFill($settings);
         $changes = array_intersect_key($device->getDirty(), array_flip(['ping_address', 'ping_prefix', 'ping_mac', 'ping_via_id']));
         $device->save();
+        if ($addressChanged) {
+            \App\Support\PingUsage::forgetCurrent($device->id);
+        }
         if ($changes !== []) {
             \App\Support\Audit::device($device, 'settings', __('Ping settings changed'), ['changes' => $changes]);
         }

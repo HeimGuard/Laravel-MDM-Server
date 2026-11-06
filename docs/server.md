@@ -43,7 +43,7 @@ A small Alpine-based image (running as a non-root user) is built by GitHub Actio
 |---------|-------------|--------------|
 | nginx + PHP-FPM | Web application on port 8000, migrations run on start | `RUN_MIGRATIONS=false` skips migrations |
 | Reverb | WebSocket server, served by nginx on the same port under `/app` | `REVERB_ENABLED=false` |
-| Queue worker | `php artisan queue:work --queue=security,default`: background jobs (security collections of the agents, rules feed) | `QUEUE_ENABLED=false` (jobs then run once the response has been sent) |
+| Queue worker | `php artisan queue:work --queue=security,default`: background jobs (reports and security collections of the agents, rules feed) | `QUEUE_ENABLED=false` (jobs then run once the response has been sent) |
 | Scheduler | `php artisan schedule:work` | `SCHEDULER_ENABLED=false` |
 | Syslog | `rsyslogd` receives syslog on port 5514 (UDP and TCP, published as 514), see [Syslog](security-scanner.md#syslog-from-other-servers-and-devices) | `SYSLOG_ENABLED=false` |
 
@@ -139,3 +139,37 @@ Edge or Safari over HTTPS and choose *Install* / *Add to Home Screen*. The servi
 nothing but an offline page. Change the icon with
 `php artisan pwa:make-icons --icon=resources/images/icon.png` (the vector source is
 `resources/images/icon.svg`, also served as `favicon.svg`).
+
+## Measured values
+
+CPU, memory and ping (and later anything else that is measured, e.g. the usage of each disk) are stored as measured
+values of a model (`App\Models\Concerns\HasValue`, used by `Device`): a **definition** says what is measured, its
+**samples** are the history.
+
+| Table | One row is | Columns |
+|-------|-----------|---------|
+| `value_definitions` | one measured value of one model, e.g. device 9, `disk.used_pct`, `C:` | `valuable_type`, `valuable_id`, `key`, `name` (empty for what there is one of), `unit`, `last_value`, `last_at` (the newest sample: the current value costs no query of the history) |
+| `value_samples` | one measurement | `definition_id`, `value`, `recorded_at` |
+
+```php
+$device->recordValues(['cpu' => 41.5, 'memory.used' => 3221225472]);
+$device->recordValues([['key' => 'disk.used_pct', 'name' => 'C:', 'value' => 61, 'unit' => '%']]);
+$device->latestValue('disk.used_pct', 'C:');                         // 61.0
+$device->valueHistory('cpu', since: now()->subHour())->get();         // the samples
+```
+
+A new kind of value is a new key: no table and no migration. Keys in use: `cpu` (%), `memory.used` and `memory.total`
+(bytes) and `battery.level` (%) from the heartbeats of the agents, `disk.used_pct` (%) and `disk.free_bytes` for
+each disk (named `C:` on Windows, the mount point on Linux) from the reports, `ping.up` (1 / 0), `ping.rtt` (ms) and
+`ping.relay_id` (the agent that pinged) from the pings of ping-only devices. The last ping of a device
+(`$device->ping_rtt`, `$device->ping_relay_id`) is read from these values, there is no column for it. How long the history is kept is one setting for all of it (System > Settings, `history_days`, 30 days by
+default); what is older is deleted daily. The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
+
+## Settings of a device
+
+Where a ping-only device is pinged (`lan.address`, `lan.prefix`, `lan.mac`, and `lan.via_device_id`: the agent to ping
+through) and the Wake-on-LAN target of an agent (`lan.mac`, `lan.address`, `lan.prefix`) are rows of the `settings`
+table (`HasSettings`, `settable_type` is the device), not columns of `devices`. In code they stay attributes of the
+model: `$device->ping_address`, `$device->wake_mac`, ... are read from the settings and written with the device
+(`forceFill([...])->save()`), and `getDirty()` tells what changed. `ping_*` is for a ping-only device, `wake_*` for an
+agent. To find devices by a setting: `Device::whereSettingIn('lan.mac', [...])`, `Device::whereHasSetting('lan.address')`.

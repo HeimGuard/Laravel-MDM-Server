@@ -20,6 +20,11 @@ return [
                 'rules' => 'nullable|integer|min:0|max:3650',
                 'help'  => 'Security: days without a report after which the findings of a device are stale (default 14, 0: never).',
             ],
+            'history_days' => [
+                'type'  => SettingDataType::INT,
+                'rules' => 'nullable|integer|min:1|max:3650',
+                'help'  => 'Days the history of measured values (CPU, memory, disks, ping) is kept (default 30).',
+            ],
         ],
     ],
 ];

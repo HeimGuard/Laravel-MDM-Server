@@ -517,7 +517,7 @@ class SecurityScanner
     /** The managed device at an address (a ping-only device, or an agent whose own IP it is), or null. */
     private static function deviceForAddress(string $ip): ?Device
     {
-        $ping = Device::query()->where('kind', 'ping')->where('ping_address', $ip)->first();
+        $ping = Device::query()->where('kind', 'ping')->whereSettingIn('lan.address', [$ip])->first();
         if ($ping !== null) {
             return $ping;
         }

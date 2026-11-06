@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Device;
-use App\Models\PingResult;
 use App\Models\PortScanResult;
 use App\Support\AgentScript;
 use Illuminate\Database\Seeder;
@@ -93,20 +92,16 @@ class DeviceSeeder extends Seeder
         $device->forceFill([
             'kind' => 'ping', 'name' => $name, 'os' => '', 'token' => 'seed-ping-'.$host,
             'ping_address' => self::NETWORK.'.'.$host, 'ping_prefix' => 24, 'ping_mac' => $mac,
-            'ping_rtt' => $online ? round(mt_rand(5, 40) / 10, 1) : null,
         ]);
         $device->save();
 
         // A day of checks every 5 minutes, with a short outage two hours ago.
-        $rows = [];
+        $moments = [];
         for ($minutes = 24 * 60; $minutes >= 0; $minutes -= 5) {
             $up = $online ? ! ($minutes >= 120 && $minutes < 135) : $minutes > 6 * 60;
-            $at = now()->subMinutes($minutes);
-            $rows[] = ['device_id' => $device->id, 'up' => $up, 'rtt' => $up ? round(mt_rand(8, 60) / 10, 1) : null, 'created_at' => $at];
+            $moments[] = [now()->subMinutes($minutes), \App\Support\PingUsage::values($up, $up ? round(mt_rand(8, 60) / 10, 1) : null)];
         }
-        foreach (array_chunk($rows, 100) as $chunk) {
-            PingResult::query()->insert($chunk);
-        }
+        \App\Support\ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
 
         $device->forceFill(['last_seen_at' => $online ? now()->addYear() : now()->subHours(6)])->saveQuietly();
 

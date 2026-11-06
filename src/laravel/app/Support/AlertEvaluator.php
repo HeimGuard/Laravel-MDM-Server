@@ -134,18 +134,13 @@ class AlertEvaluator
             return null;
         }
         $minutes = max(1, (int) $rule->minutes);
-        $column = match (true) {
-            $rule->type === 'cpu' => 'cpu',
-            $rule->inGb => DB::raw('memory_total - memory_used'),
-            default => DB::raw('100.0 * memory_used / memory_total'),
-        };
-        $samples = $device->metrics()->where('created_at', '>=', now()->subMinutes($minutes));
+        $usage = DeviceUsage::window($device->id, now()->subMinutes($minutes));
         // Heartbeats come every 30 s: at least half of the window must be covered.
-        if ((clone $samples)->count() < max(1, $minutes)) {
+        if ($usage['count'] < max(1, $minutes)) {
             return null;
         }
         if ($rule->inGb) {
-            $free = round((float) (clone $samples)->avg($column) / self::GB, 1);
+            $free = round(($usage['memory_total'] - $usage['memory_used']) / self::GB, 1);
 
             return [
                 'active' => $free < $rule->limit_gb,
@@ -155,7 +150,7 @@ class AlertEvaluator
                 ]),
             ];
         }
-        $average = round((float) (clone $samples)->avg($column), 1);
+        $average = round($rule->type === 'cpu' ? $usage['cpu'] : ($usage['memory_total'] > 0 ? 100.0 * $usage['memory_used'] / $usage['memory_total'] : 0.0), 1);
         $label = $rule->type === 'cpu' ? __('CPU') : __('Memory');
 
         return [
