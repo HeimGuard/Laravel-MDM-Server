@@ -14,7 +14,7 @@ use App\Models\Script;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
-use App\Models\SecurityInventoryItem;
+use App\Models\InventoryDefinition;
 use App\Models\SecurityRule;
 use App\Models\User;
 use App\Support\AlertEvaluator;
@@ -517,7 +517,7 @@ class SecurityScannerTest extends TestCase
         $first = $this->agentSend('a', $inventory)->assertStatus(202);
         $this->runWorker();
         $this->assertTrue(collect($this->lastCollection['sources'])->every(fn ($source) => $source['full']));
-        $this->assertSame(4, SecurityInventoryItem::query()->where('device_id', $device->id)->where('source', 'software')->count());
+        $this->assertSame(4, $this->inventoryOf($device)->where('key', 'software')->count());
         $this->assertSame($first->json('ack.software'), $device->securityInventory()->first()->states['software']);
         $fullSize = strlen(json_encode($this->lastCollection));
 
@@ -538,7 +538,7 @@ class SecurityScannerTest extends TestCase
         $this->assertCount(1, $software['upsert']);
         $this->assertCount(1, $software['remove']);
         $this->assertCount(1, collect($this->lastCollection['sources'])->filter(fn ($source) => isset($source['upsert'])));
-        $names = SecurityInventoryItem::query()->where('device_id', $device->id)->where('source', 'software')->pluck('data')->map(fn ($data) => json_decode($data, true)['Name'])->sort()->values()->all();
+        $names = $this->inventoryOf($device)->where('key', 'software')->get()->map(fn ($definition) => $definition->last_data['Name'])->sort()->values()->all();
         $this->assertSame(['7-Zip 24.09 (x64)', 'Age of Empires II', 'Firefox', 'WinRAR 6.02 (64-bit)'], $names);
         $this->assertNotContains('software.remote-access', $this->openKeys($device));
 
@@ -556,7 +556,7 @@ class SecurityScannerTest extends TestCase
         unset($inventory['logs']);
         $this->agentSend('a', $inventory)->assertStatus(202);
         $this->runWorker();
-        $before = SecurityInventoryItem::query()->where('device_id', $device->id)->count();
+        $before = $this->inventoryOf($device)->count();
 
         // The server lost its state (a restored backup): the delta is refused before anything is stored
         // and the agent sends that source whole.
@@ -567,18 +567,24 @@ class SecurityScannerTest extends TestCase
         $response = $this->agentSend('a', $changed)->assertStatus(202);
         $this->runWorker();
         $this->assertTrue(collect($this->lastCollection['sources'])->firstWhere('source', 'software')['full']);
-        $this->assertSame($before + 2, SecurityInventoryItem::query()->where('device_id', $device->id)->count());
+        $this->assertSame($before + 2, $this->inventoryOf($device)->count());
 
         // A delta that claims a state its items do not add up to stores nothing, not even its other sources.
         ['sources' => $sources] = $this->agentSources('a', $changed);
         $bad = [['source' => 'processes', 'base' => $device->securityInventory()->first()->states['processes'], 'state' => str_repeat('b', 64), 'upsert' => [], 'remove' => [], 'full' => false]];
-        $count = SecurityInventoryItem::query()->count();
+        $count = InventoryDefinition::query()->whereNotNull('last_data')->count();
         $this->expectException(SecurityStateMismatch::class);
         try {
             SecurityScanner::ingest($device->fresh(), $bad);
         } finally {
-            $this->assertSame($count, SecurityInventoryItem::query()->count());
+            $this->assertSame($count, InventoryDefinition::query()->whereNotNull('last_data')->count());
         }
+    }
+
+    /** The things of the inventory of a device that are not gone (what security_inventory_items had). */
+    private function inventoryOf(Device $device)
+    {
+        return InventoryDefinition::query()->where('inventorable_type', $device->getMorphClass())->where('inventorable_id', $device->id)->whereNotNull('last_data');
     }
 
     public function test_without_a_queue_the_job_runs_after_the_response(): void

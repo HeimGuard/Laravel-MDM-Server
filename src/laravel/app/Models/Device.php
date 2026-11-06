@@ -8,6 +8,7 @@ use App\Support\PingUsage;
 use App\Support\ValueRecorder;
 use Carbon\CarbonInterval;
 use App\Models\Concerns\HasDeviceSettings;
+use App\Models\Concerns\HasInventory;
 use App\Models\Concerns\HasValue;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 
 class Device extends Model
 {
-    use HasDeviceSettings, HasFactory, HasValue;
+    use HasDeviceSettings, HasFactory, HasInventory, HasValue;
 
     /** The settings are read with every device (a few rows each), so reading them costs no query per device. */
     protected $with = ['settings', 'pingValues'];

@@ -8,7 +8,7 @@ use App\Models\PortScanResult;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
-use App\Models\SecurityInventoryItem;
+use App\Services\InventoryService;
 use App\Models\SecurityRule;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -227,31 +227,11 @@ class SecurityScanner
                     // Unchanged: the stored state is the agent's state (checked above).
                     continue;
                 }
-                $items = SecurityInventoryItem::query()->where('device_id', $device->id)->where('source', $source);
-                $old = [];
-                if (! $delta['full']) {
-                    $touched = array_values(array_unique([...$delta['remove'], ...array_column($delta['upsert'], 0)]));
-                    foreach (array_chunk($touched, 500) as $keys) {
-                        foreach ((clone $items)->whereIn('item_key', $keys)->pluck('data') as $json) {
-                            $old[] = json_decode($json, true);
-                        }
-                    }
-                }
-                $changes[$source] = ['full' => $delta['full'], 'base' => $delta['base'], 'state' => $delta['state'], 'old' => $old, 'new' => array_column($delta['upsert'], 2)];
-                if ($delta['full']) {
-                    (clone $items)->delete();
-                }
-                foreach (array_chunk($delta['remove'], 500) as $keys) {
-                    (clone $items)->whereIn('item_key', $keys)->delete();
-                }
-                $rows = array_map(fn ($row) => [
-                    'device_id' => $device->id, 'source' => $source, 'item_key' => $row[0], 'item_hash' => $row[1], 'data' => json_encode($row[2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                ], $delta['upsert']);
-                foreach (array_chunk($rows, 200) as $chunk) {
-                    SecurityInventoryItem::query()->upsert($chunk, ['device_id', 'source', 'item_key'], ['item_hash', 'data']);
-                }
+                // The things of the source are the inventory of the device (a sample only where one changed).
+                $stored = InventoryService::apply($device->getMorphClass(), $device->id, $source, $delta['upsert'], $delta['remove'], $delta['full']);
+                $changes[$source] = ['full' => $delta['full'], 'base' => $delta['base'], 'state' => $delta['state'], 'old' => $stored['old'], 'new' => array_column($delta['upsert'], 2)];
                 // What is stored must add up to the state the agent has.
-                $hashes = (clone $items)->pluck('item_hash', 'item_key')->all();
+                $hashes = InventoryService::current($device->getMorphClass(), $device->id, $source);
                 if (count($hashes) > SecurityInventory::LIMITS[$source] || SecurityInventory::stateOf($hashes) !== $delta['state']) {
                     throw new SecurityStateMismatch($source, 'does not add up to the state of the agent');
                 }
