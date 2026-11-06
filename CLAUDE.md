@@ -31,6 +31,32 @@
   repo's `python scripts/feed.py build` and `check` before it is pushed.
 - The server takes the feed from `HeimGuard/detection-policy` (renamed from PanoptiPulse).
 
+## Data model (details and JSON examples: `docs/data-model.md`)
+
+- **A refactoring of the data changes the backend only.** No change of templates (`resources/views`), JS, texts
+  (`lang`), or of the API of the agent. Models keep returning the same shapes (`$device->services`, `->updates`,
+  `->drives`, ...), built from the new tables. The agent code is not touched.
+- Where new data goes (no new column, no new JSON blob in `devices` for any of these):
+  - **A setting** (someone set it, rarely changes): `settings` through `HasSettings`, keys `group.name`.
+  - **A measured number** (CPU, disk usage, ping; also an enum as a code): `HasValue`, `value_definitions` (model, `key`,
+    `name`) + `value_samples`. A new kind of value is a new key, never a migration.
+  - **A structured thing a model has** (service, container, process, port, user, posture, software, update):
+    `HasInventory`, `inventory_definitions` (model, `key` = the kind, `name` = which one) + `inventory_samples`,
+    the same shape as the values, JSON in `data`.
+  - **Something that happened** (a log event, offline, an agent update, a finding of a port scan): `events`.
+  - **Something a user did**: `activities` (`Audit`); its execution: `device_commands`, `script_runs`.
+  - Alerts and notifications stay in `alert_events`. Raw logs are not stored, only the events made of them.
+- History keeps **changes only** (a value that did not change adds no sample), for all of it one setting
+  (`history_days`), no retention per key and no config file for it.
+- Owners are polymorphic (`*_type`, `*_id`): there is no foreign key, so deleting the owner must delete its rows
+  (a `deleted` hook in the trait). Details that not every row has go to a `data` JSON, not to nullable columns.
+- New domain logic goes to `app/Services` (`XService`, static methods like the SteelAnts packages), not to
+  `app/Support`; a class of `Support` is moved when it is touched.
+- A migration copies the data, has a `down()` that restores it, and is run with data on PostgreSQL both ways.
+- **Test on SQLite and PostgreSQL** (`DB_CONNECTION=pgsql DB_DATABASE=...`). What only PostgreSQL rejects: `LIKE` is
+  case-sensitive (use `whereLike`), `coalesce` of a number and a string, a number compared with `''`, a sequence that is
+  not reset between tests (a test must not expect `id = 1`).
+
 ## Git
 
 - Develop on the branch the session names, push there, open a pull request only when asked.
