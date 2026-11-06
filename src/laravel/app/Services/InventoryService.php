@@ -46,6 +46,22 @@ class InventoryService
     }
 
     /**
+     * What a model has now of a kind, with its data: name => [hash, data, position] of the things that are not gone.
+     *
+     * @return array<string, array{hash: ?string, data: array, position: ?int}>
+     */
+    public static function snapshot(string $type, int $id, string $key): array
+    {
+        $things = [];
+        foreach (InventoryDefinition::query()->where('inventorable_type', $type)->where('inventorable_id', $id)->where('key', $key)->whereNotNull('last_data')
+            ->orderBy('id')->get(['name', 'position', 'last_data', 'last_hash']) as $definition) {
+            $things[$definition->name] = ['hash' => $definition->last_hash, 'data' => $definition->last_data, 'position' => $definition->position];
+        }
+
+        return $things;
+    }
+
+    /**
      * A change of a kind of things of a model, as the agents send it: the things that are new or changed, the ones that are
      * gone, or (full) everything, so what is not in it is gone. Only what differs is written.
      *
@@ -87,11 +103,13 @@ class InventoryService
         }
         foreach ($upsert as $item) {
             [$name, $hash, $data] = $item;
-            $position = isset($item[3]) ? (int) $item[3] : null;
+            $given = isset($item[3]) ? (int) $item[3] : null;
             $definition = $existing->get($name);
+            // A thing that changes without a new place keeps the one it has.
+            $position = $given ?? $definition?->position;
             if ($definition !== null && $definition->last_data !== null && $definition->last_hash === $hash) {
                 // The same content: no sample, only a new place in the list when that changed.
-                if ($position !== null && $definition->position !== $position) {
+                if ($given !== null && $definition->position !== $given) {
                     $definitions[$name] = $row((string) $name, $data, $hash, $position);
                     $definitions[$name]['last_at'] = $definition->last_at?->toDateTimeString() ?? $at;
                 }

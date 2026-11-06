@@ -105,6 +105,11 @@ disappeared has a sample with `data = null` and `last_data = null`.
   disks). `devices.data` keeps the rest of the report (`machine`, ...), `$device->data->services` and the accessors read the
   lists from the inventory in the shape they were sent. The ARP table (`neighbours`) is not kept. `Device::loadSections()`
   reads them for many devices in one query.
+- The states of services and containers the agent sends with its **heartbeat** (name => running / stopped / failed, ...) are
+  written to the same inventory (`ReportInventoryService::applyLiveStates`): what changed is a sample, so a service or a
+  container has a history of its state (when it stopped). A thing that is not in the states is gone, one that is not known
+  yet is added with its name only, a changed one loses the status text of the report, and the states of containers clear the
+  error of `docker`. `devices.live_state` keeps what is not inventory (`restart_required`, `power`).
 - Users (`key = user`): local accounts with `"Admin": true|false`. The agent reports administrators only, so the rows are
   those until it reports all accounts. The rules of the feed use the source `admins`: it reads the users with `Admin`.
 - What runs on a port is in the data of the port (`Process`, `Path`; of a scanned port `Service`, `Server`, `Title`, `Banner`).
