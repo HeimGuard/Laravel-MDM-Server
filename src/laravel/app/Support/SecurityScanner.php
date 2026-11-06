@@ -260,7 +260,8 @@ class SecurityScanner
         $changes = self::applyDeltas($device, $sources);
         // The events stored before these: what "not seen in N days" (unseen_days) compares with.
         $before = (int) SecurityEvent::query()->max('id');
-        SecurityEvent::record($device, $events);
+        // What two sources report as one thing counts once.
+        $events = SecurityEvent::record($device, $events);
 
         return self::scan($device, $events, $changes, $before);
     }
@@ -526,7 +527,7 @@ class SecurityScanner
             return null;
         }
         $items = $definition['source'] === 'events'
-            ? SecurityEvent::query()->forDevice($device->id)->where('occurred_at', '>=', now()->subDay())->get()
+            ? SecurityEvent::query()->forDevice($device->id)->whereNull('data->duplicate_of')->where('occurred_at', '>=', now()->subDay())->get()
                 ->map(fn (SecurityEvent $event) => ['Type' => $event->type, 'Count' => $event->count, 'User' => $event->user, 'Source' => $event->source, 'Message' => $event->message, 'Last' => (string) $event->occurred_at])->all()
             : $inventory->items($definition['source']);
 

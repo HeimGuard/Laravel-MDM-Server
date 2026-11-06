@@ -207,7 +207,10 @@ class SecurityInventory extends Model
                 continue;
             }
             $row['Count'] = max(1, (int) $row['Count']);
+            // When the first of the occurrences of the group happened (the same as the last for one).
+            $row['First'] = isset($event['First']) ? self::time($event['First']) : null;
             $row['Last'] = self::time($row['Last']);
+            $row['First'] = $row['First'] === null || $row['First'] > $row['Last'] ? $row['Last'] : $row['First'];
             // Where the event came from (SecurityParsers::run): the source type and the key of the parser.
             $row['SourceType'] = is_string($event['SourceType'] ?? null) ? mb_substr($event['SourceType'], 0, 32) : '';
             $row['Parser'] = is_string($event['Parser'] ?? null) && $event['Parser'] !== '' ? mb_substr($event['Parser'], 0, 64) : null;
