@@ -8,7 +8,7 @@
             @if ($showDevice ?? false)
                 <span class="text-body-secondary">·</span>
                 @if ($finding->device_id)
-                    <a class="text-body" href="{{ route('devices', ['selectedDeviceId' => $finding->device_id, 'tab' => 'security']) }}">{{ $finding->device?->displayName }}</a>
+                    <a class="text-body" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $finding->device_id, 'tab' => 'security']) }}">{{ $finding->device?->displayName }}</a>
                 @elseif ($finding->targetUrl)
                     <a class="text-body" href="{{ $finding->targetUrl }}"><i class="fas fa-network-wired fa-xs me-1 text-body-tertiary"></i>{{ $finding->targetLabel }}</a>
                 @else

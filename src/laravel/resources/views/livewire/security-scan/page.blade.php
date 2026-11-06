@@ -98,7 +98,7 @@
                             @forelse ($events as $event)
                                 <tr wire:key="security-event-{{ $event->id }}">
                                     <td class="ps-3 small text-nowrap text-body-secondary" title="{{ $event->occurred_at }}">{{ $event->occurred_at->diffForHumans() }}</td>
-                                    <td class="small"><a href="{{ route('devices', ['selectedDeviceId' => $event->device_id, 'tab' => 'security']) }}">{{ $event->device?->displayName }}</a></td>
+                                    <td class="small"><a wire:navigate href="{{ route('devices', ['selectedDeviceId' => $event->device_id, 'tab' => 'security']) }}">{{ $event->device?->displayName }}</a></td>
                                     <td class="small fw-medium text-nowrap"><span class="badge text-bg-{{ SecurityEvent::TONES[$event->type] ?? 'secondary' }} fw-medium">{{ $event->label }}</span></td>
                                     <td class="small text-end">{{ $event->count }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->user ?? '—' }}</td>

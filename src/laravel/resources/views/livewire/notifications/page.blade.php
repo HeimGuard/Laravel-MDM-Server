@@ -115,7 +115,7 @@
                                 <span class="icon-tile {{ $event->rule?->type === 'status' ? 'bg-danger-subtle text-danger-emphasis' : 'bg-warning-subtle text-warning-emphasis' }}"><i class="{{ $event->rule?->icon }}"></i></span>
                                 <div class="flex-grow-1 min-w-0">
                                     <div>
-                                        <a class="fw-semibold text-body" href="{{ route('devices', ['selectedDeviceId' => $event->device_id]) }}">{{ $event->device?->displayName }}</a>
+                                        <a class="fw-semibold text-body" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $event->device_id]) }}">{{ $event->device?->displayName }}</a>
                                         <span class="text-body-secondary">· {{ $event->rule?->label }}</span>
                                     </div>
                                     <div class="small text-muted text-break">{{ $event->message }}</div>

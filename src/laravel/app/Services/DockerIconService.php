@@ -154,7 +154,11 @@ class DockerIconService
     private static function requestRefresh(): void
     {
         if (Cache::add(self::REQUESTED_KEY, 1, self::REQUEST_EVERY)) {
-            RefreshDockerIcons::dispatch();
+            $job = RefreshDockerIcons::dispatch();
+            // Without a queue (sync) the download must not hold the page: it runs once the response has been sent.
+            if (config('queue.default') === 'sync') {
+                $job->afterResponse();
+            }
         }
     }
 
