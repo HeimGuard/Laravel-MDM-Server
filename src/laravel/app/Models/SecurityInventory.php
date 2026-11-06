@@ -12,7 +12,7 @@ use Throwable;
 /**
  * The security inventory of a device (agents 1.17.0+): what the rules of the scanner look at
  * (App\Support\SecurityRules::SOURCES, without the events). The row holds the state of each
- * source (a hash of its items), the items are SecurityInventoryItem rows: an agent sends only
+ * source (a hash of its items), the items are InventoryDefinition rows (key = the source): an agent sends only
  * the items that changed since the state the server has, the server checks that the result has
  * the state the agent computed.
  */
@@ -49,9 +49,10 @@ class SecurityInventory extends Model
         return $this->belongsTo(Device::class);
     }
 
-    public function rows(): HasMany
+    /** The things of the inventory of the device that are not gone, in the order they were first seen. */
+    public function definitions(): HasMany
     {
-        return $this->hasMany(SecurityInventoryItem::class, 'device_id', 'device_id');
+        return $this->hasMany(InventoryDefinition::class, 'inventorable_id', 'device_id')->where('inventorable_type', (new Device)->getMorphClass())->whereIn('key', self::SOURCES);
     }
 
     /** The items of one source as the rules see them (posture: its one item); [] for an unknown one. */
@@ -70,10 +71,9 @@ class SecurityInventory extends Model
     {
         if ($this->loaded === null) {
             $this->loaded = array_fill_keys(self::SOURCES, []);
-            foreach ($this->rows()->orderBy('id')->get(['source', 'data']) as $row) {
-                $item = json_decode($row->data, true);
-                if (is_array($item) && isset($this->loaded[$row->source])) {
-                    $this->loaded[$row->source][] = $item;
+            foreach ($this->definitions()->whereNotNull('last_data')->orderBy('id')->get(['key', 'last_data']) as $definition) {
+                if (is_array($definition->last_data) && isset($this->loaded[$definition->key])) {
+                    $this->loaded[$definition->key][] = $definition->last_data;
                 }
             }
             $this->loaded['posture'] = $this->loaded['posture'][0] ?? [];

@@ -99,6 +99,12 @@ disappeared has a sample with `data = null` and `last_data = null`.
  {"definition_id": 8120, "data": {"DisplayName": "A high performance web server", "State": "stopped"}, "hash": "c4f0…", "recorded_at": "2026-11-02 02:14:09"}]
 ```
 
+- The lists of the report of an agent are inventory too (`ReportInventoryService`), in the order of the report (`position`):
+  `service` (named by its `Name`), `container` (by `Name`; `docker` is the one definition with the error, no `docker` means no
+  Docker), `os_update`, `package_update`, `module_update` (named by a hash of the row), `disk_health` (one record with the
+  disks). `devices.data` keeps the rest of the report (`machine`, ...), `$device->data->services` and the accessors read the
+  lists from the inventory in the shape they were sent. The ARP table (`neighbours`) is not kept. `Device::loadSections()`
+  reads them for many devices in one query.
 - Users (`key = user`): local accounts with `"Admin": true|false`. The agent reports administrators only, so the rows are
   those until it reports all accounts. The rules of the feed use the source `admins`: it reads the users with `Admin`.
 - What runs on a port is in the data of the port (`Process`, `Path`; of a scanned port `Service`, `Server`, `Title`, `Banner`).
@@ -123,6 +129,22 @@ What happened, also without a user. Everything that not every event has is in `d
 `portscan`), `data.parser` the key of the parser that made it. It grows out of `security_events` (`source` there is the address
 the attack came from: it becomes `data.origin`). `alert_events` stays as it is: an alert has a lifetime, it belongs to the
 notifications.
+
+### Two sources report the same thing
+
+A device can report the same event twice: an agent that reads the auth log (`linux.auth`) and also forwards it as syslog
+(`syslog`) gives the failed sign-in once from each. Today that is two events, so the counts the rules look at are doubled.
+With `events` the second report is not a second event, it **confirms** the first:
+
+- The events are the same when the owner, `type`, `data.user` and `data.origin` are the same and their times overlap
+  (about a minute).
+- `count` is not summed (the same sign-ins are counted once: the larger of the two counts), and `data.sources` lists
+  every source that reported it: `{"sources": ["linux.auth", "syslog"], "verified": true}`; `source` stays the first one.
+- `verified` is true when two sources that do not depend on each other reported it. A later change of the pages can show it
+  as a mark or the icon of the second source; the data is there before that.
+
+The syslog parsers of `detection-policy` (`org.syslog-sshd-*`) stay as they are: the merge, not a filter, takes care of the
+duplicates, and an event only one source reports is still an event.
 
 ## Actions
 
