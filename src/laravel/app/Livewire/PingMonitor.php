@@ -61,7 +61,7 @@ class PingMonitor extends Component
         $buckets = array_fill(0, self::BUCKETS, ['sum' => 0.0, 'count' => 0, 'down' => false]);
         $index = fn (\Carbon\CarbonInterface $at) => min(self::BUCKETS - 1, (int) floor(($at->getTimestamp() - $since->getTimestamp()) / $bucketSeconds));
         foreach (PingUsage::checks($device->id, $since) as $check) {
-            if (! $check->up && ($i = $index($check->at)) >= 0) {
+            if (! $check->up && ($i = $index($check->created_at)) >= 0) {
                 $buckets[$i]['down'] = true;
             }
         }

@@ -63,6 +63,20 @@ class PingValuesTest extends TestCase
         $this->assertSame(1, $printer->valueHistory('ping.rtt')->count());
     }
 
+    public function test_the_checks_have_the_shape_the_views_read(): void
+    {
+        $printer = $this->ping();
+        PingUsage::record($printer->id, true, 3.0, now()->subMinutes(2), 7);
+        PingUsage::record($printer->id, false, null, now()->subMinute(), 7);
+
+        $checks = PingUsage::checks($printer->id, now()->subHour());
+
+        // up, rtt and created_at, oldest first: what <x-ping-status> reads.
+        $this->assertSame([true, false], $checks->pluck('up')->all());
+        $this->assertSame([3.0, null], $checks->pluck('rtt')->all());
+        $this->assertTrue($checks->first()->created_at->lt($checks->last()->created_at));
+    }
+
     public function test_a_backfill_does_not_change_the_current_state(): void
     {
         $printer = $this->ping();

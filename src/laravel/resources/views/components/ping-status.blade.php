@@ -1,6 +1,6 @@
 {{-- The last pings of a ping-only device (Uptime Kuma style) with the response and the uptime.
      Not on the device detail (its chart shows the same); for overviews such as the dashboard.
-     $beats: the last checks (up, rtt, at) of PingUsage::checks, oldest first; $stats: current, average, uptime24, uptime30. --}}
+     $beats: the last PingResult rows, oldest first; $stats: current, average, uptime24, uptime30. --}}
 @props(['beats', 'stats', 'range' => '24h'])
 @php
     $format = fn ($value, $unit) => $value === null ? '–' : rtrim(rtrim(number_format($value, $unit === '%' ? 2 : 1, '.', ''), '0'), '.').' '.$unit;
@@ -14,11 +14,11 @@
                 <span class="ping-beat"></span>
             @endfor
             @foreach ($beats as $beat)
-                <span class="ping-beat {{ $beat->up ? 'is-up' : 'is-down' }}" title="{{ $beat->at->format('j. n. H:i:s') }} · {{ $beat->up ? $format($beat->rtt ?? null, 'ms') : __('No answer') }}"></span>
+                <span class="ping-beat {{ $beat->up ? 'is-up' : 'is-down' }}" title="{{ $beat->created_at->format('j. n. H:i:s') }} · {{ $beat->up ? $format($beat->rtt, 'ms') : __('No answer') }}"></span>
             @endforeach
         </div>
         <div class="d-flex justify-content-between small text-muted mb-3">
-            <span>{{ $beats->first()?->at->diffForHumans() ?? '' }}</span>
+            <span>{{ $beats->first()?->created_at->diffForHumans() ?? '' }}</span>
             <span>{{ __('now') }}</span>
         </div>
 

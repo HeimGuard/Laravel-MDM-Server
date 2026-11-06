@@ -50,7 +50,12 @@ class PingUsage
         return ValueDefinition::query()->where('valuable_type', (new Device)->getMorphClass())->where('valuable_id', $deviceId)->where('key', $key)->where('name', '')->first();
     }
 
-    /** Samples of ping.up (up: bool, at: Carbon) since a time, oldest first. @return \Illuminate\Support\Collection<int, object> */
+    /**
+     * The pings since a time, oldest first, as the rows the views read (up, rtt, created_at): the response time of an answered
+     * one is the ping.rtt sample of the same moment.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
     public static function checks(int $deviceId, \DateTimeInterface $since, ?int $limit = null)
     {
         $definition = self::definition($deviceId, 'ping.up');
@@ -62,8 +67,16 @@ class PingUsage
             $query->limit($limit);
         }
 
-        return $query->toBase()->get(['value', 'recorded_at'])->reverse()->values()
-            ->map(fn ($row) => (object) ['up' => (float) $row->value >= 0.5, 'at' => Carbon::parse($row->recorded_at, config('app.timezone'))]);
+        $checks = $query->toBase()->get(['value', 'recorded_at'])->reverse()->values();
+        $rtt = self::definition($deviceId, 'ping.rtt');
+        $response = $rtt === null || $checks->isEmpty() ? collect() : ValueSample::query()->where('definition_id', $rtt->id)->where('recorded_at', '>=', $checks->first()->recorded_at)
+            ->toBase()->pluck('value', 'recorded_at');
+
+        return $checks->map(fn ($row) => (object) [
+            'up' => (float) $row->value >= 0.5,
+            'rtt' => isset($response[$row->recorded_at]) ? (float) $response[$row->recorded_at] : null,
+            'created_at' => Carbon::parse($row->recorded_at, config('app.timezone')),
+        ]);
     }
 
     /** Samples of ping.rtt (rtt: float, at: Carbon) since a time, oldest first. */
