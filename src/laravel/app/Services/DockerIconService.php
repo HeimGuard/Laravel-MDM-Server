@@ -3,13 +3,17 @@
 namespace App\Services;
 
 /**
- * Icon of a container from the dashboard-icons database (https://github.com/homarr-labs/dashboard-icons),
- * served by the jsDelivr CDN. The icon is guessed from the image name, the page falls back to the next
+ * Icon of a container from the dashboard-icons (https://github.com/homarr-labs/dashboard-icons) and
+ * selfh.st/icons (https://selfh.st/icons) databases, served by the jsDelivr CDN. The icon is guessed from the image name, the page falls back to the next
  * candidate (and at last to the Docker icon) when the CDN has no such file.
  */
 class DockerIconService
 {
-    public const CDN = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/';
+    /** Icon sources in the order they are tried for a name (all served by jsDelivr). */
+    public const SOURCES = [
+        'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/', // dashboard-icons (the one Dozzle uses)
+        'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/',               // selfh.st/icons
+    ];
 
     /** Image names (last path segment) whose icon has another name. */
     private const ALIASES = [
@@ -48,9 +52,16 @@ class DockerIconService
         return array_values(array_unique(array_filter($candidates, fn ($c) => preg_match('/^[a-z0-9][a-z0-9._-]*$/', $c) === 1)));
     }
 
-    /** URLs of the candidates, in the order they are tried. @return list<string> */
+    /** URLs to try, in order: each candidate name in every source, the most specific name first. @return list<string> */
     public static function urls(string $image): array
     {
-        return array_map(fn ($name) => self::CDN.$name.'.svg', self::candidates($image));
+        $urls = [];
+        foreach (self::candidates($image) as $name) {
+            foreach (self::SOURCES as $source) {
+                $urls[] = $source.$name.'.svg';
+            }
+        }
+
+        return $urls;
     }
 }
