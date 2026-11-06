@@ -162,7 +162,10 @@ class SecurityParsers
                     if ($event === null) {
                         continue;
                     }
-                    $key = $event['Type'].'|'.mb_strtolower((string) $event['User']).'|'.$event['Source'];
+                    // Where it came from: the source (the log) and the parser (events of two sources are not one here).
+                    $event['SourceType'] = $source;
+                    $event['Parser'] = $parser['key'] ?? null;
+                    $key = $source.'|'.$event['Type'].'|'.mb_strtolower((string) $event['User']).'|'.$event['Source'];
                     if (! isset($groups[$key])) {
                         $groups[$key] = $event;
                     } else {

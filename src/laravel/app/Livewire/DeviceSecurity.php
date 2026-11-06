@@ -66,7 +66,7 @@ class DeviceSecurity extends Component
             'inventory' => $inventory,
             'findings' => $open->whereNull('acknowledged_at')->values(),
             'acknowledged' => $open->whereNotNull('acknowledged_at')->values(),
-            'events' => SecurityEvent::query()->where('device_id', $device->id)->latest('occurred_at')->limit(20)->get(),
+            'events' => SecurityEvent::query()->forDevice($device->id)->latest('occurred_at')->limit(20)->get(),
         ]);
     }
 }

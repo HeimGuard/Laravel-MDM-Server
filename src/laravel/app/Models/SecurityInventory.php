@@ -208,6 +208,9 @@ class SecurityInventory extends Model
             }
             $row['Count'] = max(1, (int) $row['Count']);
             $row['Last'] = self::time($row['Last']);
+            // Where the event came from (SecurityParsers::run): the source type and the key of the parser.
+            $row['SourceType'] = is_string($event['SourceType'] ?? null) ? mb_substr($event['SourceType'], 0, 32) : '';
+            $row['Parser'] = is_string($event['Parser'] ?? null) && $event['Parser'] !== '' ? mb_substr($event['Parser'], 0, 64) : null;
             $clean[] = $row;
         }
 
