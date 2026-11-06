@@ -124,6 +124,22 @@ What happened, also without a user. Everything that not every event has is in `d
 the attack came from: it becomes `data.origin`). `alert_events` stays as it is: an alert has a lifetime, it belongs to the
 notifications.
 
+### Two sources report the same thing
+
+A device can report the same event twice: an agent that reads the auth log (`linux.auth`) and also forwards it as syslog
+(`syslog`) gives the failed sign-in once from each. Today that is two events, so the counts the rules look at are doubled.
+With `events` the second report is not a second event, it **confirms** the first:
+
+- The events are the same when the owner, `type`, `data.user` and `data.origin` are the same and their times overlap
+  (about a minute).
+- `count` is not summed (the same sign-ins are counted once: the larger of the two counts), and `data.sources` lists
+  every source that reported it: `{"sources": ["linux.auth", "syslog"], "verified": true}`; `source` stays the first one.
+- `verified` is true when two sources that do not depend on each other reported it. A later change of the pages can show it
+  as a mark or the icon of the second source; the data is there before that.
+
+The syslog parsers of `detection-policy` (`org.syslog-sshd-*`) stay as they are: the merge, not a filter, takes care of the
+duplicates, and an event only one source reports is still an event.
+
 ## Actions
 
 `activities` is the log of what a user did (`affected_*`, `actor_*`, `lang_text`, `data.action`, `data.command_id`); the
