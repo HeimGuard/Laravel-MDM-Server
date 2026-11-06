@@ -531,6 +531,7 @@ class FleetFeaturesTest extends TestCase
 
         // In the history of the woken device too, through the relay.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $sleeping->id])
+            ->set('tab', 'history')
             ->assertViewHas('history', fn ($history) => $history->pluck('command.id')->contains($command->id))
             ->assertSee('through pc-relay');
 
@@ -751,6 +752,7 @@ class FleetFeaturesTest extends TestCase
         $device->forceFill(['public_ip' => '8.8.8.8'])->save();
         $this->actingAs(User::factory()->create());
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'networks')
             ->assertSee('Public address')->assertSee('8.8.8.8');
         Livewire::test(ShowDevices::class)->set('search', '8.8.8')->assertSee('pc-a');
     }

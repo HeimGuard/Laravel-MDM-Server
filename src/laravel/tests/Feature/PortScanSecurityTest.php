@@ -112,6 +112,7 @@ class PortScanSecurityTest extends TestCase
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $printer->id])
             ->assertSee('id="overview-tab"', false)
             ->assertSee('id="history-tab"', false)
+            ->set('tab', 'history')
             ->assertSee(__('Nothing done with the device yet.'))
             ->assertDontSee('id="security-tab"', false)
             ->assertDontSee('id="agent-tab"', false);
@@ -124,6 +125,7 @@ class PortScanSecurityTest extends TestCase
             ->assertSee('id="security-tab"', false)
             ->assertSee('id="history-tab"', false)
             ->assertDontSee('id="agent-tab"', false)
+            ->set('tab', 'security')
             ->assertDontSee('No security inventory yet');
     }
 

@@ -53,6 +53,7 @@ class DeviceVirtualizationTest extends TestCase
         $this->assertFalse($device->showDiskHealth);
         // Not under Drives; the Agent tab only says it is off there.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'agent')
             ->assertDontSee('Checked by the agent every hour')
             ->assertSee('not on virtual machines');
     }

@@ -281,7 +281,7 @@ class ScriptTest extends TestCase
         Livewire::test(DataTable::class)->assertSee('Disk space')->assertSee(route('script.show', $script))->assertDontSee('Detection only');
         Livewire::test(Detail::class, ['script' => $script])->assertSee('Disk space')->assertSee('v1');
         Livewire::test(RunDataTable::class, ['scriptId' => $script->id])->assertSee('srv-secret-token')->assertSee('Pending');
-        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])->assertSee('Scripts')->assertSee('Disk space');
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])->set('tab', 'scripts')->assertSee('Scripts')->assertSee('Disk space');
     }
 
     public function test_scripts_are_checked_as_powershell_before_saving(): void

@@ -154,10 +154,12 @@ class DeviceAgentStatusTest extends TestCase
 
         // The agent tab of the detail: version, connections.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $current->id])
+            ->set('tab', 'agent')
             ->assertSee('Up to date')
             ->assertSee('WebSocket')
             ->assertSee('REST API');
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $old->id])
+            ->set('tab', 'agent')
             ->assertSee('Newer: '.AgentScript::version());
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $old->id])
             ->assertSee('A newer agent is available');

@@ -84,12 +84,17 @@ class DeviceServicesTest extends TestCase
             ]],
         ]);
 
+        // Only the selected tab is rendered.
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
             ->assertSee('Services')
-            ->assertSee('A high performance web server')
             ->assertSee('Docker')
+            ->assertDontSee('A high performance web server')
+            ->set('tab', 'services')
+            ->assertSee('A high performance web server')
+            ->set('tab', 'docker')
             ->assertSee('mdm-web')
             ->assertSee('Exited (0) 3 hours ago')
+            ->set('tab', 'drives')
             ->assertSee('Disk health')
             ->assertSee('WD Blue SN570 1TB')
             ->assertSee('41 °C')
@@ -106,8 +111,10 @@ class DeviceServicesTest extends TestCase
 
         $this->assertCount(2, $device->moduleUpdates);
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
-            ->assertSee('Updates')
+            // The alert of the overview names them, the Updates tab lists them.
             ->assertSee('PowerShell modules')
+            ->set('tab', 'updates')
+            ->assertSee('Updates')
             ->assertSee('Az.Accounts')
             ->assertSee('Windows PowerShell')
             ->assertSee('5.5.0 → 5.6.1');
@@ -126,6 +133,7 @@ class DeviceServicesTest extends TestCase
             ['Name' => 'Microsoft.WinGet.Client', 'Version' => '1.10.340', 'Available' => '1.29.380', 'Edition' => 'Windows PowerShell', 'User' => null, 'Error' => null],
         ], $device->moduleUpdates);
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'updates')
             ->assertSee('JiraPS')
             ->assertSee('1.10.340 → 1.29.380');
     }
@@ -139,9 +147,11 @@ class DeviceServicesTest extends TestCase
         ], ['AgentVersion' => '1.5.0']);
 
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'docker')
             ->assertSee('Cannot connect to the Docker daemon')
-            ->assertSee('install smartmontools')
-            ->assertDontSee('No containers.');
+            ->assertDontSee('No containers.')
+            ->set('tab', 'drives')
+            ->assertSee('install smartmontools');
     }
 
     public function test_docker_tab_is_hidden_when_an_old_agent_found_only_the_cli(): void
@@ -174,6 +184,7 @@ class DeviceServicesTest extends TestCase
         $this->assertSame(['curl 8.18.0-1ubuntu2.7', 'drkonqi 6.6.6-0ubuntu0.1', 'forticlient 7.4.8.1904'], array_column($device->updates, 'Title'));
         $this->assertCount(1, $device->installableUpdates);
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'updates')
             ->assertSee('Phased')
             ->assertSee('Held back')
             ->assertSeeHtml('fa-hourglass-half')
@@ -188,6 +199,7 @@ class DeviceServicesTest extends TestCase
         $device = $this->report(['os_updates' => [['Title' => 'drkonqi 6.6.6', 'Status' => 'phased']]]);
 
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'updates')
             ->assertSee('drkonqi 6.6.6')
             ->assertDontSeeHtml('title="Installable updates"');
 
@@ -211,6 +223,7 @@ class DeviceServicesTest extends TestCase
         ]);
 
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'updates')
             ->assertSee('org.mozilla.firefox')
             ->assertSee('flatpak')
             ->assertSee('130.0 → 131.0.2')
@@ -228,7 +241,7 @@ class DeviceServicesTest extends TestCase
 
         Livewire::withQueryParams(['tab' => 'services'])->test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
             ->assertSet('tab', 'services')
-            ->assertSeeHtml('class="nav-link active" x-on:click="$wire.tab = \'services\'"')
+            ->assertSeeHtml('class="nav-link active" x-on:click="$wire.set(\'tab\', \'services\')"')
             ->assertSeeHtml('class="tab-pane fade show active" id="services-tab-pane"');
 
         // A tab this device does not have (no Docker, no drives) falls back to the first one, Overview.
