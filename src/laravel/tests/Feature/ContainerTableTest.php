@@ -108,7 +108,7 @@ class ContainerTableTest extends TestCase
         $device->recordInventory('container', 'web', $web('exited'), null, Carbon::parse('2026-11-06 09:14:00'));
         $device->recordInventory('container', 'web', $web('running'), null, Carbon::parse('2026-11-06 09:16:00'));
 
-        $html = Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])->html();
+        $html = Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])->set('tab', 'docker')->html();
 
         // The host port only; what is inside the container (6379, 3306) and the long form are not there.
         $this->assertStringContainsString('>7788<', $html);

@@ -142,13 +142,13 @@
         <div class="nav-tabs-scroll" x-init="$nextTick(() => { const tab = $el.querySelector('.nav-link.active'); if (tab) $el.scrollLeft = Math.max(0, tab.getBoundingClientRect().right - $el.getBoundingClientRect().right + $el.scrollLeft + 16) })">
         <ul class="nav nav-tabs flex-nowrap text-nowrap" role="tablist">
             <li class="nav-item" role="presentation">
-                <button aria-controls="overview-tab-pane" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'overview' ? 'active' : '' }}" x-on:click="$wire.tab = 'overview'" data-bs-target="#overview-tab-pane" data-bs-toggle="tab" id="overview-tab" role="tab" type="button">
+                <button aria-controls="overview-tab-pane" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'overview' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'overview')" data-bs-target="#overview-tab-pane" data-bs-toggle="tab" id="overview-tab" role="tab" type="button">
                     <i class="fas fa-th-large me-2"></i>{{ __('Overview') }}
                 </button>
             </li>
             @if (!empty($selectedDevice->drives) || $diskHealth !== null)
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="drives-tab-pane" aria-selected="{{ $activeTab === 'drives' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'drives' ? 'active' : '' }}" x-on:click="$wire.tab = 'drives'" data-bs-target="#drives-tab-pane" data-bs-toggle="tab" id="drives-tab" role="tab" type="button">
+                    <button aria-controls="drives-tab-pane" aria-selected="{{ $activeTab === 'drives' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'drives' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'drives')" data-bs-target="#drives-tab-pane" data-bs-toggle="tab" id="drives-tab" role="tab" type="button">
                         <i class="fas fa-hdd me-2"></i>{{ __('Drives') }}
                         @if ($diskHealth !== null && $selectedDevice->diskHealthProblem)
                             <i class="fas fa-exclamation-triangle text-danger ms-1" title="{{ __('A disk reports a problem') }}"></i>
@@ -158,7 +158,7 @@
             @endif
             @if ($hasUpdates)
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="updates-tab-pane" aria-selected="{{ $activeTab === 'updates' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'updates' ? 'active' : '' }}" x-on:click="$wire.tab = 'updates'" data-bs-target="#updates-tab-pane" data-bs-toggle="tab" id="updates-tab" role="tab" type="button">
+                    <button aria-controls="updates-tab-pane" aria-selected="{{ $activeTab === 'updates' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'updates' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'updates')" data-bs-target="#updates-tab-pane" data-bs-toggle="tab" id="updates-tab" role="tab" type="button">
                         <i class="fas fa-sync me-2"></i>{{ __('Updates') }}
                         @if ($pendingUpdates > 0)
                             <x-badge class="ms-1" :color="count($selectedDevice->installableUpdates) > 0 ? 'warning' : 'secondary'" size="sm" variant="subtle" title="{{ __('Installable updates') }}">{{ $pendingUpdates }}</x-badge>
@@ -168,14 +168,14 @@
             @endif
             @if (count($selectedDevice->networks) > 0)
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="networks-tab-pane" aria-selected="{{ $activeTab === 'networks' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'networks' ? 'active' : '' }}" x-on:click="$wire.tab = 'networks'" data-bs-target="#networks-tab-pane" data-bs-toggle="tab" id="networks-tab" role="tab" type="button">
+                    <button aria-controls="networks-tab-pane" aria-selected="{{ $activeTab === 'networks' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'networks' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'networks')" data-bs-target="#networks-tab-pane" data-bs-toggle="tab" id="networks-tab" role="tab" type="button">
                         <i class="fas fa-network-wired me-2"></i>{{ __('Networks') }}
                     </button>
                 </li>
             @endif
             @if (count($services) > 0)
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="services-tab-pane" aria-selected="{{ $activeTab === 'services' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'services' ? 'active' : '' }}" x-on:click="$wire.tab = 'services'" data-bs-target="#services-tab-pane" data-bs-toggle="tab" id="services-tab" role="tab" type="button">
+                    <button aria-controls="services-tab-pane" aria-selected="{{ $activeTab === 'services' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'services' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'services')" data-bs-target="#services-tab-pane" data-bs-toggle="tab" id="services-tab" role="tab" type="button">
                         <i class="fas fa-cogs me-2"></i>{{ __('Services') }}
                         @if ($failedServices > 0)
                             <x-badge class="ms-1" color="danger" size="sm" variant="subtle" title="{{ __('Not running') }}">{{ $failedServices }}</x-badge>
@@ -185,7 +185,7 @@
             @endif
             @if ($docker !== null)
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="docker-tab-pane" aria-selected="{{ $activeTab === 'docker' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'docker' ? 'active' : '' }}" x-on:click="$wire.tab = 'docker'" data-bs-target="#docker-tab-pane" data-bs-toggle="tab" id="docker-tab" role="tab" type="button">
+                    <button aria-controls="docker-tab-pane" aria-selected="{{ $activeTab === 'docker' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'docker' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'docker')" data-bs-target="#docker-tab-pane" data-bs-toggle="tab" id="docker-tab" role="tab" type="button">
                         <i class="fab fa-docker me-2"></i>{{ __('Docker') }}
                         @if ($stoppedContainers > 0)
                             <x-badge class="ms-1" color="secondary" size="sm" variant="subtle" title="{{ __('Not running') }}">{{ $stoppedContainers }}</x-badge>
@@ -195,7 +195,7 @@
             @endif
             @if ($scriptRuns->isNotEmpty())
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="scripts-tab-pane" aria-selected="{{ $activeTab === 'scripts' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'scripts' ? 'active' : '' }}" x-on:click="$wire.tab = 'scripts'" data-bs-target="#scripts-tab-pane" data-bs-toggle="tab" id="scripts-tab" role="tab" type="button">
+                    <button aria-controls="scripts-tab-pane" aria-selected="{{ $activeTab === 'scripts' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'scripts' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'scripts')" data-bs-target="#scripts-tab-pane" data-bs-toggle="tab" id="scripts-tab" role="tab" type="button">
                         <i class="fas fa-scroll me-2"></i>{{ __('Scripts') }}
                         @if ($failedScripts > 0)
                             <x-badge class="ms-1" color="danger" size="sm" variant="subtle" title="{{ __('Failed') }}">{{ $failedScripts }}</x-badge>
@@ -205,7 +205,7 @@
             @endif
             @if ($hasSecurity || $securityFindings->isNotEmpty())
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="security-tab-pane" aria-selected="{{ $activeTab === 'security' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'security' ? 'active' : '' }}" x-on:click="$wire.tab = 'security'" data-bs-target="#security-tab-pane" data-bs-toggle="tab" id="security-tab" role="tab" type="button">
+                    <button aria-controls="security-tab-pane" aria-selected="{{ $activeTab === 'security' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'security' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'security')" data-bs-target="#security-tab-pane" data-bs-toggle="tab" id="security-tab" role="tab" type="button">
                         <i class="fas fa-shield-alt me-2"></i>{{ __('Security') }}
                         @if ($securityFindings->isNotEmpty())
                             <x-badge class="ms-1" :color="$securitySevere > 0 ? 'danger' : 'warning'" size="sm" variant="subtle" title="{{ __('Findings') }}">{{ $securityFindings->count() }}</x-badge>
@@ -214,13 +214,13 @@
                 </li>
             @endif
                 <li class="nav-item" role="presentation">
-                    <button aria-controls="history-tab-pane" aria-selected="{{ $activeTab === 'history' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'history' ? 'active' : '' }}" x-on:click="$wire.tab = 'history'" data-bs-target="#history-tab-pane" data-bs-toggle="tab" id="history-tab" role="tab" type="button">
+                    <button aria-controls="history-tab-pane" aria-selected="{{ $activeTab === 'history' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'history' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'history')" data-bs-target="#history-tab-pane" data-bs-toggle="tab" id="history-tab" role="tab" type="button">
                         <i class="fas fa-history me-2"></i>{{ __('History') }}
                     </button>
                 </li>
             @unless ($selectedDevice->isPingOnly)
             <li class="nav-item" role="presentation">
-                <button aria-controls="agent-tab-pane" aria-selected="{{ $activeTab === 'agent' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'agent' ? 'active' : '' }}" x-on:click="$wire.tab = 'agent'" data-bs-target="#agent-tab-pane" data-bs-toggle="tab" id="agent-tab" role="tab" type="button">
+                <button aria-controls="agent-tab-pane" aria-selected="{{ $activeTab === 'agent' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'agent' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'agent')" data-bs-target="#agent-tab-pane" data-bs-toggle="tab" id="agent-tab" role="tab" type="button">
                     <i class="fas fa-robot me-2"></i>{{ __('Agent') }}
                     @if (!empty($selectedDevice->data) && ($selectedDevice->agentOutdated || ! $selectedDevice->signsRequests))
                         <i class="fas fa-exclamation-triangle text-warning ms-1"></i>
@@ -233,6 +233,7 @@
 
         <div class="tab-content pt-3">
             <div aria-labelledby="overview-tab" class="tab-pane fade {{ $activeTab === 'overview' ? 'show active' : '' }}" id="overview-tab-pane" role="tabpanel" tabindex="0">
+                @if ($activeTab === 'overview')
                 {{-- Ping-only devices have no report, but alerts of their own, above the graph like the ones of the other devices (another address, a failed wake). --}}
                 @if (!empty($selectedDevice->data) || $selectedDevice->isPingOnly)
                     @livewire('device-alerts', ['selectedDeviceId' => $selectedDevice->id], key('device-alerts' . $selectedDevice->id))
@@ -243,9 +244,11 @@
                 @else
                     @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
                 @endif
+                @endif
             </div>
             @if (!empty($selectedDevice->drives) || $diskHealth !== null)
                 <div aria-labelledby="drives-tab" class="tab-pane fade {{ $activeTab === 'drives' ? 'show active' : '' }}" id="drives-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($activeTab === 'drives')
                     @if (!empty($selectedDevice->drives))
                     <div class="row g-3">
                         @foreach ($selectedDevice->drives as $drive)
@@ -327,6 +330,7 @@
                     @endif
                     <p class="small text-muted mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
                     @endif
+                    @endif
                 </div>
             @endif
 
@@ -338,6 +342,7 @@
                     $moduleSearch = array_map(fn ($module) => strtolower(($module['Name'] ?? '') . ' ' . ($module['Edition'] ?? '') . ' ' . ($module['User'] ?? '')), $moduleUpdates);
                 @endphp
                 <div aria-labelledby="updates-tab" class="tab-pane fade {{ $activeTab === 'updates' ? 'show active' : '' }}" id="updates-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($activeTab === 'updates')
                     @if ($selectedDevice->data->os_updates_error ?? null)
                         <div class="alert alert-warning small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</div>
                     @endif
@@ -444,11 +449,13 @@
                         </ul>
                         </div>
                     @endforeach
+                    @endif
                 </div>
             @endif
 
             @if (count($selectedDevice->networks) > 0)
                 <div aria-labelledby="networks-tab" class="tab-pane fade {{ $activeTab === 'networks' ? 'show active' : '' }}" id="networks-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($activeTab === 'networks')
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
                             <li class="list-group-item d-flex align-items-start gap-3">
@@ -492,11 +499,13 @@
                             </li>
                         @endforeach
                     </ul>
+                    @endif
                 </div>
             @endif
 
             @if (count($services) > 0)
                 <div aria-labelledby="services-tab" class="tab-pane fade {{ $activeTab === 'services' ? 'show active' : '' }}" id="services-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($activeTab === 'services')
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
                         <span class="small text-muted ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
@@ -532,11 +541,13 @@
                             </tbody>
                         </table>
                     </div>
+                    @endif
                 </div>
             @endif
 
             @if ($docker !== null)
                 <div aria-labelledby="docker-tab" class="tab-pane fade {{ $activeTab === 'docker' ? 'show active' : '' }}" id="docker-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
+                    @if ($activeTab === 'docker')
                     @if ($docker['error'])
                         <div class="alert alert-warning mb-3" role="alert">
                             <i class="fab fa-docker me-2"></i>{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}
@@ -624,25 +635,31 @@
                     @elseif (! $docker['error'])
                         <p class="text-muted mb-0">{{ __('No containers.') }}</p>
                     @endif
+                    @endif
                 </div>
             @endif
 
             @if ($scriptRuns->isNotEmpty())
                 <div aria-labelledby="scripts-tab" class="tab-pane fade {{ $activeTab === 'scripts' ? 'show active' : '' }}" id="scripts-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($activeTab === 'scripts')
                     @livewire('script-run.data-table', ['deviceId' => $selectedDevice->id], key('device-script-runs-'.$selectedDevice->id))
                     @unless ($selectedDevice->scriptsEnabled)
                         <p class="small text-muted mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
                     @endunless
+                    @endif
                 </div>
             @endif
 
             @if ($hasSecurity || $securityFindings->isNotEmpty())
                 <div aria-labelledby="security-tab" class="tab-pane fade {{ $activeTab === 'security' ? 'show active' : '' }}" id="security-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($activeTab === 'security')
                     @livewire('device-security', ['deviceId' => $selectedDevice->id], key('device-security-'.$selectedDevice->id))
+                    @endif
                 </div>
             @endif
 
                 <div aria-labelledby="history-tab" class="tab-pane fade {{ $activeTab === 'history' ? 'show active' : '' }}" id="history-tab-pane" role="tabpanel" tabindex="0">
+                    @if ($activeTab === 'history')
                     {{-- Parsed from the audit log (App\Support\Audit): commands with their status, other actions as they were logged. --}}
                     @if ($history->isEmpty())
                         <div class="text-body-secondary small">{{ __('Nothing done with the device yet.') }}</div>
@@ -706,9 +723,11 @@
                         </table>
                     </div>
                     @endif
+                    @endif
                 </div>
             @unless ($selectedDevice->isPingOnly)
             <div aria-labelledby="agent-tab" class="tab-pane fade {{ $activeTab === 'agent' ? 'show active' : '' }}" id="agent-tab-pane" role="tabpanel" tabindex="0">
+                @if ($activeTab === 'agent')
                 @php
                     $lastReport = $selectedDevice->last_http_at ?? $selectedDevice->updated_at;
                     // Three cards: what runs, how it talks to the server, how the talk is protected.
@@ -830,6 +849,7 @@
                         </div>
                     </div>
                 </div>
+                @endif
             </div>
             @endunless
         </div>

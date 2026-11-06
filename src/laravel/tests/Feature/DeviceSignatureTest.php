@@ -215,6 +215,7 @@ class DeviceSignatureTest extends TestCase
 
         $this->actingAs(User::factory()->create());
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'agent')
             ->assertSee('Signed')
             ->assertDontSee('Reset device key')
             ->call('resetDeviceKey')
@@ -223,6 +224,7 @@ class DeviceSignatureTest extends TestCase
 
         $this->actingAs($admin);
         Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
+            ->set('tab', 'agent')
             ->call('resetDeviceKey')
             ->assertSee('Unsigned agent');
         $this->assertNull($device->fresh()->public_key);
