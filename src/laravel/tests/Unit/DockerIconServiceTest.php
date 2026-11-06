@@ -37,4 +37,11 @@ class DockerIconServiceTest extends TestCase
     {
         $this->assertSame([], DockerIconService::match(self::INDEX, 'alpine'));
     }
+
+    public function test_the_stored_file_is_named_by_its_source(): void
+    {
+        $name = DockerIconService::fileName('https://cdn.jsdelivr.net/gh/selfhst/icons/png/dockhand.png');
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{40}\.png$/', $name);
+        $this->assertNotSame($name, DockerIconService::fileName('https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/dockhand.png'));
+    }
 }
