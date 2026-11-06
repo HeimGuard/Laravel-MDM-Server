@@ -8,11 +8,13 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
+use SteelAnts\LaravelBoilerplate\Attributes\AllowManualRun;
 
 /**
  * Reads the index of the icon databases and stores the icons of the containers the devices run
  * (weekly, when a page misses an icon, or by hand: `php artisan mdm:docker-icons`).
  */
+#[AllowManualRun]
 class RefreshDockerIcons implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
