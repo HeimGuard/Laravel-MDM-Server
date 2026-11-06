@@ -31,7 +31,7 @@
             <ul class="list-unstyled small mb-0">
                 @foreach ($listed as $device)
                     <li class="d-flex justify-content-between gap-2">
-                        <a class="text-truncate" href="{{ route('devices', ['selectedDeviceId' => $device->id]) }}">
+                        <a class="text-truncate" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $device->id]) }}">
                             <i class="{{ $device->typeIcon }} text-body-secondary me-1"></i>{{ $device->DisplayName }}
                         </a>
                         <span class="text-body-secondary text-nowrap">{{ ($device->last_seen_at ?? $device->updated_at)?->diffForHumans() }}</span>

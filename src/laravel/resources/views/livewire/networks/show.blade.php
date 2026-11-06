@@ -76,7 +76,7 @@
                         @foreach ($net['members'] as $member)
                             @php $state = $states[$member['state']]; @endphp
                             <tr wire:key="member-{{ $member['id'] }}">
-                                <td><a class="text-body text-decoration-none" href="{{ route('devices', ['selectedDeviceId' => $member['id']]) }}">{{ $member['name'] }}</a></td>
+                                <td><a class="text-body text-decoration-none" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $member['id']]) }}">{{ $member['name'] }}</a></td>
                                 <td><x-badge :color="$state['color']" size="sm" variant="subtle" :icon="$state['icon']" :title="$state['title'] ?? null">{{ $state['label'] }}</x-badge></td>
                                 <td class="font-monospace">{{ $member['address'] }}</td>
                                 <td class="font-monospace text-body-secondary">{{ $member['mac'] ?? '—' }}</td>

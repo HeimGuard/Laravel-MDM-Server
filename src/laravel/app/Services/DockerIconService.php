@@ -2,24 +2,48 @@
 
 namespace App\Services;
 
+use App\Jobs\RefreshDockerIcons;
+use App\Models\Device;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+
 /**
  * Icon of a container from the dashboard-icons (https://github.com/homarr-labs/dashboard-icons) and
- * selfh.st/icons (https://selfh.st/icons) databases, served by the jsDelivr CDN. The icon is guessed from the image name, the page falls back to the next
- * candidate (and at last to the Docker icon) when the CDN has no such file.
+ * selfh.st/icons (https://selfh.st/icons) databases.
+ *
+ * Nothing is loaded from the CDN by the browser: the icons of the images the devices run are downloaded by
+ * `refresh()` (job RefreshDockerIcons, `php artisan mdm:docker-icons`) onto the public disk
+ * (storage/app/public/docker-icons, served by the web server as /storage/docker-icons/..., no PHP) and the index of
+ * the databases is kept in the cache (CACHE_STORE). The names are compared without case and punctuation, so the
+ * image `pihole` finds `pi-hole`; a file that exists only as a PNG is used as it is. An image without a stored
+ * icon shows the Docker icon, and a missing icon (new image, deleted file) asks for a refresh.
  */
 class DockerIconService
 {
-    /** Icon sources in the order they are tried for a name (all served by jsDelivr). */
-    public const SOURCES = [
-        'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/', // dashboard-icons (the one Dozzle uses)
-        'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/',               // selfh.st/icons
-    ];
+    private const DASHBOARD_ICONS = 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/';
 
-    /** Image names (last path segment) whose icon has another name. */
+    private const SELFHST_ICONS = 'https://cdn.jsdelivr.net/gh/selfhst/icons/';
+
+    private const INDEX_KEY = 'docker-icons:index';
+
+    private const REQUESTED_KEY = 'docker-icons:requested';
+
+    /** A refresh asked for by a missing icon is not asked again for this many seconds. */
+    private const REQUEST_EVERY = 600;
+
+    private const MAX_BYTES = 1_000_000;
+
+    private const DIRECTORY = 'docker-icons';
+
+    /** Image names (last path segment) whose icon is named quite differently. */
     private const ALIASES = [
         'postgres' => 'postgresql',
         'mongo' => 'mongodb',
     ];
+
+    /** @var array<string, array<string, string>>|null */
+    private static ?array $index = null;
 
     /**
      * Candidate icon names for an image, most specific first:
@@ -52,16 +76,190 @@ class DockerIconService
         return array_values(array_unique(array_filter($candidates, fn ($c) => preg_match('/^[a-z0-9][a-z0-9._-]*$/', $c) === 1)));
     }
 
-    /** URLs to try, in order: each candidate name in every source, the most specific name first. @return list<string> */
+    /**
+     * URLs (of the web server, a file of the public disk) of the icons of the image that are stored, the most specific name first.
+     * Empty: no icon (the Docker icon stays). An icon that exists in the databases but is not stored yet
+     * asks for a refresh.
+     *
+     * @return list<string>
+     */
     public static function urls(string $image): array
     {
+        $index = self::index();
         $urls = [];
-        foreach (self::candidates($image) as $name) {
-            foreach (self::SOURCES as $source) {
-                $urls[] = $source.$name.'.svg';
+        $missing = $index === [];
+        foreach (self::match($index, $image) as $remote) {
+            if (self::stored(self::fileName($remote))) {
+                $urls[] = asset('storage/'.self::DIRECTORY.'/'.self::fileName($remote));
+            } else {
+                $missing = true;
             }
+        }
+        if ($missing) {
+            self::requestRefresh();
         }
 
         return $urls;
+    }
+
+    /**
+     * The icons of the image that exist in the index: the most specific name first, within a name the
+     * databases in their order.
+     *
+     * @param  array<string, array<string, string>>  $index  source => [name without punctuation => URL]
+     * @return list<string>
+     */
+    public static function match(array $index, string $image): array
+    {
+        $urls = [];
+        foreach (self::candidates($image) as $name) {
+            foreach ($index as $icons) {
+                if (isset($icons[self::key($name)])) {
+                    $urls[] = $icons[self::key($name)];
+                }
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
+    /** `Pi-Hole`, `pihole` and `pi_hole` are the same icon. */
+    private static function key(string $name): string
+    {
+        return preg_replace('/[^a-z0-9]/', '', strtolower($name)) ?? '';
+    }
+
+    /** Name of the stored file of an icon (the URL it comes from, so a changed source is a new file). */
+    public static function fileName(string $remote): string
+    {
+        return sha1($remote).'.'.pathinfo($remote, PATHINFO_EXTENSION);
+    }
+
+    private static function stored(string $file): bool
+    {
+        return Storage::disk('public')->exists(self::DIRECTORY.'/'.$file);
+    }
+
+    /** The names of the icons of both databases with the URL of each file; empty before the first refresh. @return array<string, array<string, string>> */
+    public static function index(): array
+    {
+        $index = self::$index ?? Cache::get(self::INDEX_KEY);
+
+        return self::$index = is_array($index) ? $index : [];
+    }
+
+    /** Asks the queue for a refresh, at most once in a while (an unreachable CDN must not make every page load try). */
+    private static function requestRefresh(): void
+    {
+        if (Cache::add(self::REQUESTED_KEY, 1, self::REQUEST_EVERY)) {
+            $job = RefreshDockerIcons::dispatch();
+            // Without a queue (sync) the download must not hold the page: it runs once the response has been sent.
+            if (config('queue.default') === 'sync') {
+                $job->afterResponse();
+            }
+        }
+    }
+
+    /**
+     * Reads the index of both databases and stores the icons of the images the devices run.
+     * $force downloads the icons that are stored again too (the databases fix and change their files).
+     * The index of a database that cannot be read is kept as it was.
+     *
+     * @return array{icons: int, downloaded: int, failed: list<string>}
+     */
+    public static function refresh(bool $force = false): array
+    {
+        $failed = [];
+        $old = Cache::get(self::INDEX_KEY);
+        $old = is_array($old) ? $old : [];
+        $index = [];
+        foreach (['dashboard-icons' => fn () => self::dashboardIcons(), 'selfh.st' => fn () => self::selfhstIcons()] as $source => $read) {
+            try {
+                $index[$source] = $read();
+            } catch (\Throwable $e) {
+                $failed[] = "$source: ".$e->getMessage();
+                $index[$source] = $old[$source] ?? [];
+            }
+        }
+        $index = array_filter($index);
+        if ($index !== []) {
+            Cache::forever(self::INDEX_KEY, $index);
+        }
+        self::$index = $index;
+
+        $downloaded = 0;
+        $wanted = [];
+        foreach (self::usedImages() as $image) {
+            foreach (self::match($index, $image) as $remote) {
+                $wanted[$remote] = true;
+            }
+        }
+        foreach (array_keys($wanted) as $remote) {
+            $file = self::fileName($remote);
+            if (! $force && self::stored($file)) {
+                continue;
+            }
+            try {
+                $response = Http::timeout(15)->connectTimeout(3)->get($remote)->throw();
+                $body = $response->body();
+                if ($body === '' || strlen($body) > self::MAX_BYTES) {
+                    throw new \RuntimeException('empty or too large');
+                }
+                Storage::disk('public')->put(self::DIRECTORY.'/'.$file, $body);
+                $downloaded++;
+            } catch (\Throwable $e) {
+                $failed[] = "$remote: ".$e->getMessage();
+            }
+        }
+
+        return ['icons' => count($wanted), 'downloaded' => $downloaded, 'failed' => $failed];
+    }
+
+    /** Images of the containers of all devices. @return list<string> */
+    private static function usedImages(): array
+    {
+        $images = [];
+        Device::query()->each(function (Device $device) use (&$images) {
+            foreach ($device->docker['containers'] ?? [] as $container) {
+                if (($image = (string) ($container['Image'] ?? '')) !== '') {
+                    $images[$image] = true;
+                }
+            }
+        });
+
+        return array_keys($images);
+    }
+
+    /** @return array<string, string> */
+    private static function dashboardIcons(): array
+    {
+        $tree = Http::timeout(15)->connectTimeout(3)->get(self::DASHBOARD_ICONS.'tree.json')->throw()->json();
+
+        $icons = [];
+        foreach (['svg', 'png'] as $extension) {
+            foreach ($tree[$extension] ?? [] as $file) {
+                // The first one stays: an SVG before a PNG.
+                $icons[self::key(pathinfo($file, PATHINFO_FILENAME))] ??= self::DASHBOARD_ICONS.$extension.'/'.$file;
+            }
+        }
+
+        return $icons;
+    }
+
+    /** @return array<string, string> */
+    private static function selfhstIcons(): array
+    {
+        $rows = Http::timeout(15)->connectTimeout(3)->get(self::SELFHST_ICONS.'index.json')->throw()->json();
+
+        $icons = [];
+        foreach ($rows ?? [] as $row) {
+            $reference = (string) ($row['Reference'] ?? '');
+            $extension = ($row['SVG'] ?? '') === 'Yes' ? 'svg' : (($row['PNG'] ?? '') === 'Yes' ? 'png' : null);
+            if ($reference !== '' && $extension !== null) {
+                $icons[self::key($reference)] ??= self::SELFHST_ICONS.$extension.'/'.$reference.'.'.$extension;
+            }
+        }
+
+        return $icons;
     }
 }

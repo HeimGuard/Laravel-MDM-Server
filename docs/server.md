@@ -18,6 +18,19 @@ php artisan mdm:user admin@example.com            # asks for the password
 docker exec -it mdm php artisan mdm:user admin@example.com
 ```
 
+Two things the server downloads can be refreshed by hand (both also run on a schedule):
+
+```bash
+php artisan mdm:docker-icons [--force] [--queue]   # icons of the containers: index of dashboard-icons and selfh.st/icons + the icons in use
+php artisan mdm:security-feed [--force] [--queue]  # rules of the security rules feed (MDM_SECURITY_FEED_URL)
+```
+
+The icons of the containers are files of the public disk (`storage/app/public/docker-icons`), the web server
+sends them as `/storage/docker-icons/...` without PHP, and the browser does not load anything from a CDN. The
+index of the icon databases is kept in the cache (`CACHE_STORE`). An icon that is missing (a new image, a
+cleared cache) asks for a refresh in the queue. `--force` downloads what is already stored again, `--queue`
+leaves the run to the queue worker.
+
 The user interface is in English, Czech, German, Spanish, French and Italian (`lang/*.json`). The
 setup page asks for the language of the first account, which is also the default for everyone who
 has not picked one; each user changes their own in the profile. Logs, alerts and notifications

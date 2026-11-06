@@ -27,7 +27,7 @@
                 <li class="d-flex justify-content-between gap-2 mb-1">
                     <span class="text-truncate">
                         <x-badge :color="$finding->severityColor" size="sm" variant="subtle">{{ __(ucfirst($finding->severity)) }}</x-badge>
-                        <a href="{{ route('devices', ['selectedDeviceId' => $finding->device_id]) }}">{{ $finding->device?->DisplayName }}</a>
+                        <a wire:navigate href="{{ route('devices', ['selectedDeviceId' => $finding->device_id]) }}">{{ $finding->device?->DisplayName }}</a>
                         <span class="text-body-secondary">{{ $finding->message ?: $finding->rule?->name }}</span>
                     </span>
                     <span class="text-body-secondary text-nowrap">{{ $finding->last_seen_at?->diffForHumans() }}</span>
