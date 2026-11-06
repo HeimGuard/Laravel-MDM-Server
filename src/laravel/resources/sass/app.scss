@@ -218,6 +218,13 @@ label.mdm-tag {
     max-width: 10rem;
 }
 
+// The bar of the last hours of a container in a table: narrow, a beat is about as wide as it is high.
+.ping-beats-xs {
+    height: .75rem;
+    gap: 2px;
+    width: 5.5rem;
+}
+
 // The header of the device card leaves room for the power state, the bell and the menu in its top
 // right corner (device-commands); the power state is in the header itself on phones.
 .device-head {

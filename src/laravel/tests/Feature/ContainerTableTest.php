@@ -116,7 +116,7 @@ class ContainerTableTest extends TestCase
         $this->assertStringNotContainsString('6379/tcp', $html);
         $this->assertStringNotContainsString('3306/tcp', $html);
         // The bar of the web container: 12 beats, one of them down with the time of the gap.
-        $this->assertSame(12, preg_match_all('/class="ping-beat[ "]/', substr($html, strpos($html, 'ping-beats ping-beats-sm'), 4000)));
+        $this->assertSame(12, preg_match_all('/class="ping-beat[ "]/', substr($html, strpos($html, 'ping-beats ping-beats-xs'), 4000)));
         $this->assertStringContainsString('is-down', $html);
         $this->assertStringContainsString('09:14–09:16', $html);
         $this->assertStringContainsString('Last 12 hours', $html);

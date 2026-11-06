@@ -582,7 +582,7 @@
                                             <td class="d-none d-lg-table-cell small text-muted text-nowrap">{{ implode(', ', $published) }}</td>
                                             <td class="d-none d-md-table-cell">
                                                 @if ($beats !== [])
-                                                    <div class="ping-beats ping-beats-sm" role="img" aria-label="{{ __('Last 12 hours') }}">
+                                                    <div class="ping-beats ping-beats-xs" role="img" aria-label="{{ __('Last 12 hours') }}">
                                                         @foreach ($beats as $beat)
                                                             <span class="ping-beat {{ $beat['state'] === 'up' ? 'is-up' : ($beat['state'] === 'down' ? 'is-down' : '') }}"
                                                                 title="{{ $beat['from']->format('H:i') }}–{{ $beat['to']->format('H:i') }} · {{ match ($beat['state']) {
