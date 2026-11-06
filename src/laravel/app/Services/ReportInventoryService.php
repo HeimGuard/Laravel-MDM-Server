@@ -65,6 +65,45 @@ class ReportInventoryService
         }
     }
 
+    /**
+     * The states of services and containers an agent sends with its heartbeat (name => running / stopped / failed, ...): what changed
+     * is a change of the thing (a sample of its history). The state lists every thing, so one that is not in it is gone, one that is
+     * not known yet is added with its name only, and a changed one loses the status text of the report. A state of containers
+     * means the agent reads them again: the error of the report is cleared.
+     *
+     * @param  array{services?: array<string, string>, containers?: array<string, string>}  $state
+     */
+    public static function applyLiveStates(int $deviceId, array $state): void
+    {
+        $type = (new Device)->getMorphClass();
+        foreach (['services' => 'service', 'containers' => 'container'] as $list => $kind) {
+            if (! isset($state[$list]) || ! is_array($state[$list])) {
+                continue;
+            }
+            $current = InventoryService::snapshot($type, $deviceId, $kind);
+            $upsert = [];
+            foreach ($state[$list] as $name => $newState) {
+                $name = (string) $name;
+                $stored = $current[$name]['data'] ?? null;
+                // The report says "running" with a status text for a container whose health check fails; the heartbeats call it "unhealthy".
+                $storedState = $stored === null ? null : (($stored['State'] ?? null) === 'running' && str_contains((string) ($stored['Status'] ?? ''), '(unhealthy)') ? 'unhealthy' : ($stored['State'] ?? null));
+                if ($stored !== null && $storedState === $newState) {
+                    continue;
+                }
+                $data = ($current[$name]['data'] ?? ['Name' => $name]);
+                $data['State'] = $newState;
+                unset($data['Status'], $data['Health']);
+                $upsert[] = [$name, InventoryService::hash($data), $data];
+            }
+            InventoryService::apply($type, $deviceId, $kind, $upsert, array_values(array_diff(array_keys($current), array_map('strval', array_keys($state[$list])))), false);
+        }
+        if (isset($state['containers']) && is_array($state['containers'])) {
+            $marker = InventoryService::snapshot($type, $deviceId, 'docker')['']['data'] ?? [];
+            unset($marker['error']);
+            InventoryService::record($type, $deviceId, 'docker', '', $marker);
+        }
+    }
+
     /** @return array<int, array{0: string, 1: string, 2: array, 3: int}> [name, hash, row, position] */
     private static function rows(string $section, mixed $list): array
     {
@@ -137,7 +176,7 @@ class ReportInventoryService
         $found = collect();
         foreach (array_chunk($ids, 500) as $chunk) {
             $found = $found->merge(InventoryDefinition::query()->where('inventorable_type', (new Device)->getMorphClass())->whereIn('inventorable_id', $chunk)
-                ->whereIn('key', array_unique($kinds))->whereNotNull('last_data')->orderBy('position')->orderBy('id')->get(['inventorable_id', 'key', 'position', 'last_data']));
+                ->whereIn('key', array_unique($kinds))->whereNotNull('last_data')->orderByRaw('case when position is null then 1 else 0 end')->orderBy('position')->orderBy('id')->get(['inventorable_id', 'key', 'position', 'last_data']));
         }
 
         return $found->groupBy('inventorable_id');

@@ -44,14 +44,15 @@ class ProcessDeviceReport implements ShouldQueue
             return;
         }
         $data = json_decode($json, true);
-        // The data column is written without touching updated_at (the time of the report, set by the request).
-        if (! is_array($data) || Device::query()->whereKey($this->deviceId)->toBase()->update(['data' => $json]) === 0) {
-            return;
-        }
-        $device = Device::find($this->deviceId);
+        $device = is_array($data) ? Device::find($this->deviceId) : null;
         if ($device === null) {
             return;
         }
+        // The report is split (the lists of it are the inventory of the device, ReportInventoryService) and stored without touching
+        // updated_at (the time of the report, set by the request).
+        $device->timestamps = false;
+        $device->data = $json;
+        $device->save();
         // The usage of each disk, for the history.
         rescue(fn () => DiskUsage::record($device));
         // What the agent sees in its networks (agents 1.16.0+, unless network_discovery is off).

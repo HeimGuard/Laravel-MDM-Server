@@ -130,7 +130,8 @@ class Device extends Model
             $channel === 'ws' ? 'last_ws_at' : 'last_http_at' => now(),
         ];
         if ($state = self::sanitizeLiveState($state)) {
-            $values['live_state'] = json_encode($state);
+            // The states of services and containers are inventory (a change is a sample), the rest is the live state.
+            $values['live_state'] = json_encode(array_diff_key($state, ['services' => 1, 'containers' => 1]));
             $values['live_state_at'] = now();
         }
 
@@ -140,6 +141,9 @@ class Device extends Model
 
         if ($updated && $metrics = DeviceUsage::sanitize($metrics)) {
             DeviceUsage::record($id, $metrics);
+        }
+        if ($updated && is_array($state) && (isset($state['services']) || isset($state['containers']))) {
+            \App\Services\ReportInventoryService::applyLiveStates($id, $state);
         }
         // The battery of a laptop (the state the agent sends with the heartbeat).
         if ($updated && is_array($state) && is_int($state['power']['battery'] ?? null)) {
@@ -1941,10 +1945,8 @@ class Device extends Model
     /** Running services and the ones that failed or should run but do not, failed first. */
     public function getServicesAttribute(): array
     {
-        $services = self::withLiveStates(
-            self::listOf(json_decode(json_encode($this->data->services ?? []), true)),
-            $this->liveState['services'] ?? null,
-        );
+        // The inventory has the states of the last report and of the heartbeats since.
+        $services = self::listOf(json_decode(json_encode($this->data->services ?? []), true));
         $order = ['failed' => 0, 'stopped' => 1, 'running' => 2];
         usort($services, fn ($a, $b) => [$order[$a['State'] ?? ''] ?? 1, strtolower($a['Name'] ?? '')] <=> [$order[$b['State'] ?? ''] ?? 1, strtolower($b['Name'] ?? '')]);
 
@@ -1959,17 +1961,19 @@ class Device extends Model
         }
 
         $docker = json_decode(json_encode($this->data->docker), true);
-        $live = $this->liveState['containers'] ?? null;
 
         // Agents before 1.5.0 report Docker as soon as the CLI exists, even without an engine: an
         // error with no containers means Docker is not installed there. Newer agents only report
         // a reachable engine, so their errors are shown.
-        if ($live === null && ! empty($docker['error']) && empty($docker['containers'])
-            && version_compare($this->agentVersion ?? '0', '1.5.0', '<')) {
+        if (! empty($docker['error']) && empty($docker['containers']) && version_compare($this->agentVersion ?? '0', '1.5.0', '<')) {
             return null;
         }
 
         $containers = array_map(function (array $container) {
+            // The same naming as the states of the heartbeat: a running container whose health check fails is "unhealthy" there.
+            if (($container['State'] ?? null) === 'running' && str_contains($container['Status'] ?? '', '(unhealthy)')) {
+                $container['State'] = 'unhealthy';
+            }
             // "unhealthy" is a running container whose health check fails.
             if (($container['State'] ?? null) === 'unhealthy') {
                 $container['State'] = 'running';
@@ -1977,49 +1981,13 @@ class Device extends Model
             }
 
             return $container;
-        }, self::withLiveStates(array_map(function (array $container) {
-            // Same naming as the live state, so an unchanged container keeps its status text.
-            if (($container['State'] ?? null) === 'running' && str_contains($container['Status'] ?? '', '(unhealthy)')) {
-                $container['State'] = 'unhealthy';
-            }
-
-            return $container;
-        }, self::listOf($docker['containers'] ?? [])), $live));
+        }, self::listOf($docker['containers'] ?? []));
 
         return [
-            // A newer live state means the agent reads the containers again.
-            'error' => $live !== null ? null : ($docker['error'] ?? null),
+            // The heartbeats with the states of the containers clear the error of the report (ReportInventoryService::applyLiveStates).
+            'error' => $docker['error'] ?? null,
             'containers' => $containers,
         ];
-    }
-
-    /**
-     * Applies the live states to the items of the last report. The live state lists every item
-     * (running and failed / stopped ones): items it no longer has are gone, new ones are added
-     * with their name only. A changed item loses its report-time status text.
-     */
-    private static function withLiveStates(array $items, ?array $states): array
-    {
-        if ($states === null) {
-            return $items;
-        }
-
-        $byName = [];
-        foreach ($items as $item) {
-            $byName[$item['Name'] ?? ''] = $item;
-        }
-
-        $merged = [];
-        foreach ($states as $name => $state) {
-            $item = $byName[$name] ?? ['Name' => $name];
-            if (($item['State'] ?? null) !== $state) {
-                $item['State'] = $state;
-                unset($item['Status'], $item['Health']);
-            }
-            $merged[] = $item;
-        }
-
-        return $merged;
     }
 
     /** Null until the agent reported disk health (agents before 1.2.0). */
