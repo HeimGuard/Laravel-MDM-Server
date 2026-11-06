@@ -125,11 +125,11 @@ class SyslogTest extends TestCase
 
         $this->assertSame(['192.168.1.77' => 2], $result['unknown']);
         $this->assertSame(2, $result['events']);
-        $events = SecurityEvent::query()->where('device_id', $router->id)->orderBy('user')->get();
+        $events = SecurityEvent::query()->forDevice($router->id)->get()->sortBy('user')->values();
         $this->assertSame(['bob', 'root'], $events->pluck('user')->all());
         $this->assertSame(['1.2.3.4', '1.2.3.4'], $events->pluck('source')->all());
         $this->assertSame('ssh from web01', $events[0]->message);
-        $this->assertSame(0, SecurityEvent::query()->where('device_id', '!=', $router->id)->count());
+        $this->assertSame(0, SecurityEvent::query()->where('eventable_id', '!=', $router->id)->count());
     }
 
     public function test_a_device_that_sends_syslog_is_marked(): void
@@ -159,7 +159,7 @@ class SyslogTest extends TestCase
         $result = Syslog::ingest([$this->message('192.168.1.1', 'sshd', 'Failed password for root from 1.2.3.4 port 22 ssh2')]);
 
         $this->assertSame(0, $result['events']);
-        $this->assertSame(0, SecurityEvent::query()->where('device_id', $router->id)->count());
+        $this->assertSame(0, SecurityEvent::query()->forDevice($router->id)->count());
     }
 
     public function test_the_agents_are_not_asked_for_syslog(): void

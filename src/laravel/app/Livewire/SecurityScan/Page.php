@@ -176,13 +176,13 @@ class Page extends Component
         $active = SecurityFinding::query()->active()->selectRaw('severity, count(*) as total')->groupBy('severity')->pluck('total', 'severity');
         $events = collect();
         if ($this->tab === 'events') {
-            $events = SecurityEvent::query()->with('device')->latest('occurred_at')->latest('id')
+            $events = SecurityEvent::query()->with('eventable')->latest('occurred_at')->latest('id')
                 ->when($this->eventType !== '', fn ($q) => $q->where('type', $this->eventType))
-                ->when($this->eventDevice !== '', fn ($q) => $q->where('device_id', (int) $this->eventDevice))
+                ->when($this->eventDevice !== '', fn ($q) => $q->forDevice((int) $this->eventDevice))
                 ->when($this->eventDays > 0, fn ($q) => $q->where('occurred_at', '>=', now()->subDays($this->eventDays)))
                 ->when(trim($this->eventSearch) !== '', function ($q) {
                     $like = '%'.addcslashes(trim($this->eventSearch), '%_\\').'%';
-                    $q->where(fn ($q) => $q->whereLike('user', $like)->orWhereLike('source', $like)->orWhereLike('message', $like));
+                    $q->where(fn ($q) => $q->whereLike('data->user', $like)->orWhereLike('data->origin', $like)->orWhereLike('message', $like));
                 })
                 ->limit($this->eventLimit + 1)->get();
             $moreEvents = $events->count() > $this->eventLimit;
@@ -194,7 +194,7 @@ class Page extends Component
             'findings' => $this->tab === 'findings' ? $this->findings()->bySeverity()->limit(self::LIMIT)->get() : collect(),
             'events' => $events,
             'moreEvents' => $moreEvents ?? false,
-            'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->select('device_id')->distinct())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
+            'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->where('eventable_type', (new Device)->getMorphClass())->select('eventable_id')->distinct())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
             'rules' => $this->tab === 'rules' ? SecurityRule::query()->detection()->addSelect(['open_count' => SecurityFinding::query()->active()->selectRaw('count(distinct device_id) + count(distinct case when device_id is null then target_ip end)')->whereColumn('security_rule_id', 'security_rules.id')])->orderBy('source')->orderBy('name')->get() : collect(),
             'parsers' => $this->tab === 'rules' ? SecurityRule::query()->parsers()->orderBy('source')->orderBy('name')->get() : collect(),
             'eventTypes' => $this->tab === 'events' ? SecurityEvent::query()->distinct()->orderBy('type')->pluck('type')->mapWithKeys(fn ($type) => [$type => (new SecurityEvent(['type' => $type]))->label]) : collect(),

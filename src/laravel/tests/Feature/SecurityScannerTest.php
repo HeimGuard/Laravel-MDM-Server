@@ -410,7 +410,7 @@ class SecurityScannerTest extends TestCase
         // The inventory is scanned, the logs a device did not agree to send are dropped.
         $this->assertContains('software.remote-access', $this->openKeys($off));
         $this->assertNotContains('events.brute-force', $this->openKeys($off));
-        $this->assertSame(0, SecurityEvent::query()->where('device_id', $off->id)->count());
+        $this->assertSame(0, SecurityEvent::query()->forDevice($off->id)->count());
 
         // On, but a system admin turned the logs off for the whole portal.
         $on = $this->device('on');
@@ -483,7 +483,7 @@ class SecurityScannerTest extends TestCase
         $this->assertSame('low', $finding->severity);
         $this->assertSame('203.0.113.7', SecurityFinding::query()->whereHas('rule', fn ($q) => $q->where('key', 'events.brute-force'))->first()->details['Source']);
         // Events of a known type are kept for the timeline.
-        $this->assertSame(2, SecurityEvent::query()->where('device_id', $device->id)->count());
+        $this->assertSame(2, SecurityEvent::query()->forDevice($device->id)->count());
         $this->assertSame('AnyDesk', $device->securityInventory()->first()->data['software'][0]['Name']);
         $this->assertArrayNotHasKey('events', $device->securityInventory()->first()->data);
 
@@ -637,7 +637,7 @@ class SecurityScannerTest extends TestCase
         $this->runWorker();
         $this->assertSame(['windows.security' => 4711], $response->json('cursors'));
         $this->assertContains('events.brute-force', $this->openKeys($device));
-        $this->assertSame(25, SecurityEvent::query()->where('device_id', $device->id)->sum('count'));
+        $this->assertSame(25, SecurityEvent::query()->forDevice($device->id)->sum('count'));
         $this->assertLessThan(strlen(json_encode($this->lastCollection)) / 3, strlen(gzencode(json_encode($this->lastCollection), 6)));
     }
 

@@ -526,7 +526,7 @@ class SecurityScanner
             return null;
         }
         $items = $definition['source'] === 'events'
-            ? SecurityEvent::query()->where('device_id', $device->id)->where('occurred_at', '>=', now()->subDay())->get()
+            ? SecurityEvent::query()->forDevice($device->id)->where('occurred_at', '>=', now()->subDay())->get()
                 ->map(fn (SecurityEvent $event) => ['Type' => $event->type, 'Count' => $event->count, 'User' => $event->user, 'Source' => $event->source, 'Message' => $event->message, 'Last' => (string) $event->occurred_at])->all()
             : $inventory->items($definition['source']);
 
@@ -857,7 +857,8 @@ class SecurityScanner
      */
     private static function unseen(array $definition, array $events, ?int $before): array
     {
-        $columns = ['User' => 'user', 'Source' => 'source'];
+        // The user and the address the event came from are in data.
+        $columns = ['User' => 'data->user', 'Source' => 'data->origin'];
         $fields = $definition['unseen_by'] ?? array_keys($columns);
 
         return array_values(array_filter($events, function (array $event) use ($definition, $fields, $columns, $before) {

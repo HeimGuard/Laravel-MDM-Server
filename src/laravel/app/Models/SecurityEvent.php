@@ -6,7 +6,7 @@ use App\Support\SecurityRules;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Str;
 
 /**
@@ -33,16 +33,105 @@ class SecurityEvent extends Model
         'logon' => 'success',
     ];
 
-    protected $fillable = ['device_id', 'type', 'count', 'user', 'source', 'message', 'occurred_at'];
+    protected $table = 'events';
+
+    /**
+     * device_id, user and source are what the pages and the rules know an event by: the device is the eventable, the user and
+     * the address the event came from (source) are in data. log_source is where the event came from (linux.auth, syslog, ...).
+     */
+    protected $fillable = ['eventable_type', 'eventable_id', 'type', 'log_source', 'count', 'message', 'occurred_at', 'data', 'device_id', 'user', 'source', 'origin', 'parser'];
 
     protected $casts = [
         'count' => 'integer',
         'occurred_at' => 'datetime',
+        'data' => 'array',
     ];
 
-    public function device(): BelongsTo
+    public function eventable(): MorphTo
     {
-        return $this->belongsTo(Device::class);
+        return $this->morphTo();
+    }
+
+    /** The device of the event (read the events with eventable to have it loaded). */
+    public function getDeviceAttribute(): ?Device
+    {
+        return $this->eventable instanceof Device ? $this->eventable : null;
+    }
+
+    public function getDeviceIdAttribute(): ?int
+    {
+        return $this->eventable_type === (new Device)->getMorphClass() ? (int) $this->eventable_id : null;
+    }
+
+    public function setDeviceIdAttribute(int|string|null $id): void
+    {
+        $this->attributes['eventable_type'] = (new Device)->getMorphClass();
+        $this->attributes['eventable_id'] = $id;
+    }
+
+    public function scopeForDevice(Builder $query, int $deviceId): Builder
+    {
+        return $query->where('eventable_type', (new Device)->getMorphClass())->where('eventable_id', $deviceId);
+    }
+
+    private function detail(string $key): ?string
+    {
+        $value = ($this->data ?? [])[$key] ?? null;
+
+        return $value === null ? null : (string) $value;
+    }
+
+    private function setDetail(string $key, mixed $value): void
+    {
+        $data = $this->data ?? [];
+        if ($value === null || $value === '') {
+            unset($data[$key]);
+        } else {
+            $data[$key] = (string) $value;
+        }
+        $this->data = $data === [] ? null : $data;
+    }
+
+    public function getUserAttribute(): ?string
+    {
+        return $this->detail('user');
+    }
+
+    public function setUserAttribute(?string $value): void
+    {
+        $this->setDetail('user', $value);
+    }
+
+    /** The address the event came from (data.origin); called source by the pages and the rules. */
+    public function getSourceAttribute(): ?string
+    {
+        return $this->detail('origin');
+    }
+
+    public function setSourceAttribute(?string $value): void
+    {
+        $this->setDetail('origin', $value);
+    }
+
+    public function getOriginAttribute(): ?string
+    {
+        return $this->detail('origin');
+    }
+
+    public function setOriginAttribute(?string $value): void
+    {
+        $this->setDetail('origin', $value);
+    }
+
+    /** The key of the parser that made the event (data.parser). */
+    public function getParserAttribute(): ?string
+    {
+        return $this->detail('parser');
+    }
+
+    public function setParserAttribute(?string $value): void
+    {
+        $this->setDetail('parser', $value);
     }
 
     public function prunable(): Builder
@@ -64,14 +153,16 @@ class SecurityEvent extends Model
     {
         $rows = [];
         foreach (array_slice($events, 0, self::MAX_PER_COLLECTION) as $event) {
+            $data = array_filter(['user' => $event['User'], 'origin' => $event['Source'], 'parser' => $event['Parser'] ?? null], fn ($value) => $value !== null && $value !== '');
             $rows[] = [
-                'device_id' => $device->id,
+                'eventable_type' => $device->getMorphClass(),
+                'eventable_id' => $device->id,
                 'type' => $event['Type'],
+                'log_source' => (string) ($event['LogSource'] ?? ''),
                 'count' => $event['Count'],
-                'user' => $event['User'],
-                'source' => $event['Source'],
                 'message' => $event['Message'],
                 'occurred_at' => $event['Last'] ?? now(),
+                'data' => $data === [] ? null : json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];

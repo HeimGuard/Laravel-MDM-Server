@@ -9,7 +9,7 @@ How the data of the devices is stored, and where new data goes. The rules for wo
 | Settings (set by someone) | `settings` | `HasSettings` | in use (`lan.*`) |
 | Measured numbers | `value_definitions`, `value_samples` | `HasValue` | in use |
 | Structured things a model has | `inventory_definitions`, `inventory_samples` | `HasInventory` | planned |
-| What happened | `events` | | planned (from `security_events`) |
+| What happened | `events` | | in use (table; the merge of two sources is planned) |
 | What a user did | `activities` | | in use |
 | Its execution | `device_commands`, `script_runs` | | in use |
 | Alerts, notifications | `alert_events` | | in use, unchanged |
@@ -118,7 +118,7 @@ disappeared has a sample with `data = null` and `last_data = null`.
 - The inventory the security scanner uses (delta synchronization with the agent, `security_inventories.states`) is
   unchanged for the agent: the server writes a sample when the hash differs.
 
-## `events` (planned)
+## `events`
 
 What happened, also without a user. Everything that not every event has is in `data`:
 
@@ -134,6 +134,14 @@ What happened, also without a user. Everything that not every event has is in `d
 `portscan`), `data.parser` the key of the parser that made it. It grows out of `security_events` (`source` there is the address
 the attack came from: it becomes `data.origin`). `alert_events` stays as it is: an alert has a lifetime, it belongs to the
 notifications.
+
+**State.** The table is `events` (model `SecurityEvent`, it was `security_events`): `eventable_*`, `type`, `log_source` (where it
+came from: the source of the log of the parser, `''` for the events that were there before), `message`, `count`, `occurred_at` and
+`data` (`user`, `origin`, `parser`). There is no `severity` column yet: the colour of an event is by its type
+(`SecurityEvent::TONES`). The pages and the rules read an event as they always did: `$event->user`, `$event->source` (the address,
+`data.origin`) and `$event->device_id` are accessors, so templates and rules did not change; `SecurityEvent::forDevice($id)` is
+the scope. The events of two log sources that say the same thing are two events (each has its `log_source`), nothing is dropped;
+the merge below is the next step.
 
 ### Two sources report the same thing
 
