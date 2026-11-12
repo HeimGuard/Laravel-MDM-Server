@@ -64,7 +64,7 @@ The agent is designed to stay out of the way:
 | Applications | ✅ winget | ✅ flatpak, snap |
 | PowerShell modules (PowerShell Gallery) | ✅ Windows PowerShell and 7 | ✅ PowerShell 7 |
 | Users' own PowerShell modules | ⚠️ listed only | ✅ updated as the user |
-| Newer PowerShell 7 release | ✅ installed from GitHub (MSI, SHA-256 checked) | ✅ installed from GitHub (.deb or tar.gz, SHA-256 checked) |
+| Newer PowerShell 7 release | ✅ installed from GitHub (MSI, SHA-256 checked; tried after the installation) | ✅ installed from GitHub (.deb or tar.gz, SHA-256 checked; unpacked and tried before it replaces the installed one, the previous release is put back when the new one does not start, agent 1.31.1+) |
 | **Commands** | | |
 | Install updates | ✅ Windows Update, winget, modules | ✅ apt, flatpak, snap, modules |
 | Install a single update (agent 1.8.0+, PowerShell 7 from GitHub 1.8.2+) | ✅ Windows Update, winget, modules, PowerShell 7 | ✅ apt, flatpak, snap, modules, PowerShell 7 |

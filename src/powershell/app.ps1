@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.31.0'
+$AgentVersion = '1.31.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -592,6 +592,67 @@ function Install-WindowsUpdate {
     "Windows Update: install finished$(if ($reboot) { ', restart required' })"
 }
 
+function Test-PowerShellRuns {
+    # Whether this pwsh starts the way the agent starts it (-NoLogo -NoProfile -NonInteractive with a
+    # script file, and -EncodedCommand as its jobs do) and has what the agent needs (WebSocket, HTTP,
+    # JSON, SHA-256). A broken release (7.7.0 aborts with a core dump on some systems) must not replace
+    # the one that works. Returns $null when it works, else what went wrong.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return "$Path does not exist" }
+    $code = @'
+$ErrorActionPreference = 'Stop'
+$null = [System.Net.WebSockets.ClientWebSocket]::new()
+$null = [System.Net.Http.HttpClient]::new()
+$null = [System.Security.Cryptography.SHA256]::Create()
+$null = ConvertFrom-Json (ConvertTo-Json @{ a = 1 } -Compress)
+"MDM-OK $($PSVersionTable.PSVersion)"
+'@
+    $file = Join-Path ([System.IO.Path]::GetTempPath()) "mdm-pwsh-test-$([guid]::NewGuid().ToString('N')).ps1"
+    Set-Content -Path $file -Value $code -Encoding UTF8
+    try {
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($code))
+        foreach ($arguments in @(@('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $file), @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded))) {
+            $out = [System.IO.Path]::GetTempFileName()
+            $err = [System.IO.Path]::GetTempFileName()
+            try {
+                $process = Start-Process -FilePath $Path -ArgumentList $arguments -RedirectStandardOutput $out -RedirectStandardError $err -NoNewWindow -PassThru
+                if (-not $process.WaitForExit(90000)) {
+                    try { $process.Kill() } catch { }
+                    return 'it did not finish in 90 seconds'
+                }
+                $text = "$(Get-Content -Path $out -Raw -ErrorAction SilentlyContinue)"
+                if ($process.ExitCode -ne 0 -or $text -notmatch 'MDM-OK ') {
+                    $tail = (@(Get-Content -Path $err, $out -ErrorAction SilentlyContinue | Where-Object { $_ -match '\S' } | Select-Object -Last 2) -join ' | ')
+                    return "exit code $($process.ExitCode) with $($arguments[2..3] -join ' ')$(if ($tail) { ": $tail" })"
+                }
+            }
+            finally { Remove-Item -Path $out, $err -Force -ErrorAction SilentlyContinue }
+        }
+        return $null
+    }
+    finally { Remove-Item -Path $file -Force -ErrorAction SilentlyContinue }
+}
+
+function Get-BadPowerShellVersions {
+    # The releases an earlier update refused (they did not start here): not tried again every hour.
+    param ([string]$Path)
+
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return @() }
+    try { return @(Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json | ForEach-Object { "$_" }) } catch { return @() }
+}
+
+function Add-BadPowerShellVersion {
+    param ([string]$Path, [string]$Version)
+
+    if (-not $Path) { return }
+    try { @(@(Get-BadPowerShellVersions -Path $Path) + $Version | Select-Object -Unique -Last 20) | ConvertTo-Json -Compress | Set-Content -LiteralPath $Path -Encoding UTF8 } catch { }
+}
+
 function Install-PowerShellRelease {
     # Installs a PowerShell 7 release from GitHub (installations no package manager knows about).
     # The download is checked against the release's hashes.sha256. Linux: the .deb when the
@@ -604,7 +665,10 @@ function Install-PowerShellRelease {
         [bool]
         $OnLinux,
         [hashtable]
-        $State = @{ Failures = [System.Collections.ArrayList]@() }
+        $State = @{ Failures = [System.Collections.ArrayList]@() },
+        # The releases that did not start here (Get-BadPowerShellVersions): this one is added to them when it does not.
+        [string]
+        $BadVersionsPath = ''
     )
 
     if ($Version -notmatch '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$') {
@@ -673,9 +737,49 @@ function Install-PowerShellRelease {
         "PowerShell ${Version}: $asset downloaded, SHA-256 verified"
 
         if ($asset -like '*.deb') {
+            # Unpacked beside it first and tried: a release that does not start never replaces the one that does.
+            $stage = Join-Path $temp 'deb'
+            New-Item -ItemType Directory -Path $stage -Force | Out-Null
+            $unpack = @(dpkg-deb -x $file $stage 2>&1 | ForEach-Object { "$_" })
+            if ($LASTEXITCODE) { [void]$State.Failures.Add("PowerShell ${Version}: dpkg-deb -x exit $LASTEXITCODE, $((@($unpack) | Select-Object -Last 2) -join ' | ')"); return }
+            $trial = Get-ChildItem -Path $stage -Filter pwsh -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            $problem = if ($trial) { Test-PowerShellRuns -Path $trial.FullName } else { 'no pwsh in the package' }
+            if ($problem) {
+                Add-BadPowerShellVersion -Path $BadVersionsPath -Version $Version
+                [void]$State.Failures.Add("PowerShell ${Version} was not installed, it does not start here ($problem); the installed one stays")
+                return
+            }
+            # The installed one is kept, in case the installed release fails (a copy: dpkg owns the files).
+            $backup = "$dir.mdm-old"
+            Remove-Item -Path $backup -Recurse -Force -ErrorAction SilentlyContinue
+            $neededMb = [int][Math]::Ceiling((@(Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum)[0].Sum) * 1.2 / 1MB)
+            $freeKb = "$(df -Pk (Split-Path -Path $dir -Parent) 2>$null | Select-Object -Last 1)" -split '\s+' | Select-Object -Index 3
+            $kept = $false
+            if ($freeKb -match '^\d+$' -and [long]$freeKb / 1024 -gt $neededMb) {
+                cp -a $dir $backup 2>$null
+                $kept = $LASTEXITCODE -eq 0
+            }
             $env:DEBIAN_FRONTEND = 'noninteractive'
             $output = @(apt-get -o DPkg::Lock::Timeout=600 -y -q install $file 2>&1 | ForEach-Object { "$_" })
-            if ($LASTEXITCODE) { [void]$State.Failures.Add("PowerShell ${Version}: apt-get install exit $LASTEXITCODE, $((@($output) | Select-Object -Last 2) -join ' | ')") ; return }
+            if ($LASTEXITCODE) {
+                Remove-Item -Path $backup -Recurse -Force -ErrorAction SilentlyContinue
+                [void]$State.Failures.Add("PowerShell ${Version}: apt-get install exit $LASTEXITCODE, $((@($output) | Select-Object -Last 2) -join ' | ')")
+                return
+            }
+            $problem = Test-PowerShellRuns -Path $pwsh.Path
+            if ($problem) {
+                Add-BadPowerShellVersion -Path $BadVersionsPath -Version $Version
+                if ($kept) {
+                    # The files of the previous release back (the package list of dpkg still names the new one).
+                    Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+                    Move-Item -Path $backup -Destination $dir
+                    [void]$State.Failures.Add("PowerShell ${Version} does not start here ($problem): the previous release was put back. dpkg still lists the new one: sudo apt-get install --reinstall powershell=<previous> or wait for a fixed release")
+                } else {
+                    [void]$State.Failures.Add("PowerShell ${Version} does not start here ($problem) and there was no room to keep the previous release: reinstall it by hand")
+                }
+                return
+            }
+            Remove-Item -Path $backup -Recurse -Force -ErrorAction SilentlyContinue
         } elseif ($asset -like '*.tar.gz') {
             # Unpacked next to the installation, then swapped in: running pwsh processes keep
             # their open files.
@@ -701,8 +805,23 @@ function Install-PowerShellRelease {
                 return
             }
             chmod +x "$new/pwsh"
+            $problem = Test-PowerShellRuns -Path "$new/pwsh"
+            if ($problem) {
+                Remove-Item -Path $new -Recurse -Force -ErrorAction SilentlyContinue
+                Add-BadPowerShellVersion -Path $BadVersionsPath -Version $Version
+                [void]$State.Failures.Add("PowerShell ${Version} was not installed, it does not start here ($problem); the installed one stays")
+                return
+            }
             Move-Item -Path $dir -Destination "$dir.mdm-old"
             Move-Item -Path $new -Destination $dir
+            $problem = Test-PowerShellRuns -Path $pwsh.Path
+            if ($problem) {
+                Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+                Move-Item -Path "$dir.mdm-old" -Destination $dir
+                Add-BadPowerShellVersion -Path $BadVersionsPath -Version $Version
+                [void]$State.Failures.Add("PowerShell ${Version} does not start here ($problem): the previous release was put back")
+                return
+            }
             Remove-Item -Path "$dir.mdm-old" -Recurse -Force -ErrorAction SilentlyContinue
         } else {
             $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/quiet', '/norestart') -Wait -PassThru
@@ -710,6 +829,15 @@ function Install-PowerShellRelease {
             if ($process.ExitCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec exit $($process.ExitCode)"); return }
         }
 
+        if (-not $OnLinux) {
+            # Windows has no copy of the previous release to put back: it is told at least.
+            $problem = Test-PowerShellRuns -Path $pwsh.Path
+            if ($problem) {
+                Add-BadPowerShellVersion -Path $BadVersionsPath -Version $Version
+                [void]$State.Failures.Add("PowerShell ${Version} was installed but does not start here ($problem): install the previous release")
+                return
+            }
+        }
         $installed = "$(& $pwsh.Path -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>$null)".Trim()
         if ($installed -ne $Version) {
             [void]$State.Failures.Add("PowerShell: version $installed after installing $Version")
@@ -2736,7 +2864,10 @@ function Get-PowerShellReleaseUpdate {
         [bool]
         $OnLinux,
         # Updates already listed by a package manager, PowerShell is not reported twice.
-        $Known
+        $Known,
+        # Releases an earlier update refused because they did not start (Get-BadPowerShellVersions).
+        [string]
+        $BadVersionsPath = ''
     )
 
     $pwsh = @(Get-PowerShellHosts -OnLinux $OnLinux | Where-Object { $_.Edition -eq 'PowerShell 7' }) | Select-Object -First 1
@@ -2752,7 +2883,7 @@ function Get-PowerShellReleaseUpdate {
     $installed = (& $pwsh.Path -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()' 2>$null | Select-Object -First 1)
     $latest = (Invoke-RestMethod -Uri 'https://aka.ms/pwsh-buildinfo-stable' -TimeoutSec 30).ReleaseTag -replace '^v', ''
     try {
-        if ($installed -and $latest -and [version]($latest -split '-')[0] -gt [version](("$installed" -split '-')[0])) {
+        if ($installed -and $latest -and [version]($latest -split '-')[0] -gt [version](("$installed" -split '-')[0]) -and @(Get-BadPowerShellVersions -Path $BadVersionsPath) -notcontains $latest) {
             [PSCustomObject]@{ Id = 'PowerShell'; Version = "$installed"; Avaliable = $latest; Source = 'github.com/PowerShell' }
         }
     }
@@ -4065,7 +4196,7 @@ function Start-AgentJob {
 
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
-    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-BadPowerShellVersions', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         $data = @{}
@@ -4081,7 +4212,7 @@ function Start-InventoryCollection {
             try { $packages += @(Get-ChromeUpdate -Known $packages) } catch { }
         }
         try { $packages += @(Get-PythonUpdates) } catch { }
-        try { $packages += @(Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known (@($data['os_updates']) + $packages)) } catch { }
+        try { $packages += @(Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known (@($data['os_updates']) + $packages) -BadVersionsPath (Join-Path (Split-Path -Parent $AptStatePath) 'powershell-bad.json')) } catch { }
         $data['packages_updates'] = $packages
         return $data
     }
@@ -5573,7 +5704,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -5584,6 +5715,8 @@ function Start-UpdateJob {
         if ((Test-Path -Path $OutputLog) -and (Get-Item -Path $OutputLog).Length -gt 2MB) {
             Move-Item -Path $OutputLog -Destination "$OutputLog.1" -Force
         }
+        # The PowerShell releases that did not start here are not installed again (Install-PowerShellRelease).
+        $badVersions = Join-Path (Split-Path -Parent $OutputLog) 'powershell-bad.json'
         $state = @{ Failures = [System.Collections.ArrayList]@(); Current = $null; Done = [System.Collections.ArrayList]@(); Base = 0; Span = 100; Last = $null; WingetPercent = 0; WingetLabel = 'winget upgrade' }
         function Set-Progress ([int]$Percent, [string]$Message) {
             # Percent within the current step (Base .. Base + Span), written for the agent loop.
@@ -5855,7 +5988,7 @@ function Start-UpdateJob {
                 }
                 'pwsh' {
                     Set-Progress 10 "PowerShell $id"
-                    Install-PowerShellRelease -Version $id -OnLinux $OnLinux -State $state
+                    Install-PowerShellRelease -Version $id -OnLinux $OnLinux -State $state -BadVersionsPath $badVersions
                 }
                 'chrome' {
                     Set-Progress 10 "Google Chrome $id"
@@ -5995,10 +6128,10 @@ function Start-UpdateJob {
             Set-Current 'group:powershell'
             Enter-Step 88 90 'PowerShell 7'
             try {
-                $release = Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known @()
+                $release = Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known @() -BadVersionsPath $badVersions
                 # Package managers ran first: still outdated means none of them manages PowerShell.
                 if ($release) {
-                    Install-PowerShellRelease -Version $release.Avaliable -OnLinux $OnLinux -State $state
+                    Install-PowerShellRelease -Version $release.Avaliable -OnLinux $OnLinux -State $state -BadVersionsPath $badVersions
                 }
             }
             catch {
@@ -6006,8 +6139,14 @@ function Start-UpdateJob {
             }
             Enter-Step 90 100 'PowerShell modules'
             try {
-                $failed = @(Invoke-PowerShellModules -OnLinux $OnLinux -Update -OnProgress { param ($p, $m) Set-Progress $p $m })
-                if (-not $failed) { 'PowerShell modules: up to date' }
+                # Not in the PowerShell that was just replaced: the next run does it.
+                if ($state.RestartAgent) {
+                    'PowerShell modules: skipped, PowerShell was just updated'
+                    $failed = @()
+                } else {
+                    $failed = @(Invoke-PowerShellModules -OnLinux $OnLinux -Update -OnProgress { param ($p, $m) Set-Progress $p $m })
+                }
+                if (-not $failed -and -not $state.RestartAgent) { 'PowerShell modules: up to date' }
                 foreach ($module in $failed) {
                     $owner = if ($module.User) { ", user $($module.User)" } else { '' }
                     $reason = if ($module.Error) { $module.Error } elseif ($module.User) { 'in the user profile, only the user can update it' } else { 'not updated' }
