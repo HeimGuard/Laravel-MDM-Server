@@ -24,11 +24,11 @@
             </div>
             {{-- One group: the buttons wrap together, Run never alone on its own line. --}}
             <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-secondary" href="{{ route('script.index') }}" title="{{ __('Back') }}" aria-label="{{ __('Back') }}">
-                    <i class="me-sm-2 fas fa-arrow-left"></i><span class="d-none d-sm-inline">{{ __('Back') }}</span>
+                <a class="btn btn-secondary" href="{{ route('script.index') }}">
+                    <i class="me-2 fas fa-arrow-left"></i><span>{{ __('Back') }}</span>
                 </a>
-                <button class="btn btn-light" type="button" wire:click="edit" title="{{ __('Edit') }}" aria-label="{{ __('Edit') }}">
-                    <i class="me-sm-2 fas fa-pen"></i><span class="d-none d-sm-inline">{{ __('Edit') }}</span>
+                <button class="btn btn-light" type="button" wire:click="edit">
+                    <i class="me-2 fas fa-pen"></i><span>{{ __('Edit') }}</span>
                 </button>
                 <button class="btn btn-light" type="button" wire:click="schedule">
                     <i class="me-2 fas fa-calendar-alt"></i><span>{{ __('Schedule') }}</span>
