@@ -414,7 +414,8 @@ class ScriptTest extends TestCase
             'device_id' => $this->device('other-token')->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'other', 'severity' => 'high',
             'message' => 'Elsewhere', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
-        $component->call('explainWithAi', $other->id)->assertNotFound();
+        $this->assertThrows(fn () => $component->call('explainWithAi', $other->id), \Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        Http::assertSentCount(1);
 
         // Without a key there is no button.
         config(['mdm.ai_api_key' => null]);
