@@ -50,10 +50,8 @@
             <div class="card card-body h-100">
                 <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                     <span class="fw-semibold">{{ __('Ping') }}</span>
-                    <button class="btn btn-sm btn-outline-secondary" type="button"
-                        x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'ping-settings', title: @js(__('Ping settings of :device', ['device' => $device->displayName])), parameters: {deviceId: {{ $device->id }}}})">
-                        {{ __('Ping settings') }}
-                    </button>
+                    <x-button variant="outline-secondary" class="text-nowrap"
+                        x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'ping-settings', title: @js(__('Ping settings of :device', ['device' => $device->displayName])), parameters: {deviceId: {{ $device->id }}}})">{{ __('Ping settings') }}</x-button>
                 </div>
                 <dl class="row small mb-0 row-gap-2">
                     <dt class="col-4 col-sm-3 fw-normal text-body-secondary">{{ __('Address') }}</dt>
@@ -90,6 +88,7 @@
                             :disabled="$scanning || ! $portScan['scanner']">{{ __('Scan ports') }}</x-button>
                     </div>
                     @if ($result && $result->ports)
+                        <div class="table-responsive">
                         <table class="table table-sm small mb-0">
                             <tbody>
                                 @foreach ($result->ports as $port)
@@ -101,6 +100,7 @@
                                 @endforeach
                             </tbody>
                         </table>
+                        </div>
                     @elseif ($result)
                         <div class="small text-body-secondary">{{ __('No open ports') }}</div>
                     @else
