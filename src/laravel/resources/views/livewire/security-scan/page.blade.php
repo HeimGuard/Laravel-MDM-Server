@@ -13,13 +13,13 @@
             @if ($isAdmin)
                 <div class="d-flex gap-2">
                     <button class="btn btn-light" type="button" wire:click="updateFeed" wire:loading.attr="disabled" wire:target="updateFeed" @disabled(! $feed['enabled']) @if (! $feed['enabled']) title="{{ __('No rules feed is set (MDM_SECURITY_FEED_URL).') }}" @endif>
-                        <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="updateFeed"></span><i class="fas fa-sync-alt me-2" wire:loading.remove wire:target="updateFeed"></i>{{ __('Sync feed') }}
+                        <span class="spinner-border spinner-border-sm me-1" wire:loading wire:target="updateFeed"></span><i class="fas fa-sync-alt me-1" wire:loading.remove wire:target="updateFeed"></i>{{ __('Sync feed') }}
                     </button>
                     <button class="btn btn-light" type="button" wire:click="rescan" wire:loading.attr="disabled" wire:target="rescan">
-                        <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="rescan"></span><i class="fas fa-sync me-2" wire:loading.remove wire:target="rescan"></i>{{ __('Scan again') }}
+                        <span class="spinner-border spinner-border-sm me-1" wire:loading wire:target="rescan"></span><i class="fas fa-sync me-1" wire:loading.remove wire:target="rescan"></i>{{ __('Scan again') }}
                     </button>
                     <button class="btn btn-primary" type="button" wire:click="addRule">
-                        <i class="fas fa-plus me-2"></i>{{ __('Add check') }}
+                        <i class="fas fa-plus me-1"></i>{{ __('Add check') }}
                     </button>
                 </div>
             @endif
@@ -155,7 +155,7 @@
                                     <td class="pe-3 text-end text-nowrap">
                                         @if ($isAdmin)
                                             <button class="btn btn-sm btn-light" type="button" wire:click="editRule({{ $rule->id }})">{{ $rule->built_in ? __('Show') : __('Edit') }}</button>
-                                            <button class="btn btn-sm btn-light" type="button" wire:click="duplicateRule({{ $rule->id }})" title="{{ __('Copy as a new rule') }}"><i class="far fa-copy"></i></button>
+                                            <x-button icon="far fa-copy" wire:click="duplicateRule({{ $rule->id }})" title="{{ __('Copy as a new rule') }}" aria-label="{{ __('Copy as a new rule') }}" />
                                         @endif
                                     </td>
                                 </tr>
@@ -190,7 +190,7 @@
             <div class="d-flex align-items-center mt-4 mb-2">
                 <h2 class="h6 fw-semibold mb-0 me-auto">{{ __('Log parsers') }}</h2>
                 @if ($isAdmin)
-                    <button class="btn btn-sm btn-light" type="button" wire:click="addParser"><i class="fas fa-plus me-1"></i>{{ __('Add parser') }}</button>
+                    <x-button icon="fas fa-plus" wire:click="addParser">{{ __('Add parser') }}</x-button>
                 @endif
             </div>
             <div class="small text-muted mb-2">{{ __('Agents send raw logs; parsers turn their records into the events the rules of the events source look at.') }}</div>
@@ -225,7 +225,7 @@
                                     <td class="pe-3 text-end text-nowrap">
                                         @if ($isAdmin)
                                             <button class="btn btn-sm btn-light" type="button" wire:click="editRule({{ $parser->id }})">{{ $parser->built_in ? __('Show') : __('Edit') }}</button>
-                                            <button class="btn btn-sm btn-light" type="button" wire:click="duplicateRule({{ $parser->id }})" title="{{ __('Copy as a new parser') }}"><i class="far fa-copy"></i></button>
+                                            <x-button icon="far fa-copy" wire:click="duplicateRule({{ $parser->id }})" title="{{ __('Copy as a new parser') }}" aria-label="{{ __('Copy as a new parser') }}" />
                                         @endif
                                     </td>
                                 </tr>
@@ -254,12 +254,10 @@
                 </select>
                 <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" wire:model.live.debounce.300ms="search" />
                 @if ($findings->isNotEmpty())
-                    <a class="btn btn-sm btn-light ms-auto" href="{{ route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== '')) }}" download title="{{ __('The findings of the filters as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
+                    <x-button icon="fas fa-file-alt" class="ms-auto" :href="route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== ''))" download title="{{ __('The findings of the filters as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
                 @endif
                 @if ($status === 'open' && $findings->isNotEmpty())
-                    <button class="btn btn-sm btn-light" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
-                        <i class="fas fa-check-double me-1"></i>{{ __('Acknowledge shown') }}
-                    </button>
+                    <x-button icon="fas fa-check-double" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">{{ __('Acknowledge shown') }}</x-button>
                 @endif
             </div>
             @if ($remediateError)

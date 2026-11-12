@@ -228,16 +228,9 @@
                                     </td>
                                     <td class="text-end text-nowrap">
                                         @if ($scan)
-                                            <button class="btn btn-sm btn-outline-primary nm-scan-btn" type="button" wire:click="scan(@js($network['id']))" aria-label="{{ __('Scan') }}" wire:loading.attr="disabled"
-                                                @disabled(! $scan['agent'] || $command?->active)
-                                                title="{{ $scan['agent'] ? __('Ping every address of the network from :agent and take what answers', ['agent' => $scan['name']]) : $scan['refusal'] }}">
-                                                @if ($command?->active)
-                                                    <span aria-hidden="true" class="spinner-border spinner-border-sm me-sm-1"></span>
-                                                @else
-                                                    <i class="fas fa-search-location me-sm-1"></i>
-                                                @endif
-                                                <span class="d-none d-sm-inline">{{ __('Scan') }}</span>
-                                            </button>
+                                            <x-button variant="outline-primary" icon="fas fa-search-location" compact :busy="(bool) $command?->active" class="nm-scan-btn" wire:click="scan(@js($network['id']))" aria-label="{{ __('Scan') }}" wire:loading.attr="disabled"
+                                                :disabled="(bool) (! $scan['agent'] || $command?->active)"
+                                                title="{{ $scan['agent'] ? __('Ping every address of the network from :agent and take what answers', ['agent' => $scan['name']]) : $scan['refusal'] }}">{{ __('Scan') }}</x-button>
                                             @error('scan.'.$network['anchor']) <div class="text-danger small text-wrap">{{ $message }}</div> @enderror
                                         @endif
                                     </td>

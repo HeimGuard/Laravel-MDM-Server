@@ -33,10 +33,10 @@
 {{-- Side by side also on a phone: they share the width (a long label wraps inside its button). --}}
 <div class="d-flex justify-content-end gap-2 mb-2">
         @if ($findings->isNotEmpty() || $acknowledged->isNotEmpty())
-            <a class="btn btn-sm btn-light flex-fill flex-md-grow-0" href="{{ route('security.export', ['device' => $deviceId, 'status' => 'unresolved']) }}" download title="{{ __('The open findings as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
+            <x-button icon="fas fa-file-alt" class="flex-fill flex-md-grow-0" :href="route('security.export', ['device' => $deviceId, 'status' => 'unresolved'])" download title="{{ __('The open findings as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
         @endif
         @if ($inventory)
-            <button class="btn btn-sm btn-light flex-fill flex-md-grow-0" type="button" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}"><i class="fas fa-file-code me-1"></i>{{ __('Export inventory (JSON)') }}</button>
+            <x-button icon="fas fa-file-code" class="flex-fill flex-md-grow-0" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}">{{ __('Export inventory (JSON)') }}</x-button>
         @endif
     </div>
     {{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}

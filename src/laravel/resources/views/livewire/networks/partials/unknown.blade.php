@@ -52,11 +52,9 @@
             @if ($portScan)
                 @if ($portScan['command']?->active)
                     {{-- A scan is running: a plain disabled button with a spinner. --}}
-                    <button class="btn btn-sm btn-outline-primary nm-icon-btn" type="button" disabled aria-label="{{ __('Scanning ports') }}" title="{{ __('Scanning the ports') }}">
-                        <span aria-hidden="true" class="spinner-border spinner-border-sm"></span>
-                    </button>
+                    <x-button variant="outline-primary" busy class="nm-icon-btn" disabled aria-label="{{ __('Scanning ports') }}" title="{{ __('Scanning the ports') }}" />
                 @elseif (! $portScan['agent'])
-                    <button class="btn btn-sm btn-outline-primary nm-icon-btn" type="button" disabled aria-label="{{ __('Scan ports') }}" title="{{ $portScan['refusal'] }}"><i class="fas fa-plug"></i></button>
+                    <x-button variant="outline-primary" icon="fas fa-plug" class="nm-icon-btn" disabled aria-label="{{ __('Scan ports') }}" title="{{ $portScan['refusal'] }}" />
                 @else
                     {{-- Quick scan of the common ports, or the full 1–65535 sweep. --}}
                     <div class="dropdown">
@@ -70,8 +68,8 @@
                     </div>
                 @endif
             @endif
-            <button class="btn btn-sm btn-outline-primary nm-icon-btn" type="button" wire:click="add({{ $neighbour['id'] }})" aria-label="{{ __('Add') }}" title="{{ __('Add as a ping-only device (it follows its MAC address to a new IP)') }}"><i class="fas fa-plus"></i></button>
-            <button class="btn btn-sm btn-outline-secondary nm-icon-btn" type="button" wire:click="ignore({{ $neighbour['id'] }})" title="{{ __('Ignore') }}" aria-label="{{ __('Ignore') }}"><i class="fas fa-eye-slash"></i></button>
+            <x-button variant="outline-primary" icon="fas fa-plus" class="nm-icon-btn" wire:click="add({{ $neighbour['id'] }})" aria-label="{{ __('Add') }}" title="{{ __('Add as a ping-only device (it follows its MAC address to a new IP)') }}" />
+            <x-button variant="outline-secondary" icon="fas fa-eye-slash" class="nm-icon-btn" wire:click="ignore({{ $neighbour['id'] }})" title="{{ __('Ignore') }}" aria-label="{{ __('Ignore') }}" />
         </li>
     @endforeach
 </ul>

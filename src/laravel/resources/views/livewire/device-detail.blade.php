@@ -350,9 +350,7 @@
                             @if ($updatesRunning)
                                 <div style="min-width: 14rem;">@include('partials.device.command-progress', ['command' => $updatesRunning])</div>
                             @elseif ($pendingUpdates > 0)
-                                <button class="btn btn-sm btn-light" type="button" wire:click="installAll" wire:loading.attr="disabled" wire:target="installAll" @disabled($selectedDevice->offline)>
-                                    <i class="fas fa-download me-1 text-primary"></i>{{ __('Install all (:count)', ['count' => $pendingUpdates]) }}
-                                </button>
+                                <x-button icon="fas fa-download" tone="primary" wire:click="installAll" wire:loading.attr="disabled" wire:target="installAll" :disabled="$selectedDevice->offline">{{ __('Install all (:count)', ['count' => $pendingUpdates]) }}</x-button>
                             @endif
                         </div>
                     </div>
@@ -809,9 +807,7 @@
                                 <span class="fw-semibold">{{ __('Security') }}</span>
                                 @can('is-system-admin')
                                     @if ($selectedDevice->signsRequests)
-                                        <button class="btn btn-sm btn-light ms-auto text-nowrap" type="button" title="{{ __('The agent registers a new key with its next request, e.g. after it was reinstalled with a new key.') }}" wire:click="resetDeviceKey" wire:confirm="{{ __('Reset the device key? Until the agent registers a key again, the device only gets the agent update.') }}">
-                                            <i class="fas fa-undo me-1 text-body-secondary"></i>{{ __('Reset device key') }}
-                                        </button>
+                                        <x-button icon="fas fa-undo" class="ms-auto text-nowrap" title="{{ __('The agent registers a new key with its next request, e.g. after it was reinstalled with a new key.') }}" wire:click="resetDeviceKey" wire:confirm="{{ __('Reset the device key? Until the agent registers a key again, the device only gets the agent update.') }}">{{ __('Reset device key') }}</x-button>
                                     @endif
                                 @endcan
                             </div>
