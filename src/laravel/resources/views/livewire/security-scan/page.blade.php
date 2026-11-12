@@ -8,7 +8,7 @@
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1>{{ __('Security') }}</h1>
-                <div class="text-muted">{{ __('Checks look at what the agents report: installed software, processes, open ports, startup items, administrators, security settings and events.') }}</div>
+                <div class="text-body-secondary">{{ __('Checks look at what the agents report: installed software, processes, open ports, startup items, administrators, security settings and events.') }}</div>
             </div>
             @if ($isAdmin)
                 <div class="d-flex gap-2">
@@ -49,7 +49,7 @@
         </ul>
 
         @if ($pending > 0)
-            <div class="small text-muted mb-3" wire:key="security-pending"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
+            <div class="small text-body-secondary mb-3" wire:key="security-pending"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
         @endif
 
         @if ($scanned === 0)
@@ -76,7 +76,7 @@
                     <option value="0">{{ __('All (:days days)', ['days' => SecurityEvent::RETENTION_DAYS]) }}</option>
                 </select>
                 <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" wire:model.live.debounce.300ms="eventSearch" />
-                <span class="small text-muted align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
+                <span class="small text-body-secondary align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
             </div>
             <div class="card overflow-hidden">
                 <div class="table-responsive">
@@ -101,7 +101,7 @@
                                     <td class="small text-end">{{ $event->count }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->user ?? '—' }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->source ?? '—' }}</td>
-                                    <td class="d-none d-lg-table-cell small text-muted text-break pe-3">{{ $event->message }}</td>
+                                    <td class="d-none d-lg-table-cell small text-body-secondary text-break pe-3">{{ $event->message }}</td>
                                 </tr>
                             @empty
                                 <x-empty-state colspan="7">{{ __('No events.') }}</x-empty-state>
@@ -136,7 +136,7 @@
                                             @unless ($rule->built_in)<x-badge color="primary" size="sm" variant="subtle">{{ __('Custom') }}</x-badge>@endunless
                                         </div>
                                         @if ($rule->definition['description'] ?? null)
-                                            <div class="small text-muted">{{ $rule->definition['description'] }}</div>
+                                            <div class="small text-body-secondary">{{ $rule->definition['description'] }}</div>
                                         @endif
                                         @if ($rule->urls)
                                             <div>@foreach ($rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
@@ -165,21 +165,21 @@
                 </div>
             </div>
             <details class="mt-4" wire:key="security-advanced" @if ($parsers->isNotEmpty() && request()->query('advanced')) open @endif>
-                <summary class="fw-medium">{{ __('Advanced') }} <span class="small text-muted fw-normal">{{ __('feed, log parsers and JSON') }}</span></summary>
+                <summary class="fw-medium">{{ __('Advanced') }} <span class="small text-body-secondary fw-normal">{{ __('feed, log parsers and JSON') }}</span></summary>
                 <div class="mt-3">
                 <div class="card card-body mb-4">
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <div class="me-auto">
                             <div class="fw-medium">{{ __('Checks feed') }}</div>
                             @if (! $feed['enabled'])
-                                <div class="small text-muted">{{ __('No feed is set (MDM_SECURITY_FEED_URL): only the bundled checks are used.') }}</div>
+                                <div class="small text-body-secondary">{{ __('No feed is set (MDM_SECURITY_FEED_URL): only the bundled checks are used.') }}</div>
                             @elseif (isset($feed['version']))
-                                <div class="small text-muted">
+                                <div class="small text-body-secondary">
                                     {{ __('Version :version', ['version' => $feed['version']]) }}@isset($feed['checked_at']), {{ __('checked :time', ['time' => \Illuminate\Support\Carbon::parse($feed['checked_at'])->diffForHumans()]) }}@endisset
                                     @if (! ($feed['ok'] ?? true))<span class="text-danger"> · {{ $feed['error'] }}</span>@endif
                                 </div>
                             @else
-                                <div class="small text-muted">{{ __('Not fetched yet.') }}</div>
+                                <div class="small text-body-secondary">{{ __('Not fetched yet.') }}</div>
                             @endif
                         </div>
                         @if ($isAdmin && $feed['enabled'])
@@ -193,7 +193,7 @@
                     <x-button icon="fas fa-plus" wire:click="addParser">{{ __('Add parser') }}</x-button>
                 @endif
             </div>
-            <div class="small text-muted mb-2">{{ __('Agents send raw logs; parsers turn their records into the events the rules of the events source look at.') }}</div>
+            <div class="small text-body-secondary mb-2">{{ __('Agents send raw logs; parsers turn their records into the events the rules of the events source look at.') }}</div>
             <div class="card overflow-hidden">
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
@@ -234,7 +234,7 @@
                     </table>
                 </div>
             </div>
-            <div class="small text-muted mt-2">
+            <div class="small text-body-secondary mt-2">
                 {{ __('Built-in checks come from resources/security/rules.json and parsers.json; switch them off or copy one to change it. Inventory findings are resolved when the next inventory no longer matches, event findings when you acknowledge them.') }}
             </div>
                 </div>
@@ -276,7 +276,7 @@
                 </div>
             </div>
             @if ($findings->count() >= Page::LIMIT)
-                <div class="small text-muted mt-2">{{ __('The first :count are shown, narrow the search.', ['count' => Page::LIMIT]) }}</div>
+                <div class="small text-body-secondary mt-2">{{ __('The first :count are shown, narrow the search.', ['count' => Page::LIMIT]) }}</div>
             @endif
         @endif
     </div>

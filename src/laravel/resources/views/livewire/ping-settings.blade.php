@@ -12,7 +12,7 @@
             </div>
         </div>
         <div class="col-12">
-            <label class="form-label" for="ping-settings-mac">{{ __('MAC address') }} <span class="text-muted">({{ __('for Wake-on-LAN') }})</span></label>
+            <label class="form-label" for="ping-settings-mac">{{ __('MAC address') }} <span class="text-body-secondary">({{ __('for Wake-on-LAN') }})</span></label>
             <input class="form-control font-monospace" id="ping-settings-mac" placeholder="AA:BB:CC:DD:EE:FF" type="text" wire:model="mac">
         </div>
         <div class="col-12">
@@ -27,7 +27,7 @@
             <div class="form-text">{{ __('Automatic: an agent in its network; in another subnet (behind a router) the stationary agents of each site try in turn until one gets an answer and keep it. Choose an agent when you know which one reaches it.') }}</div>
         </div>
         @error('address') <div class="col-12 small text-danger">{{ $message }}</div> @enderror
-        <div class="col-12 small text-muted">{{ __('The prefix tells which agents share its network: they ping it and wake it. A new address starts the history over (offline until it answers).') }}</div>
+        <div class="col-12 small text-body-secondary">{{ __('The prefix tells which agents share its network: they ping it and wake it. A new address starts the history over (offline until it answers).') }}</div>
     </div>
     <div class="d-flex justify-content-end gap-2 border-top pt-3 mt-4">
         <button class="btn btn-light" type="button" wire:click="$dispatch('closeModal')">{{ __('Cancel') }}</button>

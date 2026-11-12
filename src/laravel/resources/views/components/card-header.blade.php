@@ -9,7 +9,7 @@
     <div class="me-auto min-w-0">
         <{{ $tag }} @class(['d-block fw-semibold', 'h6 mb-0' => $tag !== 'span'])>{{ $title }}</{{ $tag }}>
         @if (filled($subtitle))
-            <div class="small text-muted">{{ $subtitle }}</div>
+            <div class="small text-body-secondary">{{ $subtitle }}</div>
         @endif
     </div>
     @if (trim((string) $slot) !== '')

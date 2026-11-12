@@ -127,7 +127,7 @@
                                 @endif
                                 {{ $item['label'] }}
                                 @if ($running && $running->command === $command)
-                                    <span class="small text-muted ms-2">{{ $running->statusLabel }}</span>
+                                    <span class="small text-body-secondary ms-2">{{ $running->statusLabel }}</span>
                                 @endif
                             </button>
                         </li>
@@ -149,9 +149,9 @@
                                 @endif
                                 {{ __('Scan :network', ['network' => $network]) }}
                                 @if ($scanning)
-                                    <span class="small text-muted ms-2">{{ $scanning->progress !== null ? $scanning->progress.' %' : $scanning->statusLabel }}</span>
+                                    <span class="small text-body-secondary ms-2">{{ $scanning->progress !== null ? $scanning->progress.' %' : $scanning->statusLabel }}</span>
                                 @elseif ($scanRefusal)
-                                    <span class="small text-muted ms-2 text-truncate" style="max-width: 12rem">{{ $scanRefusal }}</span>
+                                    <span class="small text-body-secondary ms-2 text-truncate" style="max-width: 12rem">{{ $scanRefusal }}</span>
                                 @endif
                             </button>
                         </li>
@@ -172,7 +172,7 @@
                             @endif
                             {{ __('Scan ports') }}
                             @if ($scanningPorts)
-                                <span class="small text-muted ms-2">{{ $scanningPorts->progress !== null ? $scanningPorts->progress.' %' : $scanningPorts->statusLabel }}</span>
+                                <span class="small text-body-secondary ms-2">{{ $scanningPorts->progress !== null ? $scanningPorts->progress.' %' : $scanningPorts->statusLabel }}</span>
                             @endif
                         </button>
                     </li>
@@ -193,12 +193,12 @@
     </div>
 
     @if (! $recentWake && $selectedDevice->offline && ($hasData || $selectedDevice->isPingOnly) && $wakeRefusal)
-        <div class="small text-muted mt-2"><i class="fas fa-power-off me-1"></i>{{ __('Wake-on-LAN') }}: {{ $wakeRefusal }}</div>
+        <div class="small text-body-secondary mt-2"><i class="fas fa-power-off me-1"></i>{{ __('Wake-on-LAN') }}: {{ $wakeRefusal }}</div>
     @endif
 
     {{-- The result of the last Sync (ping now); while it runs it is with the commands below. --}}
     @if ($recentPing && ! $recentPing->active)
-        <div class="small mt-2 {{ in_array($recentPing->status, ['failed', 'expired'], true) ? 'text-danger' : 'text-muted' }}">
+        <div class="small mt-2 {{ in_array($recentPing->status, ['failed', 'expired'], true) ? 'text-danger' : 'text-body-secondary' }}">
             <i class="fas fa-network-wired me-1"></i>{{ __('Ping through :relay', ['relay' => $recentPing->device?->displayName]) }}:
             {{ in_array($recentPing->status, ['queued', 'sent'], true) ? __('waiting for :relay', ['relay' => $recentPing->device?->displayName]) : ($recentPing->displayMessage ?: $recentPing->statusLabel) }}
         </div>

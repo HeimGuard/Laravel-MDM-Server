@@ -59,7 +59,7 @@
         </div>
 
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4">
-            <div class="small text-muted">
+            <div class="small text-body-secondary">
                 @if ($script)
                     {{ __('Version') }} {{ $script->version }} · {{ __('Fingerprint') }} <code class="text-break">{{ $script->fingerprint }}</code>
                     <div>{{ __('Saving changed code creates a new version with a new fingerprint.') }}</div>

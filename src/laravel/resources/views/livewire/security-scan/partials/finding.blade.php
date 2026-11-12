@@ -25,7 +25,7 @@
             <div class="small text-body-secondary mt-1"><i class="fas fa-info-circle me-1"></i>{{ __('Worst CVE: :severity (nothing can be done about it yet)', ['severity' => __(ucfirst($finding->worstSeverity))]) }}</div>
         @endif
         @if ($finding->remediation)
-            <div class="small text-muted mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
+            <div class="small text-body-secondary mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
         @endif
         @php($links = $finding->urls)
         @if ($links)

@@ -4,7 +4,7 @@
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1>{{ __('Notifications') }}</h1>
-                <div class="text-muted">{{ __('Get told when a device goes down, runs out of disk space or a service fails.') }}</div>
+                <div class="text-body-secondary">{{ __('Get told when a device goes down, runs out of disk space or a service fails.') }}</div>
             </div>
             <button class="btn btn-primary" type="button" wire:click="addRule">
                 <i class="fas fa-plus me-2"></i>{{ __('Add alert') }}
@@ -73,7 +73,7 @@
                             <i class="fas fa-plus me-1"></i>{{ __('Add URL') }}
                         </button>
 
-                        <details class="small text-muted mt-2">
+                        <details class="small text-body-secondary mt-2">
                             <summary>{{ __('URL formats (Shoutrrr, as in Beszel)') }}</summary>
                             <table class="table table-sm small mt-2 mb-0">
                                 <tbody>
@@ -118,12 +118,12 @@
                                         <a class="fw-semibold text-body" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $event->device_id]) }}">{{ $event->device?->displayName }}</a>
                                         <span class="text-body-secondary">· {{ $event->rule?->label }}</span>
                                     </div>
-                                    <div class="small text-muted text-break">{{ $event->message }}</div>
+                                    <div class="small text-body-secondary text-break">{{ $event->message }}</div>
                                 </div>
-                                <div class="small text-muted text-end text-nowrap" title="{{ $event->triggered_at }}">{{ __('since :time', ['time' => $event->triggered_at->diffForHumans()]) }}</div>
+                                <div class="small text-body-secondary text-end text-nowrap" title="{{ $event->triggered_at }}">{{ __('since :time', ['time' => $event->triggered_at->diffForHumans()]) }}</div>
                             </div>
                         @empty
-                            <div class="smart-alert text-muted">
+                            <div class="smart-alert text-body-secondary">
                                 <x-icon-tile icon="fas fa-check" tone="success" />
                                 <div class="align-self-center">{{ __('All quiet: no alert is firing.') }}</div>
                             </div>
@@ -133,7 +133,7 @@
                     <section class="card overflow-hidden">
                         <div class="d-flex align-items-center px-3 py-2 border-bottom">
                             <h2 class="h6 fw-semibold mb-0 me-auto">{{ __('Rules') }}</h2>
-                            <span class="small text-muted">{{ __('Checked every minute') }}</span>
+                            <span class="small text-body-secondary">{{ __('Checked every minute') }}</span>
                         </div>
                         @if (! $hasChannels && $rules->isNotEmpty())
                             <x-notice class="m-3 mb-0" type="warning">
@@ -166,7 +166,7 @@
                                                     <x-target-summary :target="$rule->target ?? []" />
                                                 @endif
                                             </td>
-                                            <td class="d-none d-lg-table-cell small text-muted">
+                                            <td class="d-none d-lg-table-cell small text-body-secondary">
                                                 {{ $rule->channels === null ? __('All channels') : ($rule->channels === [] ? __('None') : collect($rule->channels)->map(fn ($channel) => $channel === 'email' ? __('E-mail') : \App\Support\Notifier::serviceName($channel))->implode(', ')) }}
                                             </td>
                                             <td>
@@ -199,14 +199,14 @@
                                     <x-icon-tile :icon="$channel === 'email' ? 'fas fa-envelope' : 'fas fa-paper-plane'" />
                                     <div class="min-w-0">
                                         <div class="fw-medium">{{ $channel === 'email' ? __('E-mail') : \App\Support\Notifier::serviceName($channel) }}</div>
-                                        <div class="small text-muted text-truncate">{{ \Illuminate\Support\Str::after($label, ' · ') }}</div>
+                                        <div class="small text-body-secondary text-truncate">{{ \Illuminate\Support\Str::after($label, ' · ') }}</div>
                                     </div>
                                 </div>
                             @empty
-                                <div class="small text-muted">{{ __('No channels yet.') }} <a href="#" wire:click.prevent="$set('tab', 'channels')">{{ __('Add one') }}</a></div>
+                                <div class="small text-body-secondary">{{ __('No channels yet.') }} <a href="#" wire:click.prevent="$set('tab', 'channels')">{{ __('Add one') }}</a></div>
                             @endforelse
                         </div>
-                        <div class="small text-muted mt-3">{{ __('Each alert sends one message when it starts and one when it is resolved, never in between.') }}</div>
+                        <div class="small text-body-secondary mt-3">{{ __('Each alert sends one message when it starts and one when it is resolved, never in between.') }}</div>
                     </div>
                 </aside>
             </div>

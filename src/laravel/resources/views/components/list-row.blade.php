@@ -12,7 +12,7 @@
             <div class="fw-semibold text-break">{{ $title }}</div>
         @endif
         @if (filled($subtitle))
-            <div class="small text-muted text-break">{{ $subtitle }}</div>
+            <div class="small text-body-secondary text-break">{{ $subtitle }}</div>
         @endif
         {{ $slot }}
     </div>

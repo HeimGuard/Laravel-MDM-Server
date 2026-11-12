@@ -62,7 +62,7 @@
                         </h2>
                     @endif
 
-                    <div class="text-muted small d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
+                    <div class="text-body-secondary small d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
                         @if ($selectedDevice->offline)
                             <x-badge color="secondary" size="sm" variant="subtle" title="{{ ($selectedDevice->last_seen_at ?? $selectedDevice->updated_at)?->toDateTimeString() }}">
                                 {{ __('Offline') }} · {{ ($selectedDevice->last_seen_at ?? $selectedDevice->updated_at)?->diffForHumans() }}
@@ -254,14 +254,14 @@
                         @foreach ($selectedDevice->drives as $drive)
                             <div class="col-12 col-md-6">
                                 <div class="d-flex align-items-center gap-3">
-                                    <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-muted"></i>
+                                    <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-body-secondary"></i>
                                     <div class="flex-grow-1">
                                         <div>{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] ?? '?' }})</div>
                                         @if (isset($drive['Size']) && isset($drive['PercentUsed']))
                                             <div class="progress my-1" style="height: 6px;">
                                                 <div aria-valuemax="100" aria-valuemin="0" aria-valuenow="{{ $drive['PercentUsed'] }}" class="progress-bar {{ $drive['PercentUsed'] > 90 ? 'bg-danger' : '' }}" role="progressbar" style="width: {{ $drive['PercentUsed'] }}%"></div>
                                             </div>
-                                            <small class="text-muted">
+                                            <small class="text-body-secondary">
                                                 {{ __(':free free of :total', ['free' => \App\Support\Bytes::format($drive['SizeRemaining'] ?? 0), 'total' => \App\Support\Bytes::format($drive['Size'])]) }}
                                             </small>
                                         @endif
@@ -272,7 +272,7 @@
                     </div>
                     @endif
                     @if ($diskHealth !== null)
-                        <h6 class="{{ empty($selectedDevice->drives) ? '' : 'mt-4 pt-3 border-top' }} mb-3"><i class="fas fa-heartbeat me-2 text-muted"></i>{{ __('Disk health') }}</h6>
+                        <h6 class="{{ empty($selectedDevice->drives) ? '' : 'mt-4 pt-3 border-top' }} mb-3"><i class="fas fa-heartbeat me-2 text-body-secondary"></i>{{ __('Disk health') }}</h6>
                     @if ($diskHealth['error'])
                         <x-notice icon="fas fa-heartbeat" type="warning">{{ $diskHealth['error'] }}</x-notice>
                     @endif
@@ -294,7 +294,7 @@
                                     <div class="card h-100">
                                         <div class="card-body">
                                             <div class="d-flex align-items-start gap-3">
-                                                <i class="fas {{ ($disk['MediaType'] ?? '') === 'HDD' ? 'fa-hdd' : 'fa-memory' }} fa-2x text-muted"></i>
+                                                <i class="fas {{ ($disk['MediaType'] ?? '') === 'HDD' ? 'fa-hdd' : 'fa-memory' }} fa-2x text-body-secondary"></i>
                                                 <div class="flex-grow-1 min-w-0">
                                                     <div class="d-flex justify-content-between gap-2">
                                                         <span class="fw-semibold text-break">{{ $disk['Model'] ?? $disk['Device'] }}</span>
@@ -302,16 +302,16 @@
                                                             {{ match ($health) { 'passed' => __('Healthy'), 'failed' => __('Failing'), 'warning' => __('Warning'), default => __('Unknown') } }}
                                                         </x-badge>
                                                     </div>
-                                                    <div class="small text-muted text-break">
+                                                    <div class="small text-body-secondary text-break">
                                                         {{ collect([$disk['Device'] ?? null, $disk['MediaType'] ?? null, $disk['Protocol'] ?? null, isset($disk['Size']) ? \App\Support\Bytes::format($disk['Size']) : null, $disk['Serial'] ?? null])->filter()->implode(' · ') }}
                                                     </div>
                                                     @if (! empty($disk['Standby']))
-                                                        <div class="small text-muted mt-1"><i class="fas fa-moon me-1"></i>{{ __('Disk is asleep, showing the last known values.') }}</div>
+                                                        <div class="small text-body-secondary mt-1"><i class="fas fa-moon me-1"></i>{{ __('Disk is asleep, showing the last known values.') }}</div>
                                                     @endif
                                                     @if ($values)
                                                         <dl class="row small mb-0 mt-2">
                                                             @foreach ($values as $label => $value)
-                                                                <dt class="col-6 fw-normal text-muted">{{ $label }}</dt>
+                                                                <dt class="col-6 fw-normal text-body-secondary">{{ $label }}</dt>
                                                                 <dd class="col-6 mb-1 text-end">{{ $value }}</dd>
                                                             @endforeach
                                                         </dl>
@@ -326,7 +326,7 @@
                     @elseif (! $diskHealth['error'])
                         <x-empty-state>{{ __('No disks with S.M.A.R.T. support found.') }}</x-empty-state>
                     @endif
-                    <p class="small text-muted mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
+                    <p class="small text-body-secondary mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
                     @endif
                     @endif
                 </div>
@@ -358,7 +358,7 @@
                         <x-notice type="danger">{{ $message }}</x-notice>
                     @enderror
                     @unless ($selectedDevice->commandTracking)
-                        <p class="small text-muted">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
+                        <p class="small text-body-secondary">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
                     @endunless
                     @if (count($selectedDevice->updates) > 0)
                         <div x-show="!search || @js($osSearch).some(text => text.includes(search.toLowerCase()))">
@@ -410,10 +410,10 @@
                                     <span class="flex-grow-1 min-w-0">
                                         <span class="fw-semibold text-break">{{ $appUpdate['Id'] ?? '' }}</span>
                                         @if (! empty($appUpdate['Source']))
-                                            <span class="small text-muted ms-1">{{ $appUpdate['Source'] }}</span>
+                                            <span class="small text-body-secondary ms-1">{{ $appUpdate['Source'] }}</span>
                                         @endif
                                         @if (($appUpdate['Scope'] ?? null) === 'user')
-                                            <span class="small text-muted ms-1" title="{{ __('Installed only for the logged-on user: updated in their session') }}"><i class="fas fa-user me-1"></i>{{ __('user') }}</span>
+                                            <span class="small text-body-secondary ms-1" title="{{ __('Installed only for the logged-on user: updated in their session') }}"><i class="fas fa-user me-1"></i>{{ __('user') }}</span>
                                         @endif
                                         {{-- On phones the versions go under the name, the button keeps its place. --}}
                                         <span class="d-block d-sm-none small text-primary-emphasis">{{ $versions }}</span>
@@ -429,9 +429,9 @@
                                     <li class="list-group-item d-flex align-items-center gap-2" wire:key="module-{{ $loop->index }}" x-show="!search || @js($moduleSearch[$loop->index]).includes(search.toLowerCase())">
                                         <span class="flex-grow-1 min-w-0">
                                             <span class="fw-semibold text-break">{{ $module['Name'] ?? '' }}</span>
-                                            <span class="small text-muted ms-1">{{ __('module') }} · {{ $module['Edition'] ?? '' }}</span>
+                                            <span class="small text-body-secondary ms-1">{{ __('module') }} · {{ $module['Edition'] ?? '' }}</span>
                                             @if (! empty($module['User']))
-                                                <span class="small text-muted" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
+                                                <span class="small text-body-secondary" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
                                             @endif
                                             <span class="d-block d-sm-none small text-primary-emphasis">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</span>
                                         </span>
@@ -469,7 +469,7 @@
                                     </div>
                                 </x-slot:title>
                                 @foreach ($network['IPAddresses'] as $ipAddress)
-                                    <div class="small text-muted">
+                                    <div class="small text-body-secondary">
                                         <span class="font-monospace">{{ $ipAddress }}</span>
                                         @if (\App\Models\Device::isPublicIp($ipAddress))
                                             <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
@@ -496,7 +496,7 @@
                     @if ($activeTab === 'services')
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <x-search-input x-model="search" />
-                        <span class="small text-muted ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
+                        <span class="small text-body-secondary ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
@@ -516,9 +516,9 @@
                                     <tr wire:key="service-{{ $loop->index }}" x-show="!search || @js($search).includes(search.toLowerCase())">
                                         <td class="text-break">
                                             <span class="fw-semibold">{{ $service['Name'] ?? '' }}</span>
-                                            <div class="small text-muted d-md-none">{{ $service['DisplayName'] ?? '' }}</div>
+                                            <div class="small text-body-secondary d-md-none">{{ $service['DisplayName'] ?? '' }}</div>
                                         </td>
-                                        <td class="d-none d-md-table-cell text-muted">{{ $service['DisplayName'] ?? '' }}</td>
+                                        <td class="d-none d-md-table-cell text-body-secondary">{{ $service['DisplayName'] ?? '' }}</td>
                                         <td class="text-end text-nowrap">
                                             <x-badge :color="$state === 'running' ? 'success' : ($state === 'failed' ? 'danger' : 'warning')" variant="subtle">
                                                 {{ __(ucfirst($state)) }}
@@ -578,19 +578,19 @@
                                                         @if ($icons !== [])
                                                             <img src="{{ $icons[0] }}" alt="" width="28" height="28" style="object-fit: contain;">
                                                         @else
-                                                            <i class="fab fa-docker text-muted fa-lg"></i>
+                                                            <i class="fab fa-docker text-body-secondary fa-lg"></i>
                                                         @endif
                                                     </span>
                                                     <div class="min-w-0">
                                                         <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
                                                         @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
-                                                            <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                            <i class="fas fa-file-alt text-body-secondary ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
                                                         @endif
-                                                        <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
+                                                        <div class="small text-body-secondary">{{ $container['Image'] ?? '' }}</div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="d-none d-lg-table-cell small text-muted text-nowrap">{{ implode(', ', $published) }}</td>
+                                            <td class="d-none d-lg-table-cell small text-body-secondary text-nowrap">{{ implode(', ', $published) }}</td>
                                             <td class="d-none d-md-table-cell">
                                                 @if ($beats !== [])
                                                     <div class="ping-beats ping-beats-xs" role="img" aria-label="{{ __('Last 12 hours') }}">
@@ -607,7 +607,7 @@
                                             </td>
                                             <td class="text-end">
                                                 <x-badge :color="$color" variant="subtle">{{ ($container['Health'] ?? null) === 'unhealthy' ? __('Unhealthy') : __(ucfirst($state)) }}</x-badge>
-                                                <div class="small text-muted text-nowrap">{{ $container['Status'] ?? '' }}</div>
+                                                <div class="small text-body-secondary text-nowrap">{{ $container['Status'] ?? '' }}</div>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -626,7 +626,7 @@
                     @if ($activeTab === 'scripts')
                     @livewire('script-run.data-table', ['deviceId' => $selectedDevice->id], key('device-script-runs-'.$selectedDevice->id))
                     @unless ($selectedDevice->scriptsEnabled)
-                        <p class="small text-muted mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
+                        <p class="small text-body-secondary mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
                     @endunless
                     @endif
                 </div>

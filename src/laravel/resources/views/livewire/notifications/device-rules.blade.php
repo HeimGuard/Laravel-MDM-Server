@@ -12,7 +12,7 @@
                     <label class="flex-grow-1 min-w-0 mb-0" for="device-rule-{{ $type }}">
                         <span class="d-block">{{ __($definition['label']) }}</span>
                         @unless ($setting['enabled'])
-                            <span class="d-block small text-muted">{{ __($definition['description']) }}</span>
+                            <span class="d-block small text-body-secondary">{{ __($definition['description']) }}</span>
                         @endunless
                     </label>
                     <div class="form-check form-switch m-0">
@@ -22,7 +22,7 @@
 
                 @if ($setting['enabled'] && ($definition['threshold'] !== null || $definition['minutes'] !== null))
                     {{-- The condition as one line, like in the alert form. --}}
-                    <div class="d-flex flex-wrap align-items-center gap-2 small text-muted mt-1" style="padding-left: 2.25rem">
+                    <div class="d-flex flex-wrap align-items-center gap-2 small text-body-secondary mt-1" style="padding-left: 2.25rem">
                         @if ($definition['threshold'] !== null)
                             <span>
                                 @if ($type === 'disk')
@@ -63,14 +63,14 @@
     </div>
 
     @if ($broader->isNotEmpty())
-        <div class="small text-muted mt-3">
+        <div class="small text-body-secondary mt-3">
             <div class="fw-semibold mb-1">{{ __('Also alerting for this device') }}</div>
             @foreach ($broader as $rule)
                 <div class="d-flex flex-wrap align-items-center gap-1"><i class="{{ $rule->icon }} fa-fw"></i>{{ $rule->label }}: {{ $rule->condition }} · <x-target-summary :target="$rule->target ?? []" />{{ $rule->enabled ? '' : ' ('.__('disabled').')' }}</div>
             @endforeach
         </div>
     @endif
-    <div class="small text-muted mt-3">
+    <div class="small text-body-secondary mt-3">
         {{ __('Sent to the channels on the') }} <a href="{{ route('notifications') }}">{{ __('Notifications') }}</a> {{ __('page') }}.
     </div>
 </div>

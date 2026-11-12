@@ -17,17 +17,17 @@
                     <label class="form-check-label" for="role_{{ $role->id }}">
                         {{ $role->name }}
                         @if($role->scopes->isNotEmpty())
-                            <small class="text-muted ms-1">({{ $role->scopes->pluck('ability')->join(', ') }})</small>
+                            <small class="text-body-secondary ms-1">({{ $role->scopes->pluck('ability')->join(', ') }})</small>
                         @endif
                     </label>
                 </div>
             @empty
-                <p class="text-muted">{{ __('No roles defined.') }}</p>
+                <p class="text-body-secondary">{{ __('No roles defined.') }}</p>
             @endforelse
         </div>
 
         @if(!empty($user->scope_applied))
-            <p class="text-muted small mb-1">{{ __('Applied scopes') }}:</p>
+            <p class="text-body-secondary small mb-1">{{ __('Applied scopes') }}:</p>
             <div class="d-flex flex-wrap gap-1">
                 @foreach($user->scope_applied as $scope)
                     <span class="badge bg-secondary">{{ $scope }}</span>
@@ -51,7 +51,7 @@
                     ></button>
                 </span>
             @empty
-                <span class="text-muted small">{{ __('No scopes assigned.') }}</span>
+                <span class="text-body-secondary small">{{ __('No scopes assigned.') }}</span>
             @endforelse
         </div>
 

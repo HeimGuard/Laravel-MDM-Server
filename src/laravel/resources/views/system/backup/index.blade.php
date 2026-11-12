@@ -61,7 +61,7 @@
                                                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                 </div>
                                                 <div class="modal-body">
-                                                    <p class="text-muted">{{ __('Select components to restore. This operation will overwrite current data.') }}</p>
+                                                    <p class="text-body-secondary">{{ __('Select components to restore. This operation will overwrite current data.') }}</p>
                                                     @if($hasDbZip)
                                                         <div class="form-check">
                                                             <input type="checkbox" class="form-check-input" name="restore_database" value="1" id="db-{{ $backups_slug }}" checked>
