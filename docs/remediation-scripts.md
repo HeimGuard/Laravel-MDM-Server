@@ -27,7 +27,7 @@ script in the form are sent, nothing about the devices. Without the AI set up th
 
 | Variable | |
 | --- | --- |
-| `MDM_AI_PROVIDER` | `anthropic` (Claude, default) or `openai` |
+| `MDM_AI_PROVIDER` | `anthropic` (Claude) or `openai`; without it the key tells: `sk-ant-…` is Anthropic, another `sk-…` key (or `MDM_AI_URL`) OpenAI |
 | `MDM_AI_API_KEY` | the API key of the provider |
 | `MDM_AI_MODEL` | default `claude-opus-5-5` / `gpt-5` |
 | `MDM_AI_URL` | another endpoint; with `openai` any server with the Chat Completions API and structured outputs (Ollama, LM Studio, vLLM, OpenRouter), e.g. `http://ollama:11434/v1/chat/completions`, where the key is optional |

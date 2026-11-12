@@ -23,9 +23,18 @@ class AiService
     /** Anthropic models that take the server side fallback on a refusal (others answer it with HTTP 400). */
     private const FALLBACK_MODELS = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5'];
 
+    /**
+     * The provider of MDM_AI_PROVIDER; without it the key tells (sk-ant-... is Anthropic, another sk-... key or an
+     * address of your own is OpenAI), so an OpenAI key is not sent to Anthropic. An unknown provider is none.
+     */
     public static function provider(): ?string
     {
-        $provider = strtolower((string) config('mdm.ai_provider'));
+        $provider = strtolower(trim((string) config('mdm.ai_provider')));
+        if ($provider === '') {
+            $key = trim((string) config('mdm.ai_api_key'));
+
+            return str_starts_with($key, 'sk-ant-') || ($key !== '' && ! str_starts_with($key, 'sk-') && blank(config('mdm.ai_url'))) ? 'anthropic' : 'openai';
+        }
 
         return array_key_exists($provider, self::PROVIDERS) ? $provider : null;
     }
@@ -81,7 +90,8 @@ class AiService
             Log::warning("AI ($name, $provider) failed: HTTP ".$response->status().' '.mb_strimwidth($response->body(), 0, 500));
             // Both APIs say what is wrong in error.message (a wrong key, no credit, an unknown model).
             $error = $response->json('error.message') ?? $response->json('message') ?? mb_strimwidth(trim(strip_tags($response->body())), 0, 200, '…');
-            throw new RuntimeException(__('The AI could not be reached: :error', ['error' => 'HTTP '.$response->status().', '.mb_strimwidth((string) $error, 0, 300, '…')]));
+            // Which provider was asked: a key of the other one is the usual cause of HTTP 401.
+            throw new RuntimeException(__('The AI could not be reached: :error', ['error' => 'HTTP '.$response->status().' ('.$provider.', '.(parse_url($url, PHP_URL_HOST) ?: $url).'), '.mb_strimwidth((string) $error, 0, 300, '…')]));
         }
         if ($provider === 'anthropic') {
             $refused = $response->json('stop_reason') === 'refusal';

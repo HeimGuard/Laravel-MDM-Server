@@ -355,7 +355,17 @@ class ScriptTest extends TestCase
             ->assertHasErrors(['aiPrompt'])->assertSet('detection', 'exit 0')->assertSet('aiMode', true);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Current script'));
         // What the API says is wrong is shown.
-        $this->assertSame('The AI could not be reached: HTTP 401, invalid x-api-key', Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Firewall on')->call('generate')->errors()->first('aiPrompt'));
+        $this->assertSame('The AI could not be reached: HTTP 401 (anthropic, api.anthropic.com), invalid x-api-key', Livewire::test(Form::class)->set('aiMode', true)->set('aiPrompt', 'Firewall on')->call('generate')->errors()->first('aiPrompt'));
+
+        // Without MDM_AI_PROVIDER the key tells the provider: an OpenAI key is never sent to Anthropic.
+        foreach (['sk-ant-api03-x' => 'anthropic', 'sk-proj-x' => 'openai', 'sk-x' => 'openai', 'other-key' => 'anthropic'] as $key => $provider) {
+            config(['mdm.ai_provider' => null, 'mdm.ai_api_key' => $key]);
+            $this->assertSame($provider, \App\Services\AiService::provider(), $key);
+        }
+        config(['mdm.ai_provider' => '', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions']);
+        $this->assertSame('openai', \App\Services\AiService::provider());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'sk-proj-x', 'mdm.ai_url' => null]);
+        $this->assertSame('anthropic', \App\Services\AiService::provider());
 
         // OpenAI, or a server of your own with its API (no key needed then).
         config(['mdm.ai_provider' => 'openai', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions', 'mdm.ai_model' => 'qwen3']);
