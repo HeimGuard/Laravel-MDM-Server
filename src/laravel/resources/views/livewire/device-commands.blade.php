@@ -238,7 +238,7 @@
     @endif
 
     @error('command')
-        <div class="small text-danger mt-2">{{ $message }}</div>
+        <x-notice class="mt-2" type="danger">{{ $message }}</x-notice>
     @enderror
 
     @if ($onItsWay->isNotEmpty())
@@ -263,12 +263,12 @@
                     @if (! $command->active)
                         {{-- A wake of an agent before 1.13.2: done on its side, the device is waited for. --}}
                     @elseif ($command->status === 'queued')
-                        <button class="btn btn-sm btn-link text-body-secondary p-0" title="{{ __('Cancel') }}" type="button" wire:click="cancel({{ $command->id }})">
+                        <button class="btn btn-sm btn-link text-body-secondary p-0" title="{{ __('Cancel') }}" aria-label="{{ __('Cancel') }}" type="button" wire:click="cancel({{ $command->id }})">
                             <i class="fas fa-times"></i>
                         </button>
                     @else
                         {{-- A command the device took can hang (an installer waiting for a window): giving it up frees the way for Restart or a new try. --}}
-                        <button class="btn btn-sm btn-link text-body-secondary p-0" title="{{ __('Give up waiting') }}" type="button" wire:click="cancel({{ $command->id }})"
+                        <button class="btn btn-sm btn-link text-body-secondary p-0" title="{{ __('Give up waiting') }}" aria-label="{{ __('Give up waiting') }}" type="button" wire:click="cancel({{ $command->id }})"
                             wire:confirm="{{ __('Stop waiting for :command? The device may still be working on it, but it no longer blocks other commands (e.g. Restart).', ['command' => $command->label]) }}">
                             <i class="fas fa-times"></i>
                         </button>

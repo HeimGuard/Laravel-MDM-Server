@@ -6,10 +6,10 @@
         <x-slot:subtitle>{!! $subtitle !!}</x-slot:subtitle>
     @endif
     {{-- Boilerplate segmented switch. --}}
-    <ul class="nav nav-switch flex-shrink-0 ms-auto" role="tablist">
+    <ul class="nav nav-switch flex-shrink-0 ms-auto">
         @foreach ($ranges as $option)
             <li class="nav-item">
-                <button class="nav-link {{ $range === $option ? 'active' : '' }}" type="button" wire:click="setRange('{{ $option }}')">{{ $option }}</button>
+                <button aria-pressed="{{ $range === $option ? 'true' : 'false' }}" class="nav-link {{ $range === $option ? 'active' : '' }}" type="button" wire:click="setRange('{{ $option }}')">{{ $option }}</button>
             </li>
         @endforeach
     </ul>

@@ -31,7 +31,8 @@
     <x-notice type="success">{{ $remediateDone }}</x-notice>
 @endif
 {{-- Side by side also on a phone: they share the width (a long label wraps inside its button). --}}
-<div class="d-flex justify-content-end gap-2 mb-2">
+@if ($inventory || $findings->isNotEmpty() || $acknowledged->isNotEmpty())
+    <div class="d-flex justify-content-end gap-2 mb-2">
         @if ($findings->isNotEmpty() || $acknowledged->isNotEmpty())
             <x-button icon="fas fa-file-alt" class="flex-fill flex-md-grow-0" :href="route('security.export', ['device' => $deviceId, 'status' => 'unresolved'])" download title="{{ __('The open findings as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
         @endif
@@ -39,6 +40,7 @@
             <x-button icon="fas fa-file-code" class="flex-fill flex-md-grow-0" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}">{{ __('Export inventory (JSON)') }}</x-button>
         @endif
     </div>
+    @endif
     {{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}
     <div class="card overflow-hidden mb-3">
         <div class="list-group list-group-flush">
@@ -142,6 +144,6 @@
             @endforeach
         </div>
 
-        <div class="small text-body-tertiary mt-3" title="{{ $inventory->collected_at }}">{{ __('Collected :time', ['time' => $inventory->collected_at->diffForHumans()]) }}</div>
+        <div class="small text-body-secondary mt-3" title="{{ $inventory->collected_at }}">{{ __('Collected :time', ['time' => $inventory->collected_at->diffForHumans()]) }}</div>
     @endif
 </div>
