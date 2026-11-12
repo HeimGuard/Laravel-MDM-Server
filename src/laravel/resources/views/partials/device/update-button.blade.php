@@ -1,11 +1,14 @@
-{{-- Installs one update ($section, $index of the row, $target from Device::updateTarget, $groupKey from Device::updateGroupKey), or shows its progress; while "Install all" runs ($updatesRunning), where the row stands. --}}
+{{-- Installs one update ($section, $index of the row, $target from Device::updateTarget, $groupKey from Device::updateGroupKey), or shows where it stands (Queued, Installing, Done), for its own command and while "Install all" runs ($updatesRunning) alike. --}}
 @php
     $running = $target ? \App\Models\Device::findActive($activeCommands, 'installUpdate', $target) : null;
     $rowState = $target && $updatesRunning ? \App\Models\Device::updateRowState($updatesRunning, $groupKey ?? '', $target) : null;
     $call = "installUpdate('{$section}', {$index}, " . \Illuminate\Support\Js::from($target['id'] ?? '') . ")";
 @endphp
-@if ($running)
-    <div style="min-width: 8rem;">@include('partials.device.command-progress', ['command' => $running, 'compact' => true])</div>
+{{-- A row's own command looks like a row of "Install all": Queued until the agent runs it, then Installing (with its percent). --}}
+@if ($running && $running->status === 'running')
+    <span class="small text-primary text-nowrap" title="{{ $running->displayMessage ?: __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}@if ($running->progress !== null) {{ $running->progress }} %@endif</span>
+@elseif ($running)
+    <span class="small text-muted text-nowrap" title="{{ $running->statusLabel }}"><i class="far fa-clock me-1"></i>{{ __('Queued') }}</span>
 @elseif ($rowState === 'running')
     <span class="small text-primary text-nowrap" title="{{ __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}</span>
 @elseif ($rowState === 'done')
