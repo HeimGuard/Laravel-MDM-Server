@@ -13,7 +13,7 @@
     @if ($run->error)
         <div class="alert alert-danger small py-2">{{ $run->error }}</div>
     @endif
-    @if ($run->script && in_array($run->status, ['failed', 'error'], true) && \App\Support\ScriptGenerator::available())
+    @if ($run->script && in_array($run->status, ['failed', 'error'], true) && \App\Services\AiService::available())
         @can('is-system-admin')
             <div class="mb-3">
                 {{-- Both labels share one cell, so the button keeps its width while it writes. --}}

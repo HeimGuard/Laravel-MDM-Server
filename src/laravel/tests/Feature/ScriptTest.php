@@ -366,9 +366,60 @@ class ScriptTest extends TestCase
 
         // Without the address OpenAI needs a key; an unknown provider is off.
         config(['mdm.ai_url' => null]);
-        $this->assertFalse(\App\Support\ScriptGenerator::available());
+        $this->assertFalse(\App\Services\AiService::available());
         config(['mdm.ai_provider' => 'gemini', 'mdm.ai_api_key' => 'key']);
-        $this->assertFalse(\App\Support\ScriptGenerator::available());
+        $this->assertFalse(\App\Services\AiService::available());
+    }
+
+    public function test_a_finding_is_explained_with_ai(): void
+    {
+        $this->actingAs(User::factory()->create());
+        config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
+        \App\Models\SecurityRule::syncBuiltIn();
+        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        $device = $this->device();
+        $finding = \App\Models\SecurityFinding::query()->create([
+            'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
+            'message' => 'Firewall is off', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        // The security inventory: the system (with its CPU architecture) and the settings go along, nothing that names a person, an address or a secret.
+        \App\Models\SecurityInventory::query()->create(['device_id' => $device->id, 'states' => [], 'scanned' => [], 'collected_at' => now()]);
+        foreach ([
+            'os' => ['Id' => 'ubuntu', 'Name' => 'Ubuntu 26.04 LTS', 'Version' => '26.04', 'Kernel' => '7.0.0-38-generic', 'Codename' => 'resolute', 'Arch' => 'x86_64'],
+            'posture' => ['FirewallEnabled' => false, 'SshRootLogin' => 'no', 'AptUpdateOk' => false, 'AptUpdateErrors' => 'E: https://user:hunter2@repo.example/ 401', 'UnencryptedMounts' => '/home/eve'],
+        ] as $key => $data) {
+            \App\Models\InventoryDefinition::query()->create(['inventorable_type' => $device->getMorphClass(), 'inventorable_id' => $device->id, 'key' => $key, 'name' => $key, 'last_data' => $data]);
+        }
+        $scripts = Script::query()->count();
+        Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => "Bez firewallu je zařízení otevřené.\n- Zapněte ho."]]])]);
+        app()->setLocale('cs');
+
+        // Anybody signed in may ask; the answer is plain text in the language of the user, shown under the finding.
+        $component = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('explainWithAi', $finding->id)
+            ->assertSet('remediateError', null)->assertSet("explanations.{$finding->id}", "Bez firewallu je zařízení otevřené.\n- Zapněte ho.")
+            ->assertSee('Bez firewallu je zařízení otevřené.')->assertSee(__('Hide explanation'));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Answer in Czech') && str_contains($request['messages'][0]['content'], 'Firewall is off')
+            && ! isset($request['output_config']['format']));
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'System: Name=Ubuntu 26.04 LTS; Version=26.04; Id=ubuntu; Kernel=7.0.0-38-generic; Codename=resolute; Arch=x86_64')
+            && str_contains($request['messages'][0]['content'], 'Security settings: FirewallEnabled=false; SshRootLogin=no; AptUpdateOk=false')
+            && str_contains($request['messages'][0]['content'], 'Kind of device: ')
+            && ! str_contains($request['messages'][0]['content'], 'hunter2') && ! str_contains($request['messages'][0]['content'], '/home/eve')
+            && ! str_contains($request['messages'][0]['content'], $device->token));
+        Http::assertSent(fn (Request $request) => str_contains($request['system'], 'CPU architecture'));
+        $this->assertSame($scripts, Script::query()->count());
+
+        // Asking again hides it; a finding of another device is not explained.
+        $component->call('explainWithAi', $finding->id)->assertSet('explanations', []);
+        $other = \App\Models\SecurityFinding::query()->create([
+            'device_id' => $this->device('other-token')->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'other', 'severity' => 'high',
+            'message' => 'Elsewhere', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        $this->assertThrows(fn () => $component->call('explainWithAi', $other->id), \Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        Http::assertSentCount(1);
+
+        // Without a key there is no button.
+        config(['mdm.ai_api_key' => null]);
+        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertDontSee(__('Explain with AI'));
     }
 
     public function test_a_finding_is_remediated_with_ai(): void

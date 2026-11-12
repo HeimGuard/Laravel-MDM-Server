@@ -4,14 +4,18 @@ namespace App\Livewire\Concerns;
 
 use App\Models\Script;
 use App\Models\SecurityFinding;
-use App\Support\ScriptGenerator;
+use App\Services\FindingExplanationService;
+use App\Services\ScriptGeneratorService;
 use App\Support\SecurityRules;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Collection;
 use RuntimeException;
 
-/** "Remediate with AI" of a finding: the AI writes a remediation script (one per rule, asking again updates it), the admin reviews it and runs it. */
+/**
+ * "Remediate with AI" of a finding: the AI writes a remediation script (one per rule, asking again updates it), the admin reviews it and runs it.
+ * "Explain with AI": the AI explains the finding under it, in the language of the user.
+ */
 trait RemediatesFindings
 {
     /** At most this many other findings of the device go into the request. */
@@ -21,11 +25,33 @@ trait RemediatesFindings
 
     public ?string $remediateDone = null;
 
+    /** @var array<int, string> the explanations shown, by the id of the finding (not stored: asking again is a new answer) */
+    public array $explanations = [];
+
+    /** Explains the finding under it; any signed-in user may ask. Asking again for a shown one hides it. */
+    public function explainWithAi(int $id): void
+    {
+        $this->remediateError = $this->remediateDone = null;
+        if (isset($this->explanations[$id])) {
+            unset($this->explanations[$id]);
+
+            return;
+        }
+        // Found before the try: a finding that is not there (ModelNotFoundException is a RuntimeException too) is a 404, not an error of the AI.
+        $finding = $this->findingForRemediation($id);
+        try {
+            $this->explanations[$id] = FindingExplanationService::explain($finding);
+        } catch (RuntimeException $e) {
+            $this->remediateError = $e->getMessage();
+        }
+    }
+
     /**
      * Writes a script for the finding; any signed-in user may ask for it. A system admin lands on it to
      * review it; for the others it waits in the scripts for one. The script fixes the finding together with the
      * other open findings of the same device (updating php fixes all its packages, not one of them). Only the
-     * rules (with the links of the detection), the messages, the platform and the operating system leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
+     * rules (with the links of the detection), the messages and the facts of the device that name no person, address or
+     * secret (FindingExplanationService::describe: system, kernel, CPU architecture, settings) leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
      * admin checks it and starts it per device (the scripts are theirs, they run as SYSTEM / root).
      */
     public function remediateWithAi(int $id)
@@ -34,19 +60,7 @@ trait RemediatesFindings
         $finding = $this->findingForRemediation($id);
         $rule = $finding->rule;
         $platform = $finding->device?->platform;
-        $details = is_array($finding->details) ? $finding->details : [];
-        $request = "Remediate this security finding.\nRule: {$finding->title}".($rule ? " ({$rule->key})" : '')."\nSeverity: {$finding->severity}\nFinding: {$finding->message}"
-            // What the scanner found out about it: where the software comes from, what can be done about the CVEs (a fix to install, none yet).
-            .(filled($details['Status'] ?? null) ? "\nStatus of the CVEs: {$details['Status']}" : '')
-            .(filled($details['Cves'] ?? null) ? "\nCVEs: ".mb_strimwidth((string) $details['Cves'], 0, 600, '…') : '')
-            .(filled($details['Channel'] ?? null) ? "\nSnap channel: {$details['Channel']}" : '')
-            .(filled($details['Origin'] ?? null) ? "\nPackage origin: {$details['Origin']}" : '')
-            .($finding->remediation ? "\nHint: {$finding->remediation}" : '')
-            // The advisories and the vendor documentation of the detection: they often name a recommended mitigation.
-            .($finding->urls !== [] ? "\nReferences of the detection (advisories, vendor documentation):\n".collect($finding->urls)->pluck('url')->map(fn ($url) => "- $url")->implode("\n") : '')
-            .(in_array($platform, ['windows', 'linux'], true) ? "\nPlatform: {$platform}" : '')
-            // The operating system and its version the script runs on (Ubuntu 26.04 LTS, Microsoft Windows 11 Pro (10.0.26200)).
-            .(filled($finding->device?->os) ? "\nOperating system: ".mb_strimwidth(preg_replace('/\s+/', ' ', (string) $finding->device->os), 0, 200, '…') : '');
+        $request = "Remediate this security finding.\n".FindingExplanationService::describe($finding);
         $related = $this->relatedFindings($finding);
         if ($related->isNotEmpty()) {
             $request .= "\n\nOther open findings on the same device:\n".$related->map(fn ($other) => '- ['.$other->severity.'] '.mb_strimwidth(preg_replace('/\s+/', ' ', ($other->rule?->name ?? '').': '.$other->message), 0, 250, '…'))->implode("\n")
@@ -62,7 +76,7 @@ trait RemediatesFindings
         }
 
         try {
-            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request, $existing ? [
+            $generated = ScriptGeneratorService::checked(ScriptGeneratorService::generate($request, $existing ? [
                 'name' => $existing->name, 'description' => $existing->description, 'platform' => $existing->platform, 'timeout' => $existing->timeout,
                 'detection' => $existing->detection, 'remediation' => $existing->remediation, 'manual_remediation' => $existing->manual_remediation,
             ] : []));
