@@ -50,7 +50,7 @@
                 <div class="flex-grow-1 min-w-0">
                     @if ($editMode)
                         <div class="d-flex gap-2">
-                            <input class="form-control" id="friendlyName" type="text" wire:model="friendlyName" wire:keydown.enter="saveFriendlyName" wire:keydown.escape="$set('editMode', false)">
+                            <input aria-label="{{ __('Name') }}" class="form-control" id="friendlyName" type="text" wire:model="friendlyName" wire:keydown.enter="saveFriendlyName" wire:keydown.escape="$set('editMode', false)">
                             <button class="btn btn-primary" type="button" wire:click="saveFriendlyName">{{ __('Save') }}</button>
                             <button class="btn btn-light" type="button" wire:click="$set('editMode', false)">{{ __('Cancel') }}</button>
                         </div>
@@ -102,7 +102,7 @@
 
                     @if ($editTags)
                         <div class="d-flex gap-2 mt-2">
-                            <input class="form-control form-control-sm" list="device-tag-options" placeholder="{{ __('servers, family, …') }}" type="text" wire:model="tagsText" wire:keydown.enter="saveTags" wire:keydown.escape="$set('editTags', false)" autofocus>
+                            <input aria-label="{{ __('Tags') }}" class="form-control form-control-sm" list="device-tag-options" placeholder="{{ __('servers, family, …') }}" type="text" wire:model="tagsText" wire:keydown.enter="saveTags" wire:keydown.escape="$set('editTags', false)" autofocus>
                             <datalist id="device-tag-options">
                                 @foreach (\App\Models\Device::allTags() as $tagOption)
                                     <option value="{{ $tagOption }}"></option>
@@ -151,7 +151,7 @@
                     <button aria-controls="drives-tab-pane" aria-selected="{{ $activeTab === 'drives' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'drives' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'drives')" data-bs-target="#drives-tab-pane" data-bs-toggle="tab" id="drives-tab" role="tab" type="button">
                         <i class="fas fa-hdd me-2"></i>{{ __('Drives') }}
                         @if ($diskHealth !== null && $selectedDevice->diskHealthProblem)
-                            <i class="fas fa-exclamation-triangle text-danger ms-1" title="{{ __('A disk reports a problem') }}"></i>
+                            <i aria-label="{{ __('A disk reports a problem') }}" class="fas fa-exclamation-triangle text-danger ms-1" role="img" title="{{ __('A disk reports a problem') }}"></i>
                         @endif
                     </button>
                 </li>
@@ -223,7 +223,8 @@
                 <button aria-controls="agent-tab-pane" aria-selected="{{ $activeTab === 'agent' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'agent' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'agent')" data-bs-target="#agent-tab-pane" data-bs-toggle="tab" id="agent-tab" role="tab" type="button">
                     <i class="fas fa-robot me-2"></i>{{ __('Agent') }}
                     @if (!empty($selectedDevice->data) && ($selectedDevice->agentOutdated || ! $selectedDevice->signsRequests))
-                        <i class="fas fa-exclamation-triangle text-warning ms-1"></i>
+                        @php($agentWarning = $selectedDevice->agentOutdated ? __('A newer agent is available') : __('Unsigned agent'))
+                        <i aria-label="{{ $agentWarning }}" class="fas fa-exclamation-triangle text-warning ms-1" role="img" title="{{ $agentWarning }}"></i>
                     @endif
                 </button>
             </li>
@@ -255,11 +256,11 @@
                             <div class="col-12 col-md-6">
                                 <div class="d-flex align-items-center gap-3">
                                     <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-body-secondary"></i>
-                                    <div class="flex-grow-1">
-                                        <div>{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] ?? '?' }})</div>
+                                    <div class="flex-grow-1 min-w-0">
+                                        <div class="text-break">{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] ?? '?' }})</div>
                                         @if (isset($drive['Size']) && isset($drive['PercentUsed']))
                                             <div class="progress my-1" style="height: 6px;">
-                                                <div aria-valuemax="100" aria-valuemin="0" aria-valuenow="{{ $drive['PercentUsed'] }}" class="progress-bar {{ $drive['PercentUsed'] > 90 ? 'bg-danger' : '' }}" role="progressbar" style="width: {{ $drive['PercentUsed'] }}%"></div>
+                                                <div aria-label="{{ $drive['FriendlyName'] ?? $drive['DriveLetter'] ?? '' }}" aria-valuemax="100" aria-valuemin="0" aria-valuenow="{{ $drive['PercentUsed'] }}" class="progress-bar {{ $drive['PercentUsed'] > 90 ? 'bg-danger' : '' }}" role="progressbar" style="width: {{ $drive['PercentUsed'] }}%"></div>
                                             </div>
                                             <small class="text-body-secondary">
                                                 {{ __(':free free of :total', ['free' => \App\Support\Bytes::format($drive['SizeRemaining'] ?? 0), 'total' => \App\Support\Bytes::format($drive['Size'])]) }}
@@ -344,7 +345,7 @@
                     @if ($selectedDevice->data->os_updates_error ?? null)
                         <x-notice type="warning">{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</x-notice>
                     @endif
-                    <div class="d-flex align-items-center gap-2 mb-3">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                         <x-search-input class="flex-grow-1 min-w-0" x-model="search" />
                         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
                             @if ($updatesRunning)
@@ -361,9 +362,9 @@
                         <p class="small text-body-secondary">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
                     @endunless
                     @if (count($selectedDevice->updates) > 0)
-                        <div x-show="!search || @js($osSearch).some(text => text.includes(search.toLowerCase()))">
-                        <h5>{{ $selectedDevice->platform === 'linux' ? __('Operating system (APT)') : __('Operating system (Windows Update)') }}</h5>
-                        <ul class="list-group mb-3">
+                        <div class="mb-3" x-show="!search || @js($osSearch).some(text => text.includes(search.toLowerCase()))">
+                        <h6 class="mb-2">{{ $selectedDevice->platform === 'linux' ? __('Operating system (APT)') : __('Operating system (Windows Update)') }}</h6>
+                        <ul class="list-group">
                             @foreach ($selectedDevice->updates as $update)
                                 @php
                                     $deferred = match ($update['Status']) {
@@ -399,8 +400,8 @@
                                 $groupName === 'powershell' ? $moduleSearch : [],
                             );
                         @endphp
-                        <div x-show="!search || @js($groupSearch).some(text => text.includes(search.toLowerCase()))">
-                        <h5 class="mt-3">{{ $groupName === 'other' ? __('Other') : \App\Models\Device::UPDATE_SECTIONS[$groupName] }}</h5>
+                        <div class="mb-3" x-show="!search || @js($groupSearch).some(text => text.includes(search.toLowerCase()))">
+                        <h6 class="mb-2">{{ $groupName === 'other' ? __('Other') : \App\Models\Device::UPDATE_SECTIONS[$groupName] }}</h6>
                         <ul class="list-group">
                             @foreach ($groupRows as $appIndex => $appUpdate)
                                 @php
@@ -455,7 +456,7 @@
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
                             <x-list-row icon="fas fa-globe" tone="primary" :title="__('Public address')" :subtitle="__('The address the device reaches the server from, behind NAT the one of its router.')">
-                                <div class="small font-monospace">{{ $selectedDevice->public_ip }}</div>
+                                <div class="small font-monospace text-break">{{ $selectedDevice->public_ip }}</div>
                             </x-list-row>
                         @endif
                         @foreach (\App\Models\Device::sortNetworks($selectedDevice->networks) as $network)
@@ -470,14 +471,14 @@
                                 </x-slot:title>
                                 @foreach ($network['IPAddresses'] as $ipAddress)
                                     <div class="small text-body-secondary">
-                                        <span class="font-monospace">{{ $ipAddress }}</span>
+                                        <span class="font-monospace text-break">{{ $ipAddress }}</span>
                                         @if (\App\Models\Device::isPublicIp($ipAddress))
                                             <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
                                         @endif
                                     </div>
                                 @endforeach
                                 @if ($network['Mac'])
-                                    <x-mac :mac="$network['Mac']" class="d-block small text-body-tertiary" title="{{ __('MAC address') }}" />
+                                    <x-mac :mac="$network['Mac']" class="d-block small text-body-secondary" title="{{ __('MAC address') }}" />
                                 @endif
                                 {{-- On phones only the icon (its text in the tooltip). --}}
                                 <x-slot:actions>
@@ -747,14 +748,14 @@
                             <div class="{{ $row }}">
                                 <span>
                                     <span class="small text-body-secondary d-block">WebSocket</span>
-                                    <span class="small text-body-tertiary text-nowrap">{{ $selectedDevice->last_ws_at ? __('Heartbeat :time', ['time' => $selectedDevice->last_ws_at->diffForHumans()]) : __('Never connected') }}</span>
+                                    <span class="small text-body-secondary text-nowrap">{{ $selectedDevice->last_ws_at ? __('Heartbeat :time', ['time' => $selectedDevice->last_ws_at->diffForHumans()]) : __('Never connected') }}</span>
                                 </span>
                                 <x-badge :color="$selectedDevice->connectedViaWebsocket ? 'success' : 'secondary'" icon="fas fa-bolt" size="sm" variant="subtle">{{ $selectedDevice->connectedViaWebsocket ? __('Connected') : __('Not connected') }}</x-badge>
                             </div>
                             <div class="{{ $row }}">
                                 <span>
                                     <span class="small text-body-secondary d-block">REST API</span>
-                                    <span class="small text-body-tertiary text-nowrap">{{ __('Report :time', ['time' => $lastReport->diffForHumans()]) }}</span>
+                                    <span class="small text-body-secondary text-nowrap">{{ __('Report :time', ['time' => $lastReport->diffForHumans()]) }}</span>
                                 </span>
                                 <x-badge :color="$selectedDevice->connectedViaApi ? 'success' : 'secondary'" icon="fas fa-exchange-alt" size="sm" variant="subtle">{{ $selectedDevice->connectedViaApi ? __('Reporting') : __('Inactive') }}</x-badge>
                             </div>
