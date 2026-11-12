@@ -99,6 +99,26 @@ pgloader and is tried again on the next one; `SQLITE_IMPORT=off` skips it. It ne
 `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD` (not `DB_URL`), and a user that may disable triggers while the data
 is loaded (a superuser, such as `POSTGRES_USER` of the official image). Make a copy of the `storage` volume first.
 
+**Troubleshooting a Docker installation.**
+
+- *A changed setting is not used.* `${VAR}` in `compose.yaml` is filled in when the container is **created**:
+  after a change of the env file run `docker compose --env-file <file> up -d` (it recreates the container);
+  `docker restart` keeps the old values. A variable exported in the shell wins over the env file, and without
+  `--env-file` Compose reads `.env` next to `compose.yaml`. What the container got:
+  `docker exec <container> printenv MDM_AI_API_KEY | tail -c 5` (the end of a secret only). With a cached
+  configuration (`bootstrap/cache/config.php`) run `php artisan config:clear`.
+- *The portal asks for the first user (`/setup`) although it was set up.* The database it connects to has no
+  user: usually a new, empty database volume. Stop the app (`docker stop <app>`), do **not** fill in the setup
+  and do not prune volumes. The data of the old container is in a dangling volume
+  (`docker volume ls -f dangling=true`); the one with `PG_VERSION` and the newest files is it. Copy it into a
+  named volume or a directory and mount that.
+- *Where PostgreSQL keeps its data.* The official image up to 17 in `/var/lib/postgresql/data`, from 18 in
+  `/var/lib/postgresql` (subdirectory `18/docker`). A volume or a directory mounted on another path is not used:
+  the data lands in an anonymous volume and a recreated container starts empty. Pin the major version
+  (`postgres:17-alpine` as in `docker-compose.postgres.yml`): a new major version does not start on the old data.
+- `php artisan tinker` does not run in the image (no `phar`); read a setting with
+  `php -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo config("mdm.ai_provider");'`.
+
 The application logs to daily files in the `storage` volume (`storage/logs`, shown in
 **System → Logs**) and to `docker logs` at the same time. Another file channel in the environment or
 in `.env` (e.g. `LOG_CHANNEL=single`) is used instead of the daily files; `LOG_CHANNEL=stderr` logs

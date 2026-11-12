@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.31.1'
+$AgentVersion = '1.31.2'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -653,6 +653,20 @@ function Add-BadPowerShellVersion {
     try { @(@(Get-BadPowerShellVersions -Path $Path) + $Version | Select-Object -Unique -Last 20) | ConvertTo-Json -Compress | Set-Content -LiteralPath $Path -Encoding UTF8 } catch { }
 }
 
+function Test-PendingFileRename {
+    # Whether Windows replaces files under the directory only at the next start (PendingFileRenameOperations):
+    # an installer could not replace them because they were in use.
+    param ([string]$Path)
+
+    if (-not $Path) { return $false }
+    try {
+        $pending = @((Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction Stop).PendingFileRenameOperations)
+    }
+    catch { return $false }
+    $prefix = '\??\' + $Path.TrimEnd('\') + '\'
+    return [bool](@($pending | Where-Object { "$_".StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase) }).Count)
+}
+
 function Install-PowerShellRelease {
     # Installs a PowerShell 7 release from GitHub (installations no package manager knows about).
     # The download is checked against the release's hashes.sha256. Linux: the .deb when the
@@ -827,6 +841,15 @@ function Install-PowerShellRelease {
             $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/quiet', '/norestart') -Wait -PassThru
             # 3010: installed, a restart completes it.
             if ($process.ExitCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec exit $($process.ExitCode)"); return }
+            # Files in use (the agent runs from this installation) are replaced only by the restart: until then the
+            # directory mixes both releases and pwsh can crash (ParseCommandLine). It is not started before the restart.
+            $pending = $process.ExitCode -eq 3010 -or (Test-PendingFileRename -Path $dir)
+            if ($pending) {
+                "PowerShell ${Version}: installed, the restart of the device finishes it"
+                $State.Restart = $true
+                $State.PowerShellPending = $true
+                return
+            }
         }
 
         if (-not $OnLinux) {
@@ -5704,7 +5727,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6139,14 +6162,14 @@ function Start-UpdateJob {
             }
             Enter-Step 90 100 'PowerShell modules'
             try {
-                # Not in the PowerShell that was just replaced: the next run does it.
-                if ($state.RestartAgent) {
-                    'PowerShell modules: skipped, PowerShell was just updated'
+                # Not in the PowerShell that was just replaced (or that the restart finishes): the next run does it.
+                if ($state.RestartAgent -or $state.PowerShellPending) {
+                    "PowerShell modules: skipped, PowerShell was just updated$(if ($state.PowerShellPending) { ' and the restart finishes it' })"
                     $failed = @()
                 } else {
                     $failed = @(Invoke-PowerShellModules -OnLinux $OnLinux -Update -OnProgress { param ($p, $m) Set-Progress $p $m })
                 }
-                if (-not $failed -and -not $state.RestartAgent) { 'PowerShell modules: up to date' }
+                if (-not $failed -and -not $state.RestartAgent -and -not $state.PowerShellPending) { 'PowerShell modules: up to date' }
                 foreach ($module in $failed) {
                     $owner = if ($module.User) { ", user $($module.User)" } else { '' }
                     $reason = if ($module.Error) { $module.Error } elseif ($module.User) { 'in the user profile, only the user can update it' } else { 'not updated' }

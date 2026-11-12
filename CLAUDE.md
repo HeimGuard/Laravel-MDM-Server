@@ -1,5 +1,8 @@
 # Instructions for Claude
 
+Start with [`docs/development.md`](docs/development.md): where the code of each area is, how the updates work, how
+to test and what has broken tests before. Read it instead of searching the code for the same.
+
 ## Agent (`src/powershell/app.ps1`)
 
 - **Every change of `src/powershell/app.ps1` raises `$AgentVersion`** (line ~137) in the same commit.
