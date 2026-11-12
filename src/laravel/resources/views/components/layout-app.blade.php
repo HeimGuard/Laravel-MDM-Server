@@ -17,10 +17,10 @@
         <meta content="{{ $reverb['scheme'] ?? 'https' }}" name="mdm-reverb-scheme">
     @endif
 
-    <title>{{ config('app.name', 'Laravel') }}</title>
+    <title>{{ config('app.name', 'HeimGuard') }}</title>
 
     {{-- Installable as an app (steelants/laravel-general): manifest, icons, service worker. --}}
-    @pwa('Laravel-MDM', 'Laravel-MDM', '#f9fbfc')
+    @pwa('HeimGuard', 'HeimGuard', '#f9fbfc')
     <link href="{{ asset('/favicon.ico') }}" rel="shortcut icon" type="image/x-icon">
     <link href="{{ asset('/favicon.svg') }}" rel="icon" type="image/svg+xml">
 

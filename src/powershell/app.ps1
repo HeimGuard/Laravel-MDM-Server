@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Laravel-MDM agent for Windows and Linux (Debian / Ubuntu with PowerShell 7).
+    HeimGuard agent for Windows and Linux (Debian / Ubuntu with PowerShell 7).
 
 .DESCRIPTION
     Runs continuously: keeps a WebSocket connection to the server (Laravel Reverb, Pusher protocol)
@@ -19,7 +19,7 @@
     updates the agent and keeps the device.
 
 .PARAMETER InstallPath
-    Where -Install copies the agent to, default %ProgramData%\Laravel-MDM or /opt/laravel-mdm.
+    Where -Install copies the agent to, default %ProgramData%\HeimGuard or /opt/heimguard.
 
 .PARAMETER ServerKeyFingerprint
     With -Install: the fingerprint of the server key (shown in Add device). The agent pins the key
@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.31.2'
+$AgentVersion = '1.32.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -159,6 +159,14 @@ $EmbeddedServerKey = ''
 $OnLinux = [bool](Get-Variable -Name IsLinux -ValueOnly -ErrorAction SilentlyContinue)
 # Token, logs and cache live next to the script; -Install moves the agent to its install directory first.
 $AgentDir = $PSScriptRoot
+# The names of the installation. Agents before 1.32.0 were installed as Laravel-MDM: they move to these names
+# by themselves (Start-AgentMigration), the installer moves an old installation it finds.
+$AgentName = 'HeimGuard-Agent'
+$AgentService = 'heimguard-agent'
+$DefaultAgentDir = if ($OnLinux) { '/opt/heimguard' } else { Join-Path "$env:ProgramData" 'HeimGuard' }
+$LegacyAgentName = 'Laravel-MDM-Agent'
+$LegacyAgentService = 'laravel-mdm-agent'
+$LegacyAgentDir = if ($OnLinux) { '/opt/laravel-mdm' } else { Join-Path "$env:ProgramData" 'Laravel-MDM' }
 
 function Get-MachineInfo {
     $DnsInfo = [System.Net.Dns]::GetHostByName($env:computerName)
@@ -333,13 +341,13 @@ function Invoke-WingetInUserSession {
     $user = try { (Get-CimInstance -ClassName Win32_ComputerSystem -Property UserName).UserName } catch { $null }
     if (-not $user) { return $null }
     $tag = [guid]::NewGuid().ToString('N')
-    $name = "Laravel-MDM-Winget-$($tag.Substring(0, 12))"
+    $name = "HeimGuard-Winget-$($tag.Substring(0, 12))"
     # Windows\Temp: the user can create the file, SYSTEM reads it.
     $log = Join-Path $env:SystemRoot "Temp\mdm-winget-$tag.log"
     # cmd writes winget's exit code into the log itself (MDMEXIT=; the redirection goes first,
     # "=0>>" would redirect handle 0), so the result does not depend on when Task Scheduler
     # updates LastTaskResult (267009 = still running).
-    $command = "title Laravel MDM - $Title & echo Laravel MDM: $Title. This window closes by itself. & winget $Arguments > `"$log`" 2>&1 & >>`"$log`" echo MDMEXIT=!errorlevel!"
+    $command = "title HeimGuard - $Title & echo HeimGuard: $Title. This window closes by itself. & winget $Arguments > `"$log`" 2>&1 & >>`"$log`" echo MDMEXIT=!errorlevel!"
     if ([Environment]::OSVersion.Version.Build -ge 17763 -and (Test-Path "$env:SystemRoot\System32\conhost.exe")) {
         $execute = "$env:SystemRoot\System32\conhost.exe"
         $taskArguments = "--headless `"$env:SystemRoot\System32\cmd.exe`" /v:on /c `"$command`""
@@ -494,7 +502,7 @@ function Install-WindowsUpdate {
         if ($known[$code]) { " ($code, $($known[$code]))" } else { " ($code)" }
     }
     $Session = New-Object -ComObject Microsoft.Update.Session
-    try { $Session.ClientApplicationID = 'Laravel-MDM agent' } catch { }
+    try { $Session.ClientApplicationID = 'HeimGuard agent' } catch { }
     # Software and drivers (the list shows both: "Intel net Driver Update", "NVIDIA Display Driver
     # Update"), without the hidden ones.
     $found = $Session.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0').Updates
@@ -3182,9 +3190,11 @@ function Get-DeviceKey {
     }
 
     try {
-        $name = 'Laravel-MDM-Agent'
         $provider = [System.Security.Cryptography.CngProvider]::MicrosoftSoftwareKeyStorageProvider
         $machine = [System.Security.Cryptography.CngKeyOpenOptions]::MachineKey
+        # The key the server knows the device by: one created by an agent before 1.32.0 keeps its name
+        # (Laravel-MDM-Agent), a CNG key cannot be renamed and a new one would need the device key reset.
+        $name = if (-not [System.Security.Cryptography.CngKey]::Exists($AgentName, $provider, $machine) -and [System.Security.Cryptography.CngKey]::Exists($LegacyAgentName, $provider, $machine)) { $LegacyAgentName } else { $AgentName }
         if ([System.Security.Cryptography.CngKey]::Exists($name, $provider, $machine)) {
             $cng = [System.Security.Cryptography.CngKey]::Open($name, $provider, $machine)
         } else {
@@ -3375,10 +3385,12 @@ function Initialize-ScriptSandbox {
     }
 
     foreach ($direction in 'Outbound', 'Inbound') {
-        $name = "LaravelMDM-Scripts-$direction"
+        $name = "HeimGuard-Scripts-$direction"
+        # The rule of agents before 1.32.0 (LaravelMDM-Scripts-*) blocked the copy in the old directory.
+        Remove-NetFirewallRule -Name "LaravelMDM-Scripts-$direction" -ErrorAction SilentlyContinue
         $rule = Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
         if (-not $rule) {
-            New-NetFirewallRule -Name $name -DisplayName "Laravel-MDM remediation scripts ($direction, no network)" -Direction $direction -Action Block -Program $target -Profile Any -Enabled True | Out-Null
+            New-NetFirewallRule -Name $name -DisplayName "HeimGuard remediation scripts ($direction, no network)" -Direction $direction -Action Block -Program $target -Profile Any -Enabled True | Out-Null
             $rule = Get-NetFirewallRule -Name $name
         }
         $program = ($rule | Get-NetFirewallApplicationFilter).Program
@@ -4065,9 +4077,25 @@ function Get-AgentPwshPath {
     return (Get-Process -Id $PID).Path -replace '^(/snap/[^/]+)/x?\d+/', '$1/current/'
 }
 
+function Get-AgentTaskName {
+    # The scheduled task the agent runs as: HeimGuard-Agent, or Laravel-MDM-Agent of an installation not moved yet.
+    if (-not (Get-ScheduledTask -TaskName $AgentName -ErrorAction SilentlyContinue) -and (Get-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue)) {
+        return $LegacyAgentName
+    }
+    return $AgentName
+}
+
+function Get-AgentServiceName {
+    # The systemd service of the agent: heimguard-agent, or laravel-mdm-agent of an installation not moved yet.
+    if (-not (Test-Path -Path "/etc/systemd/system/$AgentService.service") -and (Test-Path -Path "/etc/systemd/system/$LegacyAgentService.service")) {
+        return $LegacyAgentService
+    }
+    return $AgentService
+}
+
 function Repair-AgentService {
     # Units written by agents before 1.30.1 start pwsh of one snap revision and fail (203/EXEC) after its refresh.
-    $unit = '/etc/systemd/system/laravel-mdm-agent.service'
+    $unit = "/etc/systemd/system/$(Get-AgentServiceName).service"
     if (-not (Test-Path -Path $unit)) { return }
     $content = Get-Content -Path $unit -Raw
     $repaired = $content -replace '(?m)^(ExecStart=/snap/[^/]+)/x?\d+/', '$1/current/'
@@ -4082,7 +4110,7 @@ function Register-AgentService {
     $pwsh = Get-AgentPwshPath
     $unit = @"
 [Unit]
-Description=Laravel-MDM agent
+Description=HeimGuard agent
 After=network-online.target
 Wants=network-online.target
 
@@ -4101,14 +4129,20 @@ WantedBy=multi-user.target
     # A running agent (update of the installation) keeps the old version until it is restarted; one that is not
     # running is only started: `enable --now` does it, and a restart of it would wait for the agent it has just
     # started to stop (up to TimeoutStopSec, 90 s by default) before it starts it again.
-    $running = (systemctl is-active laravel-mdm-agent.service 2>$null) -eq 'active'
-    Set-Content -Path /etc/systemd/system/laravel-mdm-agent.service -Value $unit
+    # The service of agents before 1.32.0 is replaced by the new one (the installer moved its directory before).
+    $legacy = "/etc/systemd/system/$LegacyAgentService.service"
+    if (Test-Path -Path $legacy) {
+        systemctl disable --now "$LegacyAgentService.service" 2>&1 | Out-Null
+        Remove-Item -Path $legacy -Force
+    }
+    $running = (systemctl is-active "$AgentService.service" 2>$null) -eq 'active'
+    Set-Content -Path "/etc/systemd/system/$AgentService.service" -Value $unit
     systemctl daemon-reload
-    Write-Host 'Starting the service laravel-mdm-agent...' -ForegroundColor Yellow
-    systemctl enable laravel-mdm-agent.service
-    if ($running) { systemctl restart laravel-mdm-agent.service } else { systemctl start laravel-mdm-agent.service }
+    Write-Host "Starting the service $AgentService..." -ForegroundColor Yellow
+    systemctl enable "$AgentService.service"
+    if ($running) { systemctl restart "$AgentService.service" } else { systemctl start "$AgentService.service" }
     if ($LASTEXITCODE -ne 0) {
-        Write-Host 'The service did not start: systemctl status laravel-mdm-agent, journalctl -u laravel-mdm-agent' -ForegroundColor Red
+        Write-Host "The service did not start: systemctl status $AgentService, journalctl -u $AgentService" -ForegroundColor Red
     }
 }
 
@@ -4121,9 +4155,14 @@ function Register-AgentTask {
     $Action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument $arguments -WorkingDirectory $AgentDir
 
     # A running agent (update) would keep the old version; the task never starts a second instance.
-    Stop-ScheduledTask -TaskName "Laravel-MDM-Agent" -ErrorAction SilentlyContinue
-    Register-ScheduledTask -TaskName "Laravel-MDM-Agent" -Trigger @($Trigger1, $Trigger2) -Settings $Settings -User "NT AUTHORITY\SYSTEM" -Action $Action -RunLevel Highest -Force | Out-Null
-    Start-ScheduledTask -TaskName "Laravel-MDM-Agent"
+    Stop-ScheduledTask -TaskName $AgentName -ErrorAction SilentlyContinue
+    # The task of agents before 1.32.0 is replaced by the new one (the installer moved its directory before).
+    if (Get-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $LegacyAgentName -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    Register-ScheduledTask -TaskName $AgentName -Trigger @($Trigger1, $Trigger2) -Settings $Settings -User "NT AUTHORITY\SYSTEM" -Action $Action -RunLevel Highest -Force | Out-Null
+    Start-ScheduledTask -TaskName $AgentName
 }
 
 function Restart-AgentTask {
@@ -4136,16 +4175,18 @@ function Restart-AgentTask {
     param ([switch]$Watch)
 
     $dir = $AgentDir.Replace("'", "''")
+    $task = if ($OnLinux) { '' } else { Get-AgentTaskName }
+    $service = if ($OnLinux) { Get-AgentServiceName } else { '' }
     $script = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 `$dir = '$dir'
 `$onLinux = `$$([bool]$OnLinux)
 function Write-Log(`$message) { '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), `$message | Add-Content -Path "`$dir/agent.log" -Encoding UTF8 }
 function Start-AgentNow {
-    if (`$onLinux) { systemctl start laravel-mdm-agent.service; return }
+    if (`$onLinux) { systemctl start '$service.service'; return }
     for (`$i = 0; `$i -lt 60; `$i++) {
-        if ((Get-ScheduledTask -TaskName 'Laravel-MDM-Agent').State -eq 'Running') { return }
-        Start-ScheduledTask -TaskName 'Laravel-MDM-Agent'
+        if ((Get-ScheduledTask -TaskName '$task').State -eq 'Running') { return }
+        Start-ScheduledTask -TaskName '$task'
         Start-Sleep -Seconds 2
     }
     Write-Log 'Restart: the agent task did not start'
@@ -4157,7 +4198,7 @@ if (`$$([bool]$Watch) -and (Test-Path -Path "`$dir/app.ps1.previous")) {
     while ((Get-Date) -lt `$deadline -and (Test-Path -Path "`$dir/agent-update.json")) { Start-Sleep -Seconds 5 }
     if (Test-Path -Path "`$dir/agent-update.json") {
         Write-Log 'Agent update: the new version did not report to the server within 5 minutes, rolling back'
-        if (`$onLinux) { systemctl stop laravel-mdm-agent.service } else { Stop-ScheduledTask -TaskName 'Laravel-MDM-Agent'; Start-Sleep -Seconds 3 }
+        if (`$onLinux) { systemctl stop '$service.service' } else { Stop-ScheduledTask -TaskName '$task'; Start-Sleep -Seconds 3 }
         Copy-Item -Path "`$dir/app.ps1.previous" -Destination "`$dir/app.ps1" -Force
         `$pending = Get-Content -Path "`$dir/pending-command.json" -Raw -Encoding UTF8 | ConvertFrom-Json
         if (`$pending) {
@@ -4168,27 +4209,183 @@ if (`$$([bool]$Watch) -and (Test-Path -Path "`$dir/app.ps1.previous")) {
         Start-AgentNow
     }
 }
-if (-not `$onLinux) { Unregister-ScheduledTask -TaskName 'Laravel-MDM-Agent-Restart' -Confirm:`$false }
+if (-not `$onLinux) { Unregister-ScheduledTask -TaskName '$AgentName-Restart' -Confirm:`$false }
 "@
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
     if ($OnLinux) {
         if (-not $Watch) { return }
         $pwsh = (Get-Process -Id $PID).Path
         # Not in the agent's cgroup: systemd would stop it together with the agent.
-        systemd-run --unit="laravel-mdm-agent-restart-$PID" --collect --quiet $pwsh -NoProfile -NonInteractive -EncodedCommand $encoded 2>&1 | Out-Null
+        systemd-run --unit="$AgentService-restart-$PID" --collect --quiet $pwsh -NoProfile -NonInteractive -EncodedCommand $encoded 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-AgentLog 'Agent update: systemd-run failed, no rollback watcher' -IsError }
         return
     }
     try {
         $action = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $encoded"
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-        Register-ScheduledTask -TaskName 'Laravel-MDM-Agent-Restart' -Action $action -Settings $settings -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force -ErrorAction Stop | Out-Null
-        Start-ScheduledTask -TaskName 'Laravel-MDM-Agent-Restart' -ErrorAction Stop
+        Register-ScheduledTask -TaskName "$AgentName-Restart" -Action $action -Settings $settings -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName "$AgentName-Restart" -ErrorAction Stop
     }
     catch {
         Write-AgentLog "Restart task not available ($($_.Exception.Message)), restarting directly"
         Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
     }
+}
+
+function Start-AgentMigration {
+    # Agents before 1.32.0 were installed as Laravel-MDM (task Laravel-MDM-Agent / service laravel-mdm-agent,
+    # %ProgramData%\Laravel-MDM / /opt/laravel-mdm): an updated agent moves to the HeimGuard names once it has
+    # reached the server. A separate process (one-off task / transient unit) waits for this agent to end, copies
+    # the directory (only the default one moves), registers the new task / service from the old one and starts
+    # it. When the new agent does not start within 3 minutes, everything is put back and the old one runs again
+    # (tried again a day later). The old task / service and directory are removed by the new agent
+    # (Complete-AgentMigration). Returns $true when the move started: the caller ends this agent.
+    $legacyRegistered = if ($OnLinux) { Test-Path -Path "/etc/systemd/system/$LegacyAgentService.service" } else { [bool](Get-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue) }
+    $newRegistered = if ($OnLinux) { Test-Path -Path "/etc/systemd/system/$AgentService.service" } else { [bool](Get-ScheduledTask -TaskName $AgentName -ErrorAction SilentlyContinue) }
+    if (-not $legacyRegistered -or $newRegistered) { return $false }
+    # Not while an agent update can still be rolled back, or a command runs.
+    if ((Test-Path -Path "$AgentDir/agent-update.json") -or (Test-Path -Path "$AgentDir/pending-command.json") -or $script:UpdateJob) { return $false }
+    $failed = Join-Path $AgentDir 'migration-failed.txt'
+    if ((Test-Path -Path $failed) -and (Get-Item -Path $failed).LastWriteTime -gt (Get-Date).AddDays(-1)) { return $false }
+
+    $old = $AgentDir.TrimEnd('/', '\')
+    $new = if ($old -eq $LegacyAgentDir.TrimEnd('/', '\')) { $DefaultAgentDir } else { $old }
+    if ($new -ne $old -and (Test-Path -Path $new) -and @(Get-ChildItem -Path $new -Force -ErrorAction SilentlyContinue).Count) {
+        Write-AgentLog "Moving to the HeimGuard names skipped: $new is not empty" -IsError
+        Set-Content -Path $failed -Value "$new is not empty"
+        return $false
+    }
+    $q = { param ($Value) "'" + ("$Value" -replace "'", "''") + "'" }
+    $since = '{0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)
+    $common = @"
+`$ErrorActionPreference = 'Stop'
+`$old = $(& $q $old)
+`$new = $(& $q $new)
+`$since = $(& $q $since)
+`$copied = `$false
+function Write-Log(`$message) { foreach (`$dir in @(`$old, `$new) | Select-Object -Unique) { if (Test-Path -Path `$dir) { '{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), `$message | Add-Content -Path (Join-Path `$dir 'agent.log') -Encoding UTF8 -ErrorAction SilentlyContinue } } }
+function Wait-Started {
+    `$deadline = (Get-Date).AddMinutes(3)
+    while ((Get-Date) -lt `$deadline) {
+        Start-Sleep -Seconds 5
+        `$log = Join-Path `$new 'agent.log'
+        if ((Test-Path -Path `$log) -and @(Get-Content -Path `$log -Tail 200 | Where-Object { `$_.Length -ge 19 -and `$_.Substring(0, 19) -ge `$since -and `$_ -match 'Agent \S+ started' }).Count) { return }
+    }
+    throw "the agent did not start from `$new within 3 minutes"
+}
+"@
+    if ($OnLinux) {
+        $script = $common + @"
+`$oldUnit = '/etc/systemd/system/$LegacyAgentService.service'
+`$newUnit = '/etc/systemd/system/$AgentService.service'
+try {
+    systemctl disable --now '$LegacyAgentService.service' 2>&1 | Out-Null
+    if (`$new -ne `$old) {
+        New-Item -ItemType Directory -Path `$new -Force | Out-Null
+        `$copied = `$true
+        cp -a "`$old/." "`$new/"
+        if (`$LASTEXITCODE) { throw "cp -a `$old `$new exit `$LASTEXITCODE" }
+        chmod 700 `$new
+    }
+    `$unit = (Get-Content -Path `$oldUnit -Raw).Replace("`$old/", "`$new/").Replace("WorkingDirectory=`$old", "WorkingDirectory=`$new") -replace '(?m)^Description=.*`$', 'Description=HeimGuard agent'
+    Set-Content -Path `$newUnit -Value `$unit
+    systemctl daemon-reload
+    systemctl enable --now '$AgentService.service' 2>&1 | Out-Null
+    Wait-Started
+    Write-Log 'Moved to the HeimGuard names: service $AgentService, directory $new'
+}
+catch {
+    Write-Log "Moving to the HeimGuard names failed, the agent runs as before: `$(`$_.Exception.Message)"
+    systemctl disable --now '$AgentService.service' 2>&1 | Out-Null
+    Remove-Item -Path `$newUnit -Force -ErrorAction SilentlyContinue
+    systemctl daemon-reload
+    if (`$copied) { Remove-Item -Path `$new -Recurse -Force -ErrorAction SilentlyContinue }
+    Set-Content -Path (Join-Path `$old 'migration-failed.txt') -Value `$_.Exception.Message
+    systemctl enable --now '$LegacyAgentService.service' 2>&1 | Out-Null
+}
+"@
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
+        # Not in the agent's cgroup: stopping the old service must not stop this.
+        systemd-run --unit="$AgentService-migrate" --collect --quiet (Get-Process -Id $PID).Path -NoProfile -NonInteractive -EncodedCommand $encoded 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-AgentLog 'Moving to the HeimGuard names: systemd-run failed' -IsError
+            Set-Content -Path $failed -Value 'systemd-run failed'
+            return $false
+        }
+        Write-AgentLog "Moving to the HeimGuard names (service $AgentService, directory $new)"
+        return $true
+    }
+
+    $script = $common + @"
+try {
+    Disable-ScheduledTask -TaskName '$LegacyAgentName' | Out-Null
+    Wait-Process -Id $PID -Timeout 120 -ErrorAction SilentlyContinue
+    Stop-ScheduledTask -TaskName '$LegacyAgentName' -ErrorAction SilentlyContinue
+    if (`$new -ne `$old) {
+        New-Item -ItemType Directory -Path `$new -Force | Out-Null
+        `$copied = `$true
+        & icacls `$new /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+        Copy-Item -Path (Join-Path `$old '*') -Destination `$new -Recurse -Force
+    }
+    `$task = Get-ScheduledTask -TaskName '$LegacyAgentName'
+    `$action = `$task.Actions[0]
+    `$arguments = "`$(`$action.Arguments)".Replace("`$old\", "`$new\")
+    `$newAction = New-ScheduledTaskAction -Execute `$action.Execute -Argument `$arguments -WorkingDirectory `$new
+    Register-ScheduledTask -TaskName '$AgentName' -Action `$newAction -Trigger `$task.Triggers -Settings `$task.Settings -Principal `$task.Principal -Force | Out-Null
+    Start-ScheduledTask -TaskName '$AgentName'
+    Wait-Started
+    Write-Log 'Moved to the HeimGuard names: task $AgentName, directory $new'
+}
+catch {
+    Write-Log "Moving to the HeimGuard names failed, the agent runs as before: `$(`$_.Exception.Message)"
+    Stop-ScheduledTask -TaskName '$AgentName' -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName '$AgentName' -Confirm:`$false -ErrorAction SilentlyContinue
+    if (`$copied) { Start-Sleep -Seconds 3; Remove-Item -Path `$new -Recurse -Force -ErrorAction SilentlyContinue }
+    Set-Content -Path (Join-Path `$old 'migration-failed.txt') -Value `$_.Exception.Message
+    Enable-ScheduledTask -TaskName '$LegacyAgentName' -ErrorAction SilentlyContinue | Out-Null
+    Start-ScheduledTask -TaskName '$LegacyAgentName' -ErrorAction SilentlyContinue
+}
+Unregister-ScheduledTask -TaskName '$AgentName-Migrate' -Confirm:`$false -ErrorAction SilentlyContinue
+"@
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
+    try {
+        $action = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand $encoded"
+        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        Register-ScheduledTask -TaskName "$AgentName-Migrate" -Action $action -Settings $settings -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName "$AgentName-Migrate" -ErrorAction Stop
+    }
+    catch {
+        Write-AgentLog "Moving to the HeimGuard names: the task could not be started ($($_.Exception.Message))" -IsError
+        Set-Content -Path $failed -Value $_.Exception.Message
+        return $false
+    }
+    Write-AgentLog "Moving to the HeimGuard names (task $AgentName, directory $new)"
+    return $true
+}
+
+function Complete-AgentMigration {
+    # After Start-AgentMigration: the new agent removes the old task / service and, when the directory moved, the
+    # old one, once the move has ended (its task / unit is gone) and this agent has reached the server. Returns
+    # $true when nothing is left to do (also for an installation that never had the old names), $false to ask again.
+    if ($OnLinux) {
+        $legacy = "/etc/systemd/system/$LegacyAgentService.service"
+        if (-not (Test-Path -Path $legacy) -or -not (Test-Path -Path "/etc/systemd/system/$AgentService.service")) { return $true }
+        if ((systemctl is-enabled "$LegacyAgentService.service" 2>$null) -eq 'enabled') { return $true }
+        if ((systemctl is-active "$AgentService-migrate.service" 2>$null) -eq 'active') { return $false }
+        Remove-Item -Path $legacy -Force
+        systemctl daemon-reload
+    } else {
+        $legacy = Get-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue
+        if (-not $legacy -or -not (Get-ScheduledTask -TaskName $AgentName -ErrorAction SilentlyContinue)) { return $true }
+        if ("$($legacy.State)" -ne 'Disabled') { return $true }
+        if (Get-ScheduledTask -TaskName "$AgentName-Migrate" -ErrorAction SilentlyContinue) { return $false }
+        Unregister-ScheduledTask -TaskName $LegacyAgentName -Confirm:$false
+    }
+    if ($AgentDir.TrimEnd('/', '\') -ne $LegacyAgentDir.TrimEnd('/', '\') -and (Test-Path -Path (Join-Path $LegacyAgentDir 'app.ps1'))) {
+        Remove-Item -Path $LegacyAgentDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-AgentLog "Moved to the HeimGuard names, the old $(if ($OnLinux) { 'service' } else { 'task' }) and directory are removed"
+    return $true
 }
 
 function Start-AgentJob {
@@ -5487,7 +5684,7 @@ function Invoke-PortSweep {
             # No banner yet and a web port: a single standard GET, then read the headers and title.
             if ((-not $banner -or $isTls) -and (($httpPorts -contains $port) -or $isTls)) {
                 try {
-                    $request = "GET / HTTP/1.0`r`nHost: $Ip`r`nUser-Agent: Laravel-MDM-Agent`r`nAccept: */*`r`nConnection: close`r`n`r`n"
+                    $request = "GET / HTTP/1.0`r`nHost: $Ip`r`nUser-Agent: HeimGuard-Agent`r`nAccept: */*`r`nConnection: close`r`n`r`n"
                     $bytes = [System.Text.Encoding]::ASCII.GetBytes($request)
                     $stream.Write($bytes, 0, $bytes.Length)
                     $stream.Flush()
@@ -6556,7 +6753,7 @@ function Start-Realtime {
     $wsHost = if ($ReverbHost) { $ReverbHost } else { $server.Host }
     $port = if ($ReverbPort) { $ReverbPort } elseif (-not $ReverbScheme -and -not $server.IsDefaultPort) { $server.Port } elseif ($https) { 443 } else { 80 }
     $key = if ($ReverbKey) { $ReverbKey } else { $config.key }
-    $uri = "{0}://{1}:{2}/app/{3}?protocol=7&client=laravel-mdm-agent&version=1.0&flash=false" -f $(if ($https) { 'wss' } else { 'ws' }), $wsHost, $port, $key
+    $uri = "{0}://{1}:{2}/app/{3}?protocol=7&client=heimguard-agent&version=1.0&flash=false" -f $(if ($https) { 'wss' } else { 'ws' }), $wsHost, $port, $key
 
     $socket = New-Object System.Net.WebSockets.ClientWebSocket
     $socket.Options.KeepAliveInterval = [TimeSpan]::FromSeconds(30)
@@ -7006,6 +7203,8 @@ function Start-Agent {
     $script:UpdateProgressSent = [DateTime]::MinValue
     $pendingChecked = $false
     $nextPendingCheck = Get-Date
+    $migrationDone = $false
+    $nextMigrationCheck = Get-Date
     # Read again: an enrolment just now registered the key.
     $script:KeyRegistered = [bool](Get-AgentConfig)['key_registered']
     Write-AgentLog ('Agent {0} started (PowerShell {1}, {2}, server {3})' -f $AgentVersion, $PSVersionTable.PSVersion, $(if ($OnLinux) { 'Linux' } else { 'Windows' }), $ServerUrl)
@@ -7045,8 +7244,23 @@ function Start-Agent {
             if (-not $pendingChecked -and (Get-Date) -ge $nextPendingCheck) {
                 # A restart or agent update of the last run is done now.
                 $pendingChecked = Complete-PendingCommand
-                if ($pendingChecked) { Restore-CommandState }
+                if ($pendingChecked) {
+                    # Installations of agents before 1.32.0 move to the HeimGuard names (the server is reached).
+                    $moving = try { Start-AgentMigration } catch { Write-AgentLog "Moving to the HeimGuard names failed: $($_.Exception.Message)" -IsError; $false }
+                    if ($moving) {
+                        # Linux: the move stops this service; Windows: it waits for this process to end.
+                        if ($OnLinux) { Start-Sleep -Seconds 60 }
+                        exit 0
+                    }
+                    Restore-CommandState
+                }
                 $nextPendingCheck = (Get-Date).AddSeconds(30)
+            }
+
+            # The old installation is removed once the move to the HeimGuard names has ended.
+            if ($pendingChecked -and -not $migrationDone -and (Get-Date) -ge $nextMigrationCheck) {
+                $nextMigrationCheck = (Get-Date).AddMinutes(5)
+                $migrationDone = try { Complete-AgentMigration } catch { Write-AgentLog "Removing the old installation failed: $($_.Exception.Message)" -IsError; $false }
             }
 
             if (-not $Once -and ((Get-Date) - $lastHeartbeat).TotalSeconds -ge $HeartbeatInterval) {
@@ -7257,8 +7471,28 @@ if ($Install) {
     }
 
     # The installer may run from a temporary download, install the agent to a permanent location.
+    $movedFrom = $null
     if (-not $InstallPath) {
-        $InstallPath = if ($OnLinux) { '/opt/laravel-mdm' } else { Join-Path $env:ProgramData 'Laravel-MDM' }
+        $InstallPath = $DefaultAgentDir
+        # An installation of an agent before 1.32.0 in the old directory moves to the new one: its agent is stopped
+        # (Register-AgentTask / -Service replace its task or service), its files are copied, the old directory
+        # is removed once the agent runs from the new one.
+        $hasToken = { param ($dir) @('token', 'Token.xml', 'token.dat' | Where-Object { Test-Path -Path (Join-Path $dir $_) }).Count -gt 0 }
+        if ((Test-Path -Path $LegacyAgentDir) -and (& $hasToken $LegacyAgentDir) -and -not ((Test-Path -Path $InstallPath) -and (& $hasToken $InstallPath))) {
+            Write-Host "Moving the installation from $LegacyAgentDir to $InstallPath." -ForegroundColor Yellow
+            if ($OnLinux) {
+                systemctl stop "$LegacyAgentService.service" 2>&1 | Out-Null
+            } else {
+                Stop-ScheduledTask -TaskName $LegacyAgentName -ErrorAction SilentlyContinue
+                Get-CimInstance -ClassName Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -like "*$LegacyAgentDir\app.ps1*" -and $_.ProcessId -ne $PID } |
+                    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            }
+            New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
+            Protect-AgentPath -Path $InstallPath -Directory
+            if ($OnLinux) { cp -a "$LegacyAgentDir/." "$InstallPath/" } else { Copy-Item -Path (Join-Path $LegacyAgentDir '*') -Destination $InstallPath -Recurse -Force }
+            $movedFrom = $LegacyAgentDir
+        }
     }
     New-Item -ItemType Directory -Force -Path $InstallPath | Out-Null
     $AgentDir = (Resolve-Path -Path $InstallPath).Path
@@ -7349,14 +7583,18 @@ if ($Install) {
             }
         }
         if (-not $started) {
-            Write-Host "The agent did not report its start within 90 s, see $log and the task Laravel-MDM-Agent in Task Scheduler." -ForegroundColor Yellow
+            Write-Host "The agent did not report its start within 90 s, see $log and the task $AgentName in Task Scheduler." -ForegroundColor Yellow
         }
     }
 
+    if ($movedFrom -and $movedFrom -ne $AgentDir) {
+        Remove-Item -Path $movedFrom -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "The old directory $movedFrom was removed." -ForegroundColor Yellow
+    }
     Remove-TemporaryInstaller
 
     $action = if ($existing) { 'updated' } else { 'installed' }
-    Write-Host "Laravel-MDM agent $AgentVersion $action in $AgentDir and started." -ForegroundColor Green
+    Write-Host "HeimGuard agent $AgentVersion $action in $AgentDir and started." -ForegroundColor Green
     return
 }
 

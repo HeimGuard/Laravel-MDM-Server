@@ -73,7 +73,7 @@ Security:
 - **No network access:**
   - On Linux the script runs in an empty network namespace (`unshare --net`, also for every
     process it starts). Without `unshare` it does not run.
-  - On Windows it runs from a copy of `powershell.exe` (`%ProgramData%\Laravel-MDM\sandbox`)
+  - On Windows it runs from a copy of `powershell.exe` (`%ProgramData%\HeimGuard\sandbox`)
     that Windows Firewall rules block in both directions. It does not run when the rules are
     missing or changed, or the firewall is off for a profile.
   - This is defense in depth, not a hard boundary: a script running as `SYSTEM` / root that sets

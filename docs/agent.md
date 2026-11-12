@@ -1,8 +1,8 @@
 # Agent
 
 The agent (`src/powershell/app.ps1`) runs on Windows (Windows PowerShell 5.1 or PowerShell 7) and on
-Debian / Ubuntu (PowerShell 7). It runs continuously as a scheduled task under `SYSTEM` on Windows and
-as a systemd service (`laravel-mdm-agent`) running as root on Linux. It keeps a WebSocket connection
+Debian / Ubuntu (PowerShell 7). It runs continuously as a scheduled task (`HeimGuard-Agent`) under `SYSTEM` on Windows and
+as a systemd service (`heimguard-agent`) running as root on Linux (agents before 1.32.0: `Laravel-MDM-Agent` / `laravel-mdm-agent`, see [Older installations](installation.md#checking-the-agent)). It keeps a WebSocket connection
 open for commands, sends a heartbeat with CPU and RAM usage every 30 seconds (over the WebSocket, or
 over HTTPS when the WebSocket is unavailable) and sends a device report every 5 minutes over HTTPS.
 

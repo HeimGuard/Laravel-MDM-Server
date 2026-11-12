@@ -11,8 +11,8 @@ mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessi
 # A volume mounted over database/ (to keep database.sqlite there) still holds the migrations of
 # the image it was created from, so new migrations would never run. Always use this image's ones.
 for dir in migrations seeders factories; do
-    if ! diff -rq "/usr/share/laravel-mdm-database/$dir" "database/$dir" >/dev/null 2>&1; then
-        if rm -rf "database/$dir" && cp -r "/usr/share/laravel-mdm-database/$dir" "database/$dir"; then
+    if ! diff -rq "/usr/share/heimguard-database/$dir" "database/$dir" >/dev/null 2>&1; then
+        if rm -rf "database/$dir" && cp -r "/usr/share/heimguard-database/$dir" "database/$dir"; then
             echo "Updated database/$dir from the image"
         else
             echo "Warning: could not update database/$dir, new migrations may not run" >&2

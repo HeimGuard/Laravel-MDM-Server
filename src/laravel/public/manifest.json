@@ -1,6 +1,6 @@
 {
-    "name": "Laravel-MDM",
-    "short_name": "MDM",
+    "name": "HeimGuard",
+    "short_name": "HeimGuard",
     "description": "Self-hosted device management for Windows and Linux",
     "theme_color": "#f9fbfc",
     "background_color": "#ffffff",

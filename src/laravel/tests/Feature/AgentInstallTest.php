@@ -46,9 +46,9 @@ class AgentInstallTest extends TestCase
             $this->assertStringContainsString("-ServerUrl '".url('/')."' -EnrolmentCode 1234 -Install -ServerKeyFingerprint '".\App\Support\Signing::fingerprint()."' }", $command);
         }
         $this->assertStringStartsWith('iwr -useb ', $commands['windows']);
-        $this->assertStringContainsString('"$env:TEMP\\mdm-agent-$(Get-Random).ps1"', $commands['windows']);
+        $this->assertStringContainsString('"$env:TEMP\\heimguard-agent-$(Get-Random).ps1"', $commands['windows']);
         $this->assertStringContainsString('if ($?) { & powershell -ExecutionPolicy Bypass -File $f ', $commands['windows']);
-        $this->assertStringContainsString('"mdm-agent-$(Get-Random).ps1"', $commands['pwsh']);
+        $this->assertStringContainsString('"heimguard-agent-$(Get-Random).ps1"', $commands['pwsh']);
         $this->assertStringContainsString('if ($?) { & pwsh -ExecutionPolicy Bypass -File $f ', $commands['pwsh']);
     }
 
