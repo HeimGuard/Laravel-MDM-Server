@@ -6,9 +6,9 @@
 @endphp
 {{-- A row's own command looks like a row of "Install all": Queued until the agent runs it, then Installing (with its percent). --}}
 @if ($running && $running->status === 'running')
-    <span class="small text-primary text-nowrap" title="{{ $running->displayMessage ?: __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}@if ($running->progress !== null) {{ $running->progress }} %@endif</span>
+    <span class="small text-primary text-nowrap" title="{{ $running->label }} · {{ $running->displayMessage ?: __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}@if ($running->progress !== null) {{ $running->progress }} %@endif</span>
 @elseif ($running)
-    <span class="small text-muted text-nowrap" title="{{ $running->statusLabel }}"><i class="far fa-clock me-1"></i>{{ __('Queued') }}</span>
+    <span class="small text-muted text-nowrap" title="{{ $running->label }} · {{ $running->statusLabel }}"><i class="far fa-clock me-1"></i>{{ __('Queued') }}</span>
 @elseif ($rowState === 'running')
     <span class="small text-primary text-nowrap" title="{{ __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}</span>
 @elseif ($rowState === 'done')
