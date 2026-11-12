@@ -141,7 +141,7 @@
                                         @if ($rule->urls)
                                             <div>@foreach ($rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
                                         @endif
-                                        <div class="small text-body-tertiary font-monospace">{{ $rule->key }}</div>
+                                        <div class="small text-body-secondary font-monospace">{{ $rule->key }}</div>
                                     </td>
                                     <td><x-badge :color="$rule->severityColor" size="sm" variant="subtle">{{ __(ucfirst($rule->severity)) }}</x-badge></td>
                                     <td class="d-none d-md-table-cell small">{{ $rule->sourceLabel }}</td>
@@ -213,7 +213,7 @@
                                         <div class="fw-medium">{{ $parser->name }}
                                             @unless ($parser->built_in)<x-badge color="primary" size="sm" variant="subtle">{{ __('Custom') }}</x-badge>@endunless
                                         </div>
-                                        <div class="small text-body-tertiary font-monospace">{{ $parser->key }}</div>
+                                        <div class="small text-body-secondary font-monospace">{{ $parser->key }}</div>
                                     </td>
                                     <td class="d-none d-md-table-cell small">{{ $parser->sourceLabel }}</td>
                                     <td class="small font-monospace">{{ $parser->definition['event']['type'] ?? '' }}</td>

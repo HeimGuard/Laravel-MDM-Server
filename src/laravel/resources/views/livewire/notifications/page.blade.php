@@ -7,7 +7,7 @@
                 <div class="text-body-secondary">{{ __('Get told when a device goes down, runs out of disk space or a service fails.') }}</div>
             </div>
             <button class="btn btn-primary" type="button" wire:click="addRule">
-                <i class="fas fa-plus me-2"></i>{{ __('Add alert') }}
+                <i class="fas fa-plus me-1"></i>{{ __('Add alert') }}
             </button>
         </div>
         <x-boilerplate::alerts />
@@ -31,7 +31,7 @@
             <div class="row">
                 <div class="col-12 col-xl-7">
                     <div class="card card-body">
-                        <h5 class="card-title">{{ __('Where to send') }}</h5>
+                        <h2 class="h6 fw-semibold mb-3">{{ __('Where to send') }}</h2>
                         <form wire:submit="save">
                         <label class="form-label" for="notification-emails">{{ __('E-mail addresses') }}</label>
                         <div class="d-flex gap-2 align-items-start">

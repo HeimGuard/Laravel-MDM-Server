@@ -45,7 +45,7 @@
                                 @endif
                             </details>
                         @endif
-                        @error('portscan.'.$neighbour['id']) <div class="text-danger">{{ $message }}</div> @enderror
+                        @error('portscan.'.$neighbour['id']) <div class="text-danger small">{{ $message }}</div> @enderror
                     </div>
                 @endif
             </div>

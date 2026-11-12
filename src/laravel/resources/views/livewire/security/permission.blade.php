@@ -1,7 +1,7 @@
 <div>
     @if($usesRoles)
         {{-- Role-based mode --}}
-        <h5 class="page-title mt-3">{{ __('Roles') }}</h5>
+        <h2 class="h6 fw-semibold mt-3 mb-2">{{ __('Roles') }}</h2>
 
         <div class="mb-3">
             @forelse($allRoles as $role)
@@ -37,7 +37,7 @@
 
     @else
         {{-- Direct scopes mode --}}
-        <h5 class="page-title mt-3">{{ __('Scopes') }}</h5>
+        <h2 class="h6 fw-semibold mt-3 mb-2">{{ __('Scopes') }}</h2>
 
         <div class="d-flex flex-wrap gap-2 mb-3">
             @forelse($user->scope_applied ?? [] as $scope)

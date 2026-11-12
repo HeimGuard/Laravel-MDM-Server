@@ -43,7 +43,7 @@
                 @elseif ($command)
                     <span class="{{ $command->status === 'succeeded' ? 'text-body-secondary' : 'text-danger' }}"><i class="fas fa-search-location me-1"></i>{{ $command->displayMessage ?: $command->statusLabel }} · {{ $command->updated_at->diffForHumans() }}</span>
                 @endif
-                @error('scan.'.$net['anchor']) <div class="text-danger">{{ $message }}</div> @enderror
+                @error('scan.'.$net['anchor']) <div class="text-danger small">{{ $message }}</div> @enderror
             </div>
         @endif
 

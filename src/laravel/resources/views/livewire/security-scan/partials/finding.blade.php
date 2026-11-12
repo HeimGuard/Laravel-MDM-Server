@@ -11,12 +11,12 @@
                 @if ($finding->device_id)
                     <a class="text-body" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $finding->device_id, 'tab' => 'security']) }}">{{ $finding->device?->displayName }}</a>
                 @elseif ($finding->targetUrl)
-                    <a class="text-body" href="{{ $finding->targetUrl }}"><i class="fas fa-network-wired fa-xs me-1 text-body-tertiary"></i>{{ $finding->targetLabel }}</a>
+                    <a class="text-body" href="{{ $finding->targetUrl }}"><i class="fas fa-network-wired fa-xs me-1 text-body-secondary"></i>{{ $finding->targetLabel }}</a>
                 @else
                     <span class="text-body-secondary"><i class="fas fa-network-wired fa-xs me-1"></i>{{ $finding->targetLabel }}</span>
                 @endif
                 @if (! $finding->device_id && $finding->target_mac)
-                    <span class="small text-body-tertiary">{{ $finding->target_mac }}</span>
+                    <span class="small text-body-secondary">{{ $finding->target_mac }}</span>
                 @endif
             @endif
         </div>
@@ -34,7 +34,7 @@
         @if (isset($explanations[$finding->id]))
             <div class="small border-start border-3 border-primary-subtle bg-body-tertiary rounded-end px-3 py-2 mt-2" style="white-space: pre-line" wire:key="security-finding-explanation-{{ $finding->id }}"><div class="fw-semibold mb-1"><i class="fas fa-robot me-1 text-primary"></i>{{ __('Explained by AI') }}</div>{{ $explanations[$finding->id] }}</div>
         @endif
-        <div class="small text-body-tertiary mt-1">
+        <div class="small text-body-secondary mt-1">
             <span title="{{ $finding->first_seen_at }}">{{ __('Found :time', ['time' => $finding->first_seen_at->diffForHumans()]) }}</span>
             @if ($finding->occurrences > 1)
                 · {{ trans_choice(':count time|:count times', $finding->occurrences) }}, {{ __('last :time', ['time' => $finding->last_seen_at->diffForHumans()]) }}
