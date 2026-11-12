@@ -37,8 +37,10 @@ trait RemediatesFindings
 
             return;
         }
+        // Found before the try: a finding that is not there (ModelNotFoundException is a RuntimeException too) is a 404, not an error of the AI.
+        $finding = $this->findingForRemediation($id);
         try {
-            $this->explanations[$id] = FindingExplanationService::explain($this->findingForRemediation($id));
+            $this->explanations[$id] = FindingExplanationService::explain($finding);
         } catch (RuntimeException $e) {
             $this->remediateError = $e->getMessage();
         }
