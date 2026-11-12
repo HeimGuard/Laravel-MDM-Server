@@ -7,12 +7,13 @@
                 <form method="POST" action="{{ route('system.backup.run') }}" class="d-inline">
                     @csrf
                     <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-robot me-2"></i>
+                        <i class="fas fa-robot me-1"></i>
                         <span>{{ __('Start Backup') }}</span>
                     </button>
                 </form>
             </div>
         </div>
+        <div class="table-responsive">
         <table class="table">
             <thead>
                 <tr>
@@ -41,7 +42,7 @@
                             @php($modalId = 'restoreModal-' . $backups_slug)
 
                             @if($hasDbZip || $hasFsZip)
-                                <button type="button" class="btn btn-sm btn-warning" title="{{ __('Restore') }}"
+                                <button type="button" class="btn btn-sm btn-warning" title="{{ __('Restore') }}" aria-label="{{ __('Restore') }}"
                                         data-bs-toggle="modal" data-bs-target="#{{ $modalId }}">
                                     <div class="d-none d-md-none">
                                         {{ __('Restore') }}
@@ -58,7 +59,7 @@
                                             <div class="modal-content text-start">
                                                 <div class="modal-header">
                                                     <h5 class="modal-title">{{ __('Restore Backup') }} &mdash; {{ $backups_slug }}</h5>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ __('Close') }}"></button>
                                                 </div>
                                                 <div class="modal-body">
                                                     <p class="text-body-secondary">{{ __('Select components to restore. This operation will overwrite current data.') }}</p>
@@ -102,7 +103,7 @@
 
                                 <form method="POST" action="{{ route('system.backup.delete', ['backup_date' => $backups_slug]) }}" class="d-inline" onsubmit="return confirm('{{ __('Are you sure?') }}')">
                                     @csrf
-                                    <button type="submit" class="btn btn-sm btn-danger" title="{{ __('Remove') }}">
+                                    <button type="submit" class="btn btn-sm btn-danger" title="{{ __('Remove') }}" aria-label="{{ __('Remove') }}">
                                         <div class="d-none d-md-none">
                                             {{ __('Remove') }}
                                         </div>
@@ -117,5 +118,6 @@
                 @endif
             </tbody>
         </table>
+        </div>
     </div>
 </x-dynamic-component>

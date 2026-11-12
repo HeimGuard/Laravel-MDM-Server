@@ -23,13 +23,13 @@
 
         @if (config('session.driver') == 'database')
             <div>
-                <h4>{{ __('Sessions') }}</h4>
+                <h2 class="h6 fw-semibold mb-2">{{ __('Sessions') }}</h2>
                 @livewire('session.data-table', [], key('data-table'))
             </div>
         @endif
 
         <div>
-            <h4>{{ __('Change Password') }}</h4>
+            <h2 class="h6 fw-semibold mb-2">{{ __('Change Password') }}</h2>
         </div>
 
         <form action="{{ route('profile.update') }}" method="POST">
