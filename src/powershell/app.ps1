@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.33.0'
+$AgentVersion = '1.33.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -3070,6 +3070,40 @@ function Protect-AgentPath {
     icacls $Path /inheritance:r /grant:r "*S-1-5-18:$grant" "*S-1-5-32-544:$grant" | Out-Null
 }
 
+function Write-AgentFile {
+    # Writes a file of the agent as a whole or not at all: the text goes to a temporary file beside it, which
+    # then replaces it, so a crash, a power loss or a full disk never leaves half a file (a half config.json
+    # stops the agent from starting, a half agent.ps1 is never repaired). -Protect restricts the temporary file
+    # to SYSTEM / root and administrators before the content is written (keys, tokens), not after.
+    # Not for the jobs (it is not in their -Functions lists).
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Path,
+        [AllowEmptyString()]
+        [string]
+        $Text,
+        [switch]
+        $Protect,
+        [switch]
+        $NoNewline
+    )
+
+    $temp = "$Path.tmp"
+    try {
+        if ($Protect) {
+            New-Item -ItemType File -Path $temp -Force | Out-Null
+            Protect-AgentPath -Path $temp
+        }
+        Set-Content -LiteralPath $temp -Value $Text -Encoding UTF8 -NoNewline:$NoNewline
+        Move-Item -LiteralPath $temp -Destination $Path -Force
+    }
+    catch {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
 function ConvertTo-Hashtable {
     # ConvertFrom-Json -AsHashtable does not exist in Windows PowerShell 5.1.
     param (
@@ -3108,8 +3142,7 @@ function Save-AgentConfig {
     )
 
     $path = Join-Path $AgentDir 'config.json'
-    $Config | ConvertTo-Json -Depth 4 | Set-Content -Path $path -Encoding UTF8
-    Protect-AgentPath -Path $path
+    Write-AgentFile -Path $path -Text ($Config | ConvertTo-Json -Depth 4) -Protect
 }
 
 function Set-ServerKey {
@@ -3206,8 +3239,7 @@ function Get-DeviceKey {
             $rsa.ImportRSAPrivateKey([Convert]::FromBase64String((Get-Content -Path $path -Raw).Trim()), [ref]$read)
         } else {
             $rsa.KeySize = 3072
-            Set-Content -Path $path -Value ([Convert]::ToBase64String($rsa.ExportRSAPrivateKey())) -NoNewline
-            Protect-AgentPath -Path $path
+            Write-AgentFile -Path $path -Text ([Convert]::ToBase64String($rsa.ExportRSAPrivateKey())) -Protect -NoNewline
             Write-AgentLog 'Device key created'
         }
         return $script:DeviceKey = $rsa
@@ -3347,8 +3379,7 @@ function Add-ExecutedRun {
     $runs.Add($RunId)
     while ($runs.Count -gt 500) { $runs.RemoveAt(0) }
     $path = Join-Path $AgentDir 'state.json'
-    @{ executed_runs = @($runs) } | ConvertTo-Json -Compress | Set-Content -Path $path -Encoding UTF8
-    Protect-AgentPath -Path $path
+    Write-AgentFile -Path $path -Text (@{ executed_runs = @($runs) } | ConvertTo-Json -Compress) -Protect
 }
 
 function Get-ScriptFingerprint {
@@ -3723,7 +3754,7 @@ function Add-AgentError {
             if ($script:AgentErrors.Count -ge 30) { $script:AgentErrors.RemoveAt(0) }
             [void]$script:AgentErrors.Add([ordered]@{ message = $text; count = 1; first = $now; last = $now })
         }
-        ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress | Set-Content -Path "$AgentDir/pending-errors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/pending-errors.json" -Text (ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress)
     }
     catch {
         # Never break the log line itself.
@@ -3766,7 +3797,7 @@ function Send-AgentErrors {
     if ($script:AgentErrors.Count -eq 0) {
         Remove-Item -Path "$AgentDir/pending-errors.json" -Force -ErrorAction SilentlyContinue
     } else {
-        ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress | Set-Content -Path "$AgentDir/pending-errors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/pending-errors.json" -Text (ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress)
     }
 }
 
@@ -3987,8 +4018,7 @@ function Get-AgentToken {
         # SecureString export is Windows only (DPAPI); keep the token in a root-only file.
         $tokenPath = "$AgentDir/token"
         if (-not (Test-Path -Path $tokenPath)) {
-            Set-Content -Path $tokenPath -Value (Register-MDMDevice -EnrolmentCode (Get-EnrolmentCode)) -NoNewline
-            Protect-AgentPath -Path $tokenPath
+            Write-AgentFile -Path $tokenPath -Text (Register-MDMDevice -EnrolmentCode (Get-EnrolmentCode)) -Protect -NoNewline
         }
         return (Get-Content -Path $tokenPath -Raw).Trim()
     }
@@ -4544,7 +4574,7 @@ function Get-SecurityPolicy {
     try {
         $policy = Invoke-MdmApi -Method Get -Path 'device/security/policy' -Token $Token
         if ($policy -and $policy.sources) {
-            $policy | ConvertTo-Json -Depth 6 -Compress | Set-Content -Path $path -Encoding UTF8
+            Write-AgentFile -Path $path -Text ($policy | ConvertTo-Json -Depth 6 -Compress)
             return $policy
         }
     }
@@ -4747,14 +4777,14 @@ function Send-SecurityInventory {
         if ($deltas.Pending.ContainsKey($property.Name) -and $deltas.Pending[$property.Name].state -eq $property.Value) { $kept[$property.Name] = $deltas.Pending[$property.Name] }
     }
     foreach ($source in $acknowledged.Keys) { if (-not $kept.ContainsKey($source)) { $kept[$source] = $acknowledged[$source] } }
-    $kept | ConvertTo-Json -Depth 4 -Compress | Set-Content -Path "$AgentDir/security-state.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/security-state.json" -Text ($kept | ConvertTo-Json -Depth 4 -Compress)
     # The logs are read on from where the server took them.
     if ($response.cursors) {
         $cursors = Get-SecurityCursors
         foreach ($property in $response.cursors.PSObject.Properties) { $cursors[$property.Name] = $property.Value }
-        $cursors | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/security-cursors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/security-cursors.json" -Text ($cursors | ConvertTo-Json -Compress)
     }
-    @{ since = $StartedAt.ToString('o'); sent_at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/security.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/security.json" -Text (@{ since = $StartedAt.ToString('o'); sent_at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
 
     $changed = 0
     foreach ($delta in $deltas.Sources) { $changed += @($delta.upsert).Count + @($delta.remove).Count }
@@ -4795,7 +4825,7 @@ function Save-CachedInventory {
         $Name = 'inventory'
     )
 
-    @{ collected_at = (Get-Date).ToString('o'); agent_version = $AgentVersion; data = $Data } | ConvertTo-Json -Depth 6 -Compress | Set-Content -Path "$AgentDir/$Name.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/$Name.json" -Text (@{ collected_at = (Get-Date).ToString('o'); agent_version = $AgentVersion; data = $Data } | ConvertTo-Json -Depth 6 -Compress)
 }
 
 function Get-Report {
@@ -5096,8 +5126,12 @@ function Update-Agent {
 
         # Kept for the rollback (see Restart-AgentTask), confirmed by the new agent once it reached the server.
         Copy-Item -Path (Join-Path $AgentDir 'app.ps1') -Destination (Join-Path $AgentDir 'app.ps1.previous') -Force
-        @{ from = $AgentVersion; to = $version; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/agent-update.json" -Encoding UTF8
-        [System.IO.File]::WriteAllBytes((Join-Path $AgentDir 'app.ps1'), $bytes)
+        Write-AgentFile -Path "$AgentDir/agent-update.json" -Text (@{ from = $AgentVersion; to = $version; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
+        # Beside it and then moved over it: a power loss in the middle of the write must not leave a half
+        # script, which no rollback sees (the one that watches is started only after this).
+        $new = Join-Path $AgentDir 'app.ps1.new'
+        [System.IO.File]::WriteAllBytes($new, $bytes)
+        Move-Item -LiteralPath $new -Destination (Join-Path $AgentDir 'app.ps1') -Force
     }
     catch {
         Write-AgentLog "Agent update failed: $($_.Exception.Message)" -ErrorRecord $_
@@ -5165,7 +5199,7 @@ function Save-PendingCommand {
     # agent that starts next (see Complete-PendingCommand).
     param ($Id, [string]$Command)
 
-    @{ id = $Id; command = $Command; agent_version = $AgentVersion; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/pending-command.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/pending-command.json" -Text (@{ id = $Id; command = $Command; agent_version = $AgentVersion; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
 }
 
 function Complete-PendingCommand {
@@ -5212,6 +5246,9 @@ function Test-UpdateParams {
     # expected form (they are passed as arguments, never as code).
     param ($Params)
 
+    foreach ($name in 'kind', 'id', 'user', 'edition', 'version', 'source', 'scope') {
+        if ("$($Params.$name)" -match '[\x00-\x1f\x7f]') { throw "invalid $name" }
+    }
     $kind = "$($Params.kind)"
     if (-not $UpdateKinds.ContainsKey($kind) -or "$($Params.id)" -notmatch $UpdateKinds[$kind] -or "$($Params.id)".Length -gt 200) {
         throw "invalid update '$kind' '$($Params.id)'"
@@ -5238,7 +5275,7 @@ function Test-WakeParams {
     # wake parameters, checked again on the device: MAC addresses and IPv4 broadcast addresses only.
     param ($Params)
 
-    $macs = @($Params.macs | ForEach-Object { "$_" } | Where-Object { $_ -match '^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$' })
+    $macs = @($Params.macs | ForEach-Object { "$_" } | Where-Object { $_ -match '^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}\z' })
     $broadcasts = @($Params.broadcasts | ForEach-Object {
             $address = $null
             if ([System.Net.IPAddress]::TryParse("$_", [ref]$address) -and $address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork) { $address }
@@ -5400,7 +5437,7 @@ function Save-ScanNames {
     $all = @{}
     foreach ($entry in (Get-ScanNames).GetEnumerator()) { $all[$entry.Key] = @{ name = $entry.Value; at = (Get-Date).ToString('o') } }
     foreach ($entry in $Names.GetEnumerator()) { $all[$entry.Key] = @{ name = "$($entry.Value)"; at = (Get-Date).ToString('o') } }
-    $all | ConvertTo-Json -Depth 3 -Compress | Set-Content -Path $path -Encoding UTF8
+    Write-AgentFile -Path $path -Text ($all | ConvertTo-Json -Depth 3 -Compress)
 }
 
 function Test-ScanParams {
@@ -5899,7 +5936,7 @@ function Save-CommandState {
         deferred_agent_update = $script:DeferredAgentUpdate
     }
     try {
-        $state | ConvertTo-Json -Depth 5 -Compress | Set-Content -Path "$AgentDir/commands-state.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/commands-state.json" -Text ($state | ConvertTo-Json -Depth 5 -Compress)
     }
     catch {
         Write-AgentLog "Command state not saved: $($_.Exception.Message)" -ErrorRecord $_
@@ -7165,7 +7202,7 @@ function Save-Backlog {
     $path = "$AgentDir/backlog-$Kind.json"
     try {
         if ($list.Count -eq 0) { Remove-Item -Path $path -Force -ErrorAction SilentlyContinue; return }
-        ConvertTo-Json -InputObject @($list) -Depth 4 -Compress | Set-Content -Path $path -Encoding UTF8
+        Write-AgentFile -Path $path -Text (ConvertTo-Json -InputObject @($list) -Depth 4 -Compress)
     }
     catch { Write-AgentLog "Backlog ${Kind} not saved: $($_.Exception.Message)" -ErrorRecord $_ }
 }
