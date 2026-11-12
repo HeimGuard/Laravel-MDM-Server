@@ -52,7 +52,5 @@ Things that have broken tests before:
 - **Seeded rows.** Some tables have rows after the migrations (scripts): count before and after, never expect 0.
 - **The agent version moves.** A test device with an outdated `AgentVersion` gets an "agent outdated" alert; use
   `AgentScript::version()` where the test does not care.
-- **Blade:** prefer one `{{ ... }}` expression over an `@if` written inline right after `{{ }}` for a piece of a
-  text (a percent after a label).
 - A view test that looks for a text (`assertSee`) breaks when the text moves into an attribute; assert the tooltip
   (`title`) then.
