@@ -48,7 +48,8 @@ trait RemediatesFindings
      * Writes a script for the finding; any signed-in user may ask for it. A system admin lands on it to
      * review it; for the others it waits in the scripts for one. The script fixes the finding together with the
      * other open findings of the same device (updating php fixes all its packages, not one of them). Only the
-     * rules (with the links of the detection), the messages, the platform and the operating system leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
+     * rules (with the links of the detection), the messages and the facts of the device that name no person, address or
+     * secret (FindingExplanationService::describe: system, kernel, CPU architecture, settings) leave the server. The script is saved as manual (it never runs by itself): it is AI written, so a system
      * admin checks it and starts it per device (the scripts are theirs, they run as SYSTEM / root).
      */
     public function remediateWithAi(int $id)

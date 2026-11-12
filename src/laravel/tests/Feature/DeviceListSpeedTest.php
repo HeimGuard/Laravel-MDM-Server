@@ -21,7 +21,7 @@ class DeviceListSpeedTest extends TestCase
         $device = new Device;
         $device->token = hash('sha256', $name);
         $device->name = $name;
-        $device->data = json_encode(['machine' => ['Hostname' => $name, 'AgentVersion' => '1.31.0', 'Platform' => 'linux', 'RestartRequired' => $restart, 'Drives' => [], 'Networks' => [
+        $device->data = json_encode(['machine' => ['Hostname' => $name, 'AgentVersion' => \App\Support\AgentScript::version(), 'Platform' => 'linux', 'RestartRequired' => $restart, 'Drives' => [], 'Networks' => [
             ['Name' => 'eth0', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'IPAddresses' => ['10.0.0.'.random_int(2, 250)]],
         ]]]);
         $device->save();

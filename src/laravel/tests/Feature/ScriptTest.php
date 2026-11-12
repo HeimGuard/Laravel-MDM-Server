@@ -382,6 +382,15 @@ class ScriptTest extends TestCase
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'Firewall is off', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
+        // The security inventory: the system (with its CPU architecture) and the settings go along, nothing that names a person, an address or a secret.
+        \App\Models\SecurityInventory::query()->create(['device_id' => $device->id, 'states' => [], 'scanned' => [], 'collected_at' => now()]);
+        foreach ([
+            'os' => ['Id' => 'ubuntu', 'Name' => 'Ubuntu 26.04 LTS', 'Version' => '26.04', 'Kernel' => '7.0.0-38-generic', 'Codename' => 'resolute', 'Arch' => 'x86_64'],
+            'posture' => ['FirewallEnabled' => false, 'SshRootLogin' => 'no', 'AptUpdateOk' => false, 'AptUpdateErrors' => 'E: https://user:hunter2@repo.example/ 401', 'UnencryptedMounts' => '/home/eve'],
+        ] as $key => $data) {
+            \App\Models\InventoryDefinition::query()->create(['inventorable_type' => $device->getMorphClass(), 'inventorable_id' => $device->id, 'key' => $key, 'name' => $key, 'last_data' => $data]);
+        }
+        $scripts = Script::query()->count();
         Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => "Bez firewallu je zařízení otevřené.\n- Zapněte ho."]]])]);
         app()->setLocale('cs');
 
@@ -391,7 +400,13 @@ class ScriptTest extends TestCase
             ->assertSee('Bez firewallu je zařízení otevřené.')->assertSee(__('Hide explanation'));
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Answer in Czech') && str_contains($request['messages'][0]['content'], 'Firewall is off')
             && ! isset($request['output_config']['format']));
-        $this->assertSame(0, Script::query()->count());
+        Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'System: Name=Ubuntu 26.04 LTS; Version=26.04; Id=ubuntu; Kernel=7.0.0-38-generic; Codename=resolute; Arch=x86_64')
+            && str_contains($request['messages'][0]['content'], 'Security settings: FirewallEnabled=false; SshRootLogin=no; AptUpdateOk=false')
+            && str_contains($request['messages'][0]['content'], 'Kind of device: ')
+            && ! str_contains($request['messages'][0]['content'], 'hunter2') && ! str_contains($request['messages'][0]['content'], '/home/eve')
+            && ! str_contains($request['messages'][0]['content'], $device->token));
+        Http::assertSent(fn (Request $request) => str_contains($request['system'], 'CPU architecture'));
+        $this->assertSame($scripts, Script::query()->count());
 
         // Asking again hides it; a finding of another device is not explained.
         $component->call('explainWithAi', $finding->id)->assertSet('explanations', []);

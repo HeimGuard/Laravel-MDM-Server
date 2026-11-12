@@ -36,7 +36,13 @@ script in the form are sent, nothing about the devices. Without the AI set up th
 under it what the finding means, how urgent it is and what to do, in the language of the user (plain
 text, not stored; clicking again hides it). The same description of the finding as for **Remediate
 with AI** is sent: the rule, the message, the CVEs, the hint, the references, the platform and the
-operating system.
+operating system, and the facts of the device that tell whether the finding concerns it at all: the
+system from the security inventory (version, kernel, CPU architecture, agents 1.30.0+), a virtual
+machine or a container, the kind of device, the security settings and the affected item. The AI says
+when it does not apply (a CVE of Arm on an x86_64 device, of Windows on Linux, a feature that does not
+run). Nothing that names a person, an address or a secret is sent: no host name, IP or MAC address,
+user, path, command line, and not the errors of `apt-get update` (a repository address can carry a
+password).
 
 The code is entered as text and stored byte for byte. Its **fingerprint** (SHA-256 over the
 platform, the timeout and the hashes of both scripts) changes with every code change, and a new
