@@ -324,7 +324,7 @@
                             @endforeach
                         </div>
                     @elseif (! $diskHealth['error'])
-                        <p class="text-muted mb-0">{{ __('No disks with S.M.A.R.T. support found.') }}</p>
+                        <x-empty-state>{{ __('No disks with S.M.A.R.T. support found.') }}</x-empty-state>
                     @endif
                     <p class="small text-muted mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
                     @endif
@@ -454,44 +454,37 @@
                     @if ($activeTab === 'networks')
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
-                            <li class="list-group-item d-flex align-items-start gap-3">
-                                <x-icon-tile icon="fas fa-globe" tone="primary" />
-                                <div class="flex-grow-1 min-w-0">
-                                    <div class="fw-semibold">{{ __('Public address') }}</div>
-                                    <div class="small text-muted">{{ __('The address the device reaches the server from, behind NAT the one of its router.') }}</div>
-                                    <div class="small font-monospace">{{ $selectedDevice->public_ip }}</div>
-                                </div>
-                            </li>
+                            <x-list-row icon="fas fa-globe" tone="primary" :title="__('Public address')" :subtitle="__('The address the device reaches the server from, behind NAT the one of its router.')">
+                                <div class="small font-monospace">{{ $selectedDevice->public_ip }}</div>
+                            </x-list-row>
                         @endif
                         @foreach (\App\Models\Device::sortNetworks($selectedDevice->networks) as $network)
                             @php $type = \App\Models\Device::NETWORK_TYPES[$network['Type']]; @endphp
-                            <li class="list-group-item d-flex align-items-start gap-3 {{ $network['Connected'] ? '' : 'text-body-secondary' }}" wire:key="network-{{ $loop->index }}">
-                                <x-icon-tile :icon="$type['icon']" title="{{ __($type['label']) }}" :tone="$network['Connected'] ? 'primary' : null" />
-                                <div class="flex-grow-1 min-w-0">
-                                    {{-- Name and type in one line that wraps; the state is on the right of the row. --}}
+                            <x-list-row :class="$network['Connected'] ? '' : 'text-body-secondary'" :icon="$type['icon']" :icon-title="__($type['label'])" :subtitle="$network['Description'] && $network['Description'] !== $network['Name'] ? $network['Description'] : null" :tone="$network['Connected'] ? 'primary' : null" wire:key="network-{{ $loop->index }}">
+                                {{-- Name and type in one line that wraps; the state is on the right of the row. --}}
+                                <x-slot:title>
                                     <div class="d-flex flex-wrap align-items-center column-gap-2 row-gap-1">
                                         <span class="fw-semibold text-break">{{ $network['Name'] }}</span>
                                         <x-badge color="secondary" size="sm" variant="subtle">{{ __($type['label']) }}</x-badge>
                                     </div>
-                                    @if ($network['Description'] && $network['Description'] !== $network['Name'])
-                                        <div class="small text-muted text-break">{{ $network['Description'] }}</div>
-                                    @endif
-                                    @foreach ($network['IPAddresses'] as $ipAddress)
-                                        <div class="small text-muted">
-                                            <span class="font-monospace">{{ $ipAddress }}</span>
-                                            @if (\App\Models\Device::isPublicIp($ipAddress))
-                                                <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
-                                            @endif
-                                        </div>
-                                    @endforeach
-                                    @if ($network['Mac'])
-                                        <x-mac :mac="$network['Mac']" class="d-block small text-body-tertiary" title="{{ __('MAC address') }}" />
-                                    @endif
-                                </div>
+                                </x-slot:title>
+                                @foreach ($network['IPAddresses'] as $ipAddress)
+                                    <div class="small text-muted">
+                                        <span class="font-monospace">{{ $ipAddress }}</span>
+                                        @if (\App\Models\Device::isPublicIp($ipAddress))
+                                            <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
+                                        @endif
+                                    </div>
+                                @endforeach
+                                @if ($network['Mac'])
+                                    <x-mac :mac="$network['Mac']" class="d-block small text-body-tertiary" title="{{ __('MAC address') }}" />
+                                @endif
                                 {{-- On phones only the icon (its text in the tooltip). --}}
-                                <x-status-label class="flex-shrink-0" compact :icon="$network['Connected'] ? 'fas fa-check-circle' : 'fas fa-times-circle'" :tone="$network['Connected'] ? 'success' : 'muted'"
-                                    title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</x-status-label>
-                            </li>
+                                <x-slot:actions>
+                                    <x-status-label compact :icon="$network['Connected'] ? 'fas fa-check-circle' : 'fas fa-times-circle'" :tone="$network['Connected'] ? 'success' : 'muted'"
+                                        title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</x-status-label>
+                                </x-slot:actions>
+                            </x-list-row>
                         @endforeach
                     </ul>
                     @endif
@@ -622,7 +615,7 @@
                             </table>
                         </div>
                     @elseif (! $docker['error'])
-                        <p class="text-muted mb-0">{{ __('No containers.') }}</p>
+                        <x-empty-state>{{ __('No containers.') }}</x-empty-state>
                     @endif
                     @endif
                 </div>
@@ -651,7 +644,7 @@
                     @if ($activeTab === 'history')
                     {{-- Parsed from the audit log (App\Support\Audit): commands with their status, other actions as they were logged. --}}
                     @if ($history->isEmpty())
-                        <div class="text-body-secondary small">{{ __('Nothing done with the device yet.') }}</div>
+                        <x-empty-state>{{ __('Nothing done with the device yet.') }}</x-empty-state>
                     @else
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
@@ -725,10 +718,7 @@
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <x-icon-tile icon="fas fa-robot" tone="primary" />
-                                <span class="fw-semibold">{{ __('Agent') }}</span>
-                            </div>
+                            <x-card-header icon="fas fa-robot" tone="primary" :title="__('Agent')" />
                             <div class="{{ $row }}">
                                 <span class="small text-body-secondary">{{ __('Version') }}</span>
                                 <span class="d-flex align-items-center gap-2">
@@ -753,10 +743,7 @@
 
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <x-icon-tile icon="fas fa-plug" :tone="$selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'success' : null" />
-                                <span class="fw-semibold">{{ __('Connection') }}</span>
-                            </div>
+                            <x-card-header icon="fas fa-plug" :tone="$selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'success' : null" :title="__('Connection')" />
                             <div class="{{ $row }}">
                                 <span>
                                     <span class="small text-body-secondary d-block">WebSocket</span>
@@ -777,11 +764,9 @@
                     @php $features = $selectedDevice->features; @endphp
                     <div class="col-12">
                         <div class="card card-body">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <x-icon-tile icon="fas fa-sliders-h" tone="primary" />
-                                <span class="fw-semibold me-auto">{{ __('Features') }}</span>
+                            <x-card-header icon="fas fa-sliders-h" tone="primary" :title="__('Features')">
                                 <span class="small text-body-secondary">{{ __(':on of :count on', ['on' => collect($features)->where('on', true)->count(), 'count' => count($features)]) }}</span>
-                            </div>
+                            </x-card-header>
                             @foreach ($features as $feature)
                                 <div class="{{ $row }}" wire:key="feature-{{ $feature['key'] }}">
                                     <span class="min-w-0">
@@ -802,15 +787,13 @@
 
                     <div class="col-12">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <x-icon-tile :icon="$selectedDevice->signsRequests ? 'fas fa-lock' : 'fas fa-unlock'" :tone="$selectedDevice->signsRequests ? 'success' : 'warning'" />
-                                <span class="fw-semibold">{{ __('Security') }}</span>
+                            <x-card-header :icon="$selectedDevice->signsRequests ? 'fas fa-lock' : 'fas fa-unlock'" :tone="$selectedDevice->signsRequests ? 'success' : 'warning'" :title="__('Security')">
                                 @can('is-system-admin')
                                     @if ($selectedDevice->signsRequests)
                                         <x-button icon="fas fa-undo" class="ms-auto text-nowrap" title="{{ __('The agent registers a new key with its next request, e.g. after it was reinstalled with a new key.') }}" wire:click="resetDeviceKey" wire:confirm="{{ __('Reset the device key? Until the agent registers a key again, the device only gets the agent update.') }}">{{ __('Reset device key') }}</x-button>
                                     @endif
                                 @endcan
-                            </div>
+                            </x-card-header>
                             <div class="{{ $row }}">
                                 <span class="small text-body-secondary">{{ __('Signing') }}</span>
                                 @if ($selectedDevice->signsRequests)

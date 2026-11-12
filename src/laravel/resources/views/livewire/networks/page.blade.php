@@ -94,9 +94,8 @@
         </ul>
 
         @if (($counts['device'] ?? 0) === 0)
-            <div class="card card-body text-center text-body-secondary py-5">
-                <i class="fas fa-project-diagram fa-2x mb-3"></i>
-                <div>{{ __('No devices yet: the map is built from what their agents report.') }}</div>
+            <div class="card overflow-hidden">
+                <x-empty-state class="border-0 py-5" icon="fas fa-project-diagram">{{ __('No devices yet: the map is built from what their agents report.') }}</x-empty-state>
             </div>
         @elseif ($view === 'map')
             <div class="card card-body p-2 mb-3" wire:key="network-map-view">
