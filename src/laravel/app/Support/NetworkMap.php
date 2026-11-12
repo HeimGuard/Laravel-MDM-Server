@@ -416,7 +416,7 @@ class NetworkMap
                 ->sortByDesc(fn ($network) => collect($local)->filter(fn ($ip) => self::contains($network['cidr'], $ip))->count())
                 ->filter(fn ($network) => collect($local)->contains(fn ($ip) => self::contains($network['cidr'], $ip)))->keys()->first();
             $host = (string) parse_url(url('/'), PHP_URL_HOST);
-            $this->node('server', 'server', 'Laravel-MDM', in_array($host, ['localhost', '127.0.0.1', '[::1]'], true) ? $serverSite : $host, 'fas fa-shield-virus', 'success', badges: [__('this server')], extra: ['group' => $serverSite]);
+            $this->node('server', 'server', 'HeimGuard', in_array($host, ['localhost', '127.0.0.1', '[::1]'], true) ? $serverSite : $host, 'fas fa-shield-virus', 'success', badges: [__('this server')], extra: ['group' => $serverSite]);
             $this->edge($network ?? 'site:'.$serverSite, 'server', $network ? 'lan' : 'uplink', true);
         }
 

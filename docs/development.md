@@ -7,7 +7,7 @@ changes are in [`CLAUDE.md`](../CLAUDE.md), the data model in [data-model.md](da
 
 | Area | Where |
 |---|---|
-| Agent (one PowerShell 7 script, Windows and Linux) | `src/powershell/app.ps1`, version in `$AgentVersion` (line ~137), read by `App\Support\AgentScript::version()` |
+| Agent (one PowerShell 7 script, Windows and Linux) | `src/powershell/app.ps1`, version in `$AgentVersion` (line ~137), read by `App\Support\AgentScript::version()`; names of the installation in `$AgentName`, `$AgentService`, `$DefaultAgentDir` (HeimGuard; `$Legacy*` = Laravel-MDM of agents before 1.32.0, moved by `Start-AgentMigration` / `Complete-AgentMigration`) |
 | Background jobs of the agent | `Start-AgentJob -Name inventory / health / security / scan / portscan / updates -Functions ...`: a function a job calls must be in its `-Functions` list |
 | Agent API (signed requests) | `src/laravel/routes/api.php`: `/device` (report), `/device/heartbeat`, `/device/commands/take`, `/device/commands/{id}` (progress, result), `/device/security`, `/device/scripts` |
 | Device model | `app/Models/Device.php`: platform, type, updates (`updates`, `apps_packages_updates`, `moduleUpdates`), `*_VERSION` constants that gate commands |
