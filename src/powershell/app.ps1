@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.32.0'
+$AgentVersion = '1.33.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -846,12 +846,12 @@ function Install-PowerShellRelease {
             }
             Remove-Item -Path "$dir.mdm-old" -Recurse -Force -ErrorAction SilentlyContinue
         } else {
-            $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/quiet', '/norestart') -Wait -PassThru
+            $msiCode = Invoke-Msiexec -File $file -Display '/quiet'
             # 3010: installed, a restart completes it.
-            if ($process.ExitCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec exit $($process.ExitCode)"); return }
+            if ($msiCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec $(if ($msiCode -eq -1) { 'did not finish within 30 minutes and was ended' } else { "exit $msiCode" })"); return }
             # Files in use (the agent runs from this installation) are replaced only by the restart: until then the
             # directory mixes both releases and pwsh can crash (ParseCommandLine). It is not started before the restart.
-            $pending = $process.ExitCode -eq 3010 -or (Test-PendingFileRename -Path $dir)
+            $pending = $msiCode -eq 3010 -or (Test-PendingFileRename -Path $dir)
             if ($pending) {
                 "PowerShell ${Version}: installed, the restart of the device finishes it"
                 $State.Restart = $true
@@ -961,10 +961,10 @@ function Install-ChromeRelease {
         }
         "Google Chrome: $asset downloaded, signed by Google LLC"
 
-        $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/qn', '/norestart') -Wait -PassThru
+        $msiCode = Invoke-Msiexec -File $file -Display '/qn'
         # 3010: installed, a restart completes it.
-        if ($process.ExitCode -notin 0, 3010) {
-            [void]$State.Failures.Add("Google Chrome ${Version}: msiexec exit $($process.ExitCode)")
+        if ($msiCode -notin 0, 3010) {
+            [void]$State.Failures.Add("Google Chrome ${Version}: msiexec $(if ($msiCode -eq -1) { 'did not finish within 30 minutes and was ended' } else { "exit $msiCode" })")
             return
         }
         $after = Get-ChromeInstall
@@ -984,6 +984,30 @@ function Install-ChromeRelease {
     finally {
         Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Invoke-Msiexec {
+    # msiexec /i with a time limit: an installer that waits for a window or a locked file never ends by
+    # itself and would keep the update job, and every update after it, waiting for good. Returns the exit
+    # code, -1 when it was ended after the limit.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $File,
+        [string]
+        $Display = '/qn',
+        [int]
+        $TimeoutMinutes = 30
+    )
+
+    $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$File`"", $Display, '/norestart') -PassThru
+    # Without the handle ExitCode stays empty in Windows PowerShell.
+    $null = $process.Handle
+    if (-not $process.WaitForExit($TimeoutMinutes * 60000)) {
+        & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null
+        return -1
+    }
+    return $process.ExitCode
 }
 
 function Test-PendingReboot {
@@ -3121,7 +3145,7 @@ function Initialize-ServerKey {
     if (-not $key) {
         $key = $embedded
         if (-not $key) {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri "$($ServerUrl.TrimEnd('/'))/agent/signing-key"
+            $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri "$($ServerUrl.TrimEnd('/'))/agent/signing-key"
             $announced = $response.Content | ConvertFrom-Json
             $key = @{ n = $announced.n; e = $announced.e }
         }
@@ -3642,10 +3666,15 @@ function Write-AgentLog {
     )
 
     $LogPath = "$AgentDir/agent.log"
-    if ((Test-Path -Path $LogPath) -and (Get-Item -Path $LogPath).Length -gt 1MB) {
-        Move-Item -Path $LogPath -Destination "$LogPath.1" -Force
+    try {
+        if ((Test-Path -Path $LogPath) -and (Get-Item -Path $LogPath).Length -gt 1MB) {
+            Move-Item -Path $LogPath -Destination "$LogPath.1" -Force
+        }
+        "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message | Add-Content -Path $LogPath -Encoding UTF8
     }
-    "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message | Add-Content -Path $LogPath -Encoding UTF8
+    catch {
+        # A full disk or a file another process holds: the message is still counted for the server below.
+    }
     if ($IsError -or ($ErrorRecord -and -not (Test-NetworkError -ErrorRecord $ErrorRecord))) {
         Add-AgentError -Message $Message
     }
@@ -4414,6 +4443,28 @@ function Start-AgentJob {
     }
 }
 
+function Test-JobOverdue {
+    # A background collection that runs much longer than it should is hung (a tool that waits for ever, a
+    # COM call that does not return): until it ends nothing new is collected. Reported once per job as an
+    # error of the agent (an alert of the device); a restart of the agent ends the job.
+    param (
+        $Job,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Label,
+        [Parameter(Mandatory = $true)]
+        [int]
+        $Minutes
+    )
+
+    if (-not $Job -or $Job.State -ne 'Running' -or $Job.PSBeginTime -isnot [datetime]) { return }
+    if (((Get-Date) - $Job.PSBeginTime).TotalMinutes -lt $Minutes) { return }
+    if (-not $script:OverdueJobs) { $script:OverdueJobs = @{} }
+    if ($script:OverdueJobs.ContainsKey($Job.Id)) { return }
+    $script:OverdueJobs[$Job.Id] = $true
+    Write-AgentLog "$Label has been running for more than $Minutes minutes, it may be stuck (restarting the agent ends it)" -IsError
+}
+
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
     return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-BadPowerShellVersions', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
@@ -4473,7 +4524,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
@@ -4805,7 +4856,7 @@ function Send-Report {
 
     $response = Invoke-MdmApi -Method Post -Path 'device' -Body $Data -Token $Token
     # Commands returned here were not delivered over the WebSocket (the server hands them over once).
-    Invoke-DeviceCommands -Response $response
+    if ($response) { Invoke-DeviceCommands -Response $response }
     if ($response.scripts_pending) {
         $script:ScriptsRequested = $true
     }
@@ -5924,7 +5975,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6701,15 +6752,36 @@ function Invoke-DeviceCommands {
     if ($Response.PSObject.Properties['tasks']) {
         foreach ($task in @($Response.tasks)) {
             if ($task -and $task.command) {
-                Invoke-DeviceCommand -Command $task.command -Id $task.id -Params $task.params
+                Invoke-DeviceCommandSafely -Command $task.command -Id $task.id -Params $task.params
             }
         }
         return
     }
     foreach ($command in @($Response.commands)) {
         if ($command) {
-            Invoke-DeviceCommand -Command $command
+            Invoke-DeviceCommandSafely -Command $command
         }
+    }
+}
+
+function Invoke-DeviceCommandSafely {
+    # An error of one command is logged and reported as its result: the commands after it in the same
+    # response were taken from the server too (they would wait for their timeout), and the connection
+    # is not reset for it.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Command,
+        $Id,
+        $Params
+    )
+
+    try {
+        Invoke-DeviceCommand -Command $Command -Id $Id -Params $Params
+    }
+    catch {
+        Write-AgentLog "Command '$Command'$(if ($Id) { " ($Id)" }) failed: $($_.Exception.Message)" -ErrorRecord $_
+        if ($Id) { [void](Send-CommandStatus -Id $Id -Status failed -Message "Failed: $($_.Exception.Message)") }
     }
 }
 
@@ -6757,7 +6829,20 @@ function Start-Realtime {
 
     $socket = New-Object System.Net.WebSockets.ClientWebSocket
     $socket.Options.KeepAliveInterval = [TimeSpan]::FromSeconds(30)
-    $socket.ConnectAsync([Uri]$uri, [System.Threading.CancellationToken]::None).GetAwaiter().GetResult() | Out-Null
+    # A server (or a proxy) that accepts the connection and never answers the handshake would hold the
+    # whole agent, the heartbeat included: the attempt ends after 30 s.
+    $limit = New-Object System.Threading.CancellationTokenSource
+    try {
+        $limit.CancelAfter(30000)
+        $socket.ConnectAsync([Uri]$uri, $limit.Token).GetAwaiter().GetResult() | Out-Null
+    }
+    catch {
+        $socket.Dispose()
+        throw
+    }
+    finally {
+        $limit.Dispose()
+    }
     Write-AgentLog "WebSocket connected to $uri"
 
     return @{ Socket = $socket; Config = $config; Subscribed = $false }
@@ -6794,6 +6879,11 @@ function Receive-WsMessage {
         $Realtime.Message = New-Object System.IO.MemoryStream
     }
     $Realtime.Message.Write($Realtime.Buffer, 0, $result.Count)
+    # Messages of the server are a few kB: one that never ends is a broken or hostile connection.
+    if ($Realtime.Message.Length -gt 1MB) {
+        $Realtime.Message = $null
+        throw (New-Object System.Net.WebSockets.WebSocketException 'WebSocket message is larger than 1 MB')
+    }
 
     if (-not $result.EndOfMessage) {
         return $null
@@ -6855,7 +6945,7 @@ function Invoke-RealtimeMessage {
                 return
             }
             $response = Invoke-MdmApi -Method Post -Path 'device/commands/take' -Token $Token -Body @{}
-            Invoke-DeviceCommands -Response $response
+            if ($response) { Invoke-DeviceCommands -Response $response }
         }
     }
 }
@@ -7333,9 +7423,13 @@ function Start-Agent {
             }
             if (-not $inventoryJob -and (Get-Date) -ge $nextInventory) {
                 Write-AgentLog 'Inventory collection started'
-                $inventoryJob = Start-InventoryCollection
                 $nextInventory = (Get-Date).AddSeconds($InventoryInterval)
+                $inventoryJob = Start-InventoryCollection
             }
+
+            Test-JobOverdue -Job $inventoryJob -Label 'The inventory collection' -Minutes 180
+            Test-JobOverdue -Job $healthJob -Label 'The disk health collection' -Minutes 60
+            Test-JobOverdue -Job $securityJob -Label 'The security collection' -Minutes 120
 
             if ($healthJob -and $healthJob.State -ne 'Running') {
                 if ($healthJob.State -eq 'Completed') {
@@ -7350,8 +7444,8 @@ function Start-Agent {
                 $healthJob = $null
             }
             if (-not $healthJob -and (Get-Date) -ge $nextHealth) {
-                $healthJob = Start-HealthCollection -Previous $health.Data
                 $nextHealth = (Get-Date).AddSeconds($HealthInterval)
+                $healthJob = Start-HealthCollection -Previous $health.Data
             }
 
             if ($securityJob -and $securityJob.State -ne 'Running') {
@@ -7376,10 +7470,10 @@ function Start-Agent {
                 $state = Get-SecurityState
                 $since = if ($state -and $state.Since -gt (Get-Date).AddDays(-1)) { $state.Since } else { (Get-Date).AddDays(-1) }
                 $securityStarted = Get-Date
+                $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
                 $sendLogs = (Get-SecurityLogsLevel) -eq 'on'
                 $policy = if ($sendLogs) { Get-SecurityPolicy -Token $Token } else { $null }
                 $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
-                $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
             }
 
             if ($script:SyncRequest -and $script:SyncRequest.Phase -eq 'collecting' -and $script:SyncRequest.InventoryDone -and -not $healthJob) {
