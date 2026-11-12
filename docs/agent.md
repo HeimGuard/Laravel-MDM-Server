@@ -157,6 +157,22 @@ to change) are shown with an icon and do not count as available updates. The lis
 collected again a few minutes after packages are installed outside the agent (apt,
 unattended-upgrades).
 
+## Reliability
+
+- **Time limits:** every request of the agent, the WebSocket connection attempt (30 s, agents 1.33.0+), the installers
+  (`msiexec` of the PowerShell release and Chrome end after 30 minutes, 1.33.0+; every winget installation after 15) and
+  the scripts have one, so no single step holds the heartbeat or the updates for good. A collection (inventory,
+  disk health, security) that runs for hours is reported as an error of the agent, which shows as an alert of the
+  device (1.33.0+); restarting the agent ends it.
+- **One failed command does not drop the others:** the commands of one response are all taken from the server, an error
+  in one is reported as its result and the next one runs (1.33.0+).
+- **Files are written as a whole (agents 1.33.1+):** `config.json`, the caches (`inventory.json`, `health.json`), the
+  state files, the backlogs and the new agent itself are written to a temporary file that then replaces the
+  file, so a power loss never leaves half a file. Keys and tokens are created readable by `SYSTEM` / root and
+  administrators only, before the first byte is written. File names and formats did not change.
+- **Parameters of commands** are checked again on the device (kinds, id patterns, no control characters) and only
+  ever passed as arguments, never as code.
+
 ## Signed communication
 
 Agents 1.7.0 and newer sign everything they send and accept only what the server signed. The
