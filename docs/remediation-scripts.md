@@ -32,6 +32,12 @@ script in the form are sent, nothing about the devices. Without the AI set up th
 | `MDM_AI_MODEL` | default `claude-opus-5-5` / `gpt-5` |
 | `MDM_AI_URL` | another endpoint; with `openai` any server with the Chat Completions API and structured outputs (Ollama, LM Studio, vLLM, OpenRouter), e.g. `http://ollama:11434/v1/chat/completions`, where the key is optional |
 
+**Explain with AI** on a finding of the security scanner (Security tab of a device, Security page) shows
+under it what the finding means, how urgent it is and what to do, in the language of the user (plain
+text, not stored; clicking again hides it). The same description of the finding as for **Remediate
+with AI** is sent: the rule, the message, the CVEs, the hint, the references, the platform and the
+operating system.
+
 The code is entered as text and stored byte for byte. Its **fingerprint** (SHA-256 over the
 platform, the timeout and the hashes of both scripts) changes with every code change, and a new
 version is created. **Run** opens a list of the devices with checkboxes. Devices on another

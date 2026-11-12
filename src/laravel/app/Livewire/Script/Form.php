@@ -4,7 +4,8 @@ namespace App\Livewire\Script;
 
 use App\Models\Script;
 use App\Support\PowerShellCheck;
-use App\Support\ScriptGenerator;
+use App\Services\AiService;
+use App\Services\ScriptGeneratorService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Component;
@@ -117,7 +118,7 @@ class Form extends Component
         Gate::authorize('is-system-admin');
         $this->validate(['aiPrompt' => 'required|string|max:4000']);
         try {
-            $script = ScriptGenerator::generate($this->aiPrompt, [
+            $script = ScriptGeneratorService::generate($this->aiPrompt, [
                 'name' => $this->name, 'description' => $this->description, 'platform' => $this->platform, 'timeout' => $this->timeout,
                 'detection' => $this->detection, 'remediation' => $this->remediation, 'manual_remediation' => $this->manualRemediation,
             ]);
@@ -143,7 +144,7 @@ class Form extends Component
     {
         return view('livewire.script.form', [
             'script' => Script::find($this->scriptId),
-            'aiAvailable' => ScriptGenerator::available(),
+            'aiAvailable' => AiService::available(),
         ]);
     }
 }

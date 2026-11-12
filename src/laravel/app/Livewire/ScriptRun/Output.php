@@ -4,7 +4,7 @@ namespace App\Livewire\ScriptRun;
 
 use App\Models\Script;
 use App\Models\ScriptRun;
-use App\Support\ScriptGenerator;
+use App\Services\ScriptGeneratorService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
@@ -52,7 +52,7 @@ class Output extends Component
             ."\n\nChange the script so that this does not happen again: fix what the error and the output show, keep what works and do not make it do more than it did. Keep the exit codes: the detection ends with exit 0 and exit 1.";
 
         try {
-            $generated = ScriptGenerator::checked(ScriptGenerator::generate($request, [
+            $generated = ScriptGeneratorService::checked(ScriptGeneratorService::generate($request, [
                 'name' => $script->name, 'description' => $script->description, 'platform' => $script->platform, 'timeout' => $script->timeout,
                 'detection' => $script->detection, 'remediation' => $script->remediation, 'manual_remediation' => $script->manual_remediation,
             ]));
