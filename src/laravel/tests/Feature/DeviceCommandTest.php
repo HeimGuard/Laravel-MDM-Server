@@ -248,7 +248,12 @@ class DeviceCommandTest extends TestCase
             ->assertHasErrors('update')
             ->call('installUpdate', 'app', 0, 'Git.Git')
             ->call('installUpdate', 'os', 0, '6f0a4b2e-1c3d-4e5f-8a9b-0c1d2e3f4a5b')
-            ->assertSee('Update Git.Git');
+            // Its row looks like a row of "Install all": Queued until the agent runs it (the command and its state in the tooltip), then Installing with its percent.
+            ->assertSee('Update Git.Git · Waiting for the device')
+            ->assertSeeHtml('<i class="far fa-clock me-1"></i>Queued');
+        $device->commands()->where('target', 'like', 'winget%')->update(['status' => 'running', 'progress' => 40]);
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id, 'tab' => 'updates'])
+            ->assertSee('Installing 40 %');
 
         $this->assertSame(['winget:Git.Git', 'windows:6f0a4b2e-1c3d-4e5f-8a9b-0c1d2e3f4a5b'], $device->commands()->orderBy('id')->pluck('target')->map(fn ($target) => str_replace(':', '', substr($target, 0, strpos($target, ':'))).':'.explode(':', $target)[2])->all());
     }
