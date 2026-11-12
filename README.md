@@ -53,13 +53,14 @@ Details: [Installing the agent](docs/installation.md).
 |---|---|
 | [Server](docs/server.md) | Setup, Docker, MySQL, real-time WebSocket, PWA |
 | [Installing the agent](docs/installation.md) | Install, parameters, `config.json`, checking, uninstalling |
-| [Agent]mdm(docs/agent.md) | How it works, feature matrix, signed communication |
+| [Agent](docs/agent.md) | How it works, feature matrix, signed communication |
 | [Alerts and notifications](docs/alerts.md) | Smart alerts, agent errors, rules, notification channels |
 | [Devices](docs/devices.md) | Tags, Wake-on-LAN, ping-only devices |
 | [Networks](docs/networks.md) | Network map and discovery of unknown devices |
 | [Remediation scripts](docs/remediation-scripts.md) | Detection and remediation in PowerShell |
 | [Security scanner](docs/security-scanner.md) | Inventory, logs, parsers and detection rules |
 | [Dashboard](docs/dashboard.md) | Configurable dashboards and widgets |
+| [Development](docs/development.md) | Map of the code, the update flow, tests and their pitfalls |
 
 ## Screenshots
 
