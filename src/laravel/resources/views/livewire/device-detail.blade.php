@@ -223,7 +223,7 @@
                 <button aria-controls="agent-tab-pane" aria-selected="{{ $activeTab === 'agent' ? 'true' : 'false' }}" class="nav-link {{ $activeTab === 'agent' ? 'active' : '' }}" x-on:click="$wire.set('tab', 'agent')" data-bs-target="#agent-tab-pane" data-bs-toggle="tab" id="agent-tab" role="tab" type="button">
                     <i class="fas fa-robot me-2"></i>{{ __('Agent') }}
                     @if (!empty($selectedDevice->data) && ($selectedDevice->agentOutdated || ! $selectedDevice->signsRequests))
-                        @php($agentWarning = $selectedDevice->agentOutdated ? __('A newer agent is available') : __('Unsigned agent'))
+                        @php $agentWarning = $selectedDevice->agentOutdated ? __('A newer agent is available') : __('Unsigned agent'); @endphp
                         <i aria-label="{{ $agentWarning }}" class="fas fa-exclamation-triangle text-warning ms-1" role="img" title="{{ $agentWarning }}"></i>
                     @endif
                 </button>
