@@ -79,17 +79,18 @@ COPY --from=assets --chown=app:app /build/public/build ./public/build
 # Served at /agent/app.ps1 for the install commands.
 COPY --chown=app:app src/powershell/app.ps1 ./resources/agent/app.ps1
 
-# /usr/share/laravel-mdm-database: pristine copy the entrypoint restores migrations from when a
+# /usr/share/heimguard-database: pristine copy the entrypoint restores migrations from when a
 # volume is mounted over database/.
 RUN rm -rf tests .env .env.example phpunit.xml \
     && php artisan package:discover --ansi \
     && ln -sfn /var/www/storage/app/public public/storage \
     && chown -R app:app bootstrap/cache storage \
-    && cp -a database /usr/share/laravel-mdm-database
+    && cp -a database /usr/share/heimguard-database
 
 USER app
 
-ENV APP_ENV=production \
+ENV APP_NAME=HeimGuard \
+    APP_ENV=production \
     APP_DEBUG=false \
     REVERB_ENABLED=true \
     SCHEDULER_ENABLED=true \

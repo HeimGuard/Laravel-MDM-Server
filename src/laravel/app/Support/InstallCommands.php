@@ -27,13 +27,13 @@ class InstallCommands
         return [
             // Windows PowerShell 5.1, run as Administrator.
             'windows' => sprintf(
-                'iwr -useb \'%s\' -OutFile ($f = "$env:TEMP\mdm-agent-$(Get-Random).ps1"); if ($?) { & powershell -ExecutionPolicy Bypass -File $f %s }',
+                'iwr -useb \'%s\' -OutFile ($f = "$env:TEMP\heimguard-agent-$(Get-Random).ps1"); if ($?) { & powershell -ExecutionPolicy Bypass -File $f %s }',
                 $scriptUrl,
                 $arguments,
             ),
             // PowerShell 7 on Windows (as Administrator) or Linux (sudo pwsh).
             'pwsh' => sprintf(
-                'iwr -useb \'%s\' -OutFile ($f = Join-Path ([IO.Path]::GetTempPath()) "mdm-agent-$(Get-Random).ps1"); if ($?) { & pwsh -ExecutionPolicy Bypass -File $f %s }',
+                'iwr -useb \'%s\' -OutFile ($f = Join-Path ([IO.Path]::GetTempPath()) "heimguard-agent-$(Get-Random).ps1"); if ($?) { & pwsh -ExecutionPolicy Bypass -File $f %s }',
                 $scriptUrl,
                 $arguments,
             ),

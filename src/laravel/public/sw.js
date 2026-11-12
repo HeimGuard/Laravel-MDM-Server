@@ -1,4 +1,4 @@
-// Laravel-MDM service worker: makes the portal installable as an app. Everything comes from the
+// HeimGuard service worker: makes the portal installable as an app. Everything comes from the
 // network (device data is live); only when it is not reachable, a page says so.
 const CACHE = 'mdm-offline-v1';
 const OFFLINE = '/offline.html';
