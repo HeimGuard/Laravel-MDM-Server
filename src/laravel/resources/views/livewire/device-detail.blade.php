@@ -57,7 +57,7 @@
                     @else
                         {{-- Renamed from the device menu (⋯). --}}
                         <h2 class="d-flex align-items-center gap-3 mb-2 text-break">
-                            <span class="icon-tile icon-tile-lg bg-primary-subtle text-primary-emphasis" title="{{ __(ucfirst($selectedDevice->type)) }}"><i class="{{ $selectedDevice->typeIcon }}"></i></span>
+                            <x-icon-tile :icon="$selectedDevice->typeIcon" size="lg" title="{{ __(ucfirst($selectedDevice->type)) }}" tone="primary" />
                             <span class="min-w-0">{{ $selectedDevice->DisplayName }}</span>
                         </h2>
                     @endif
@@ -274,9 +274,7 @@
                     @if ($diskHealth !== null)
                         <h6 class="{{ empty($selectedDevice->drives) ? '' : 'mt-4 pt-3 border-top' }} mb-3"><i class="fas fa-heartbeat me-2 text-muted"></i>{{ __('Disk health') }}</h6>
                     @if ($diskHealth['error'])
-                        <div class="alert alert-warning mb-3" role="alert">
-                            <i class="fas fa-heartbeat me-2"></i>{{ $diskHealth['error'] }}
-                        </div>
+                        <x-notice icon="fas fa-heartbeat" type="warning">{{ $diskHealth['error'] }}</x-notice>
                     @endif
                     @if (count($diskHealth['disks']) > 0)
                         <div class="row g-3">
@@ -344,10 +342,10 @@
                 <div aria-labelledby="updates-tab" class="tab-pane fade {{ $activeTab === 'updates' ? 'show active' : '' }}" id="updates-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'updates')
                     @if ($selectedDevice->data->os_updates_error ?? null)
-                        <div class="alert alert-warning small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</div>
+                        <x-notice type="warning">{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</x-notice>
                     @endif
                     <div class="d-flex align-items-center gap-2 mb-3">
-                        <input class="form-control form-control-sm flex-grow-1 min-w-0" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
+                        <x-search-input class="flex-grow-1 min-w-0" x-model="search" />
                         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
                             @if ($updatesRunning)
                                 <div style="min-width: 14rem;">@include('partials.device.command-progress', ['command' => $updatesRunning])</div>
@@ -359,7 +357,7 @@
                         </div>
                     </div>
                     @error('update')
-                        <div class="alert alert-danger py-2 small">{{ $message }}</div>
+                        <x-notice type="danger">{{ $message }}</x-notice>
                     @enderror
                     @unless ($selectedDevice->commandTracking)
                         <p class="small text-muted">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
@@ -459,7 +457,7 @@
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
                             <li class="list-group-item d-flex align-items-start gap-3">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-globe"></i></span>
+                                <x-icon-tile icon="fas fa-globe" tone="primary" />
                                 <div class="flex-grow-1 min-w-0">
                                     <div class="fw-semibold">{{ __('Public address') }}</div>
                                     <div class="small text-muted">{{ __('The address the device reaches the server from, behind NAT the one of its router.') }}</div>
@@ -470,7 +468,7 @@
                         @foreach (\App\Models\Device::sortNetworks($selectedDevice->networks) as $network)
                             @php $type = \App\Models\Device::NETWORK_TYPES[$network['Type']]; @endphp
                             <li class="list-group-item d-flex align-items-start gap-3 {{ $network['Connected'] ? '' : 'text-body-secondary' }}" wire:key="network-{{ $loop->index }}">
-                                <span class="icon-tile {{ $network['Connected'] ? 'bg-primary-subtle text-primary-emphasis' : '' }}" title="{{ __($type['label']) }}"><i class="{{ $type['icon'] }}"></i></span>
+                                <x-icon-tile :icon="$type['icon']" title="{{ __($type['label']) }}" :tone="$network['Connected'] ? 'primary' : null" />
                                 <div class="flex-grow-1 min-w-0">
                                     {{-- Name and type in one line that wraps; the state is on the right of the row. --}}
                                     <div class="d-flex flex-wrap align-items-center column-gap-2 row-gap-1">
@@ -493,9 +491,8 @@
                                     @endif
                                 </div>
                                 {{-- On phones only the icon (its text in the tooltip). --}}
-                                <span class="flex-shrink-0 small text-nowrap {{ $network['Connected'] ? 'text-success' : 'text-body-secondary' }}" title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">
-                                    <i class="fas {{ $network['Connected'] ? 'fa-check-circle' : 'fa-times-circle' }}"></i><span class="d-none d-sm-inline ms-1">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</span>
-                                </span>
+                                <x-status-label class="flex-shrink-0" compact :icon="$network['Connected'] ? 'fas fa-check-circle' : 'fas fa-times-circle'" :tone="$network['Connected'] ? 'success' : 'muted'"
+                                    title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</x-status-label>
                             </li>
                         @endforeach
                     </ul>
@@ -507,7 +504,7 @@
                 <div aria-labelledby="services-tab" class="tab-pane fade {{ $activeTab === 'services' ? 'show active' : '' }}" id="services-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'services')
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-                        <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
+                        <x-search-input x-model="search" />
                         <span class="small text-muted ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
                     </div>
                     <div class="table-responsive">
@@ -549,12 +546,10 @@
                 <div aria-labelledby="docker-tab" class="tab-pane fade {{ $activeTab === 'docker' ? 'show active' : '' }}" id="docker-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'docker')
                     @if ($docker['error'])
-                        <div class="alert alert-warning mb-3" role="alert">
-                            <i class="fab fa-docker me-2"></i>{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}
-                        </div>
+                        <x-notice icon="fab fa-docker" type="warning">{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}</x-notice>
                     @endif
                     @if (count($docker['containers']) > 0)
-                        <input class="form-control form-control-sm mb-3" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
+                        <x-search-input class="mb-3" x-model="search" />
                         <div class="table-responsive">
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
@@ -733,7 +728,7 @@
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-robot"></i></span>
+                                <x-icon-tile icon="fas fa-robot" tone="primary" />
                                 <span class="fw-semibold">{{ __('Agent') }}</span>
                             </div>
                             <div class="{{ $row }}">
@@ -761,7 +756,7 @@
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile {{ $selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'bg-success-subtle text-success-emphasis' : '' }}"><i class="fas fa-plug"></i></span>
+                                <x-icon-tile icon="fas fa-plug" :tone="$selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'success' : null" />
                                 <span class="fw-semibold">{{ __('Connection') }}</span>
                             </div>
                             <div class="{{ $row }}">
@@ -785,7 +780,7 @@
                     <div class="col-12">
                         <div class="card card-body">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-sliders-h"></i></span>
+                                <x-icon-tile icon="fas fa-sliders-h" tone="primary" />
                                 <span class="fw-semibold me-auto">{{ __('Features') }}</span>
                                 <span class="small text-body-secondary">{{ __(':on of :count on', ['on' => collect($features)->where('on', true)->count(), 'count' => count($features)]) }}</span>
                             </div>
@@ -810,7 +805,7 @@
                     <div class="col-12">
                         <div class="card card-body h-100">
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile {{ $selectedDevice->signsRequests ? 'bg-success-subtle text-success-emphasis' : 'bg-warning-subtle text-warning-emphasis' }}"><i class="fas {{ $selectedDevice->signsRequests ? 'fa-lock' : 'fa-unlock' }}"></i></span>
+                                <x-icon-tile :icon="$selectedDevice->signsRequests ? 'fas fa-lock' : 'fas fa-unlock'" :tone="$selectedDevice->signsRequests ? 'success' : 'warning'" />
                                 <span class="fw-semibold">{{ __('Security') }}</span>
                                 @can('is-system-admin')
                                     @if ($selectedDevice->signsRequests)

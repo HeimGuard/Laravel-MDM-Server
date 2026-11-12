@@ -5,7 +5,7 @@
     <div class="row g-4">
         <div class="col-12 col-lg-7">
             @if ($readOnly)
-                <div class="alert alert-info small py-2">{{ __('A built-in rule: switch it off in the list, or copy it to change it.') }}</div>
+                <x-notice>{{ __('A built-in rule: switch it off in the list, or copy it to change it.') }}</x-notice>
             @endif
             {{-- Ace editor (steelants/form) like the remediation scripts; it grows with the text. --}}
             <div x-init="$nextTick(() => $el.querySelector('.ace-editor')?.env?.editor?.setOptions({ minLines: 14, maxLines: 28, showPrintMargin: false, readOnly: @js($readOnly) }))">

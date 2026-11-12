@@ -25,10 +25,10 @@
     @endphp
 
     @if ($remediateError ?? null)
-    <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+    <x-notice type="danger">{{ $remediateError }}</x-notice>
 @endif
 @if ($remediateDone ?? null)
-    <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+    <x-notice type="success">{{ $remediateDone }}</x-notice>
 @endif
 {{-- Side by side also on a phone: they share the width (a long label wraps inside its button). --}}
 <div class="d-flex justify-content-end gap-2 mb-2">
@@ -45,7 +45,7 @@
             @forelse ($findings as $finding)
                 @include('livewire.security-scan.partials.finding', ['finding' => $finding, 'showDevice' => false])
             @empty
-                <div class="list-group-item text-muted py-3"><i class="fas fa-shield-alt text-success me-2"></i>{{ $acknowledged->isEmpty() ? __('No findings.') : __('Nothing needs attention.') }}</div>
+                <x-empty-state icon="fas fa-shield-alt text-success">{{ $acknowledged->isEmpty() ? __('No findings.') : __('Nothing needs attention.') }}</x-empty-state>
             @endforelse
         </div>
     </div>
@@ -70,7 +70,7 @@
     @else
         <div class="d-flex align-items-center mb-2">
             <div class="fw-medium me-auto">{{ __('What the agent reports') }}</div>
-            <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 16rem;" type="search" x-model="search">
+            <x-search-input x-model="search" />
         </div>
         <div class="d-flex flex-column gap-2">
             @foreach ($lists as $key => [$label, $count])
@@ -108,7 +108,7 @@
                                                 <td class="d-none d-lg-table-cell text-break text-muted">{{ $event->message }}</td>
                                             </tr>
                                         @empty
-                                            <tr><td class="text-muted">{{ __('No events.') }}</td></tr>
+                                            <x-empty-state colspan="6">{{ __('No events.') }}</x-empty-state>
                                         @endforelse
                                     </tbody>
                                 </table>

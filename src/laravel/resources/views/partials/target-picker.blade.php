@@ -40,7 +40,7 @@
                     <x-tags class="justify-content-end" :tags="$pickerDevice->tagList" />
                 </label>
             @empty
-                <div class="list-group-item text-muted small">{{ __('No devices.') }}</div>
+                <x-empty-state class="small">{{ __('No devices.') }}</x-empty-state>
             @endforelse
         </div>
     @endif

@@ -5,7 +5,7 @@
     </p>
 
     <div class="d-flex gap-2 mb-2">
-        <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" type="search" x-model="search">
+        <x-search-input :width="null" x-model="search" />
         <button class="btn btn-sm btn-light text-nowrap" type="button" wire:click="$set('selected', {{ json_encode($devices->whereNull('reason')->pluck('id')->map(fn ($id) => (string) $id)->values()) }})">{{ __('Select all') }}</button>
         <button class="btn btn-sm btn-light text-nowrap" type="button" wire:click="$set('selected', [])">{{ __('None') }}</button>
     </div>
@@ -23,7 +23,7 @@
                 @endif
             </label>
         @empty
-            <div class="list-group-item text-muted">{{ __('No devices.') }}</div>
+            <x-empty-state>{{ __('No devices.') }}</x-empty-state>
         @endforelse
     </div>
 

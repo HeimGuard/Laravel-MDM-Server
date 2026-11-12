@@ -18,7 +18,7 @@
 <div class="mt-4">
     @include('partials.chart-section-header', [
         'icon' => 'fas fa-network-wired',
-        'tile' => 'bg-success-subtle text-success-emphasis',
+        'tone' => 'success',
         'title' => e(__('Ping')).' · <span class="font-monospace">'.e($device->ping_address).'</span>',
         'subtitle' => $subtitle,
         'ranges' => array_keys(\App\Livewire\PingMonitor::RANGES),

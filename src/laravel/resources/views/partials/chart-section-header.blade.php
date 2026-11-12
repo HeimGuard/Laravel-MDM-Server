@@ -1,7 +1,7 @@
 {{-- Header of a chart section (performance of an agent, ping of a ping-only device): an icon tile
-     with the title and what the data comes from, the range switch on the right. --}}
+     (x-icon-tile, $tone: primary by default) with the title and what the data comes from, the range switch on the right. --}}
 <div class="d-flex flex-wrap flex-md-nowrap align-items-center gap-3 mb-2">
-    <span class="icon-tile {{ $tile ?? 'bg-primary-subtle text-primary-emphasis' }}"><i class="{{ $icon }}"></i></span>
+    <x-icon-tile :icon="$icon" :tone="$tone ?? 'primary'" />
     <div class="me-auto min-w-0">
         <h2 class="h6 fw-semibold mb-0">{!! $title !!}</h2>
         @if (! empty($subtitle))

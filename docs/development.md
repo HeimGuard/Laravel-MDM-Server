@@ -33,6 +33,23 @@ changes are in [`CLAUDE.md`](../CLAUDE.md), the data model in [data-model.md](da
 - A new PowerShell release is not started before the restart that finishes its MSI (agents 1.31.2+); the modules
   wait for the next run.
 
+## UI components
+
+Anonymous Blade components in `src/laravel/resources/views/components`. Use them instead of writing the markup again;
+other attributes (`class`, `title`, `wire:*`, `x-*`) are passed to the outer element. New texts in them need the
+translations like any other text.
+
+| Component | Props | When |
+|---|---|---|
+| `<x-icon-tile icon="fas fa-robot" tone="primary" />` | `icon`, `tone` (a Bootstrap colour, `null` = neutral grey), `size` (`lg`) | The square icon before the title of a row, a card or an alert (`.icon-tile`) |
+| `<x-notice type="danger">...</x-notice>` | `type` (`danger`, `warning`, `info`, `success`), `icon` (default of the type, `false` for none) | A message inside a page: the error of an action, a hint, a warning about the data. Small, the icon on the left; `role="alert"` for `danger`, otherwise `status` |
+| `<x-search-input x-model="search" />` | `width` (max width, `20rem`; `null` for none); `placeholder` (default `Search`, also the `aria-label`) | The search field above a list or a table |
+| `<x-empty-state>...</x-empty-state>` | `icon`, `colspan` (a table row instead of a `list-group-item`) | The row of an empty list or table, grey and centred |
+| `<x-status-label icon="far fa-clock">...</x-status-label>` | `icon`, `tone` (`muted`, `primary`, `success`, ...), `spinner`, `compact` (on phones only the icon: give a `title`) | Where something stands: Queued, Installing 40 %, Done, Connected |
+
+Also `x-badge` (`color`, `variant="subtle"`, `size`, `icon`), `x-stat`, `x-tag` / `x-tags`, `x-mac`. Grey secondary text
+is `text-body-secondary` (`text-muted` is the older name of the same colour).
+
 ## Tests
 
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)

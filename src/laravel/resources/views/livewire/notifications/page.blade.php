@@ -101,7 +101,7 @@
                     @forelse ($events as $event)
                         @include('livewire.notifications.partials.event', ['event' => $event])
                     @empty
-                        <div class="list-group-item text-muted py-4 text-center">{{ __('Nothing happened yet.') }}</div>
+                        <x-empty-state>{{ __('Nothing happened yet.') }}</x-empty-state>
                     @endforelse
                 </div>
             </div>
@@ -112,7 +112,7 @@
                         <h2 class="h6 fw-semibold text-body-secondary mb-2">{{ __('Firing now') }}</h2>
                         @forelse ($firing as $event)
                             <div class="smart-alert mb-2 {{ $event->rule?->type === 'status' ? 'border-danger-subtle' : 'border-warning-subtle' }}" wire:key="firing-{{ $event->id }}">
-                                <span class="icon-tile {{ $event->rule?->type === 'status' ? 'bg-danger-subtle text-danger-emphasis' : 'bg-warning-subtle text-warning-emphasis' }}"><i class="{{ $event->rule?->icon }}"></i></span>
+                                <x-icon-tile :icon="$event->rule?->icon" :tone="$event->rule?->type === 'status' ? 'danger' : 'warning'" />
                                 <div class="flex-grow-1 min-w-0">
                                     <div>
                                         <a class="fw-semibold text-body" wire:navigate href="{{ route('devices', ['selectedDeviceId' => $event->device_id]) }}">{{ $event->device?->displayName }}</a>
@@ -124,7 +124,7 @@
                             </div>
                         @empty
                             <div class="smart-alert text-muted">
-                                <span class="icon-tile bg-success-subtle text-success-emphasis"><i class="fas fa-check"></i></span>
+                                <x-icon-tile icon="fas fa-check" tone="success" />
                                 <div class="align-self-center">{{ __('All quiet: no alert is firing.') }}</div>
                             </div>
                         @endforelse
@@ -136,10 +136,10 @@
                             <span class="small text-muted">{{ __('Checked every minute') }}</span>
                         </div>
                         @if (! $hasChannels && $rules->isNotEmpty())
-                            <div class="alert alert-warning small py-2 m-3 mb-0">
+                            <x-notice class="m-3 mb-0" type="warning">
                                 {{ __('No e-mail address or URL saved yet: alerts are recorded, but not sent.') }}
                                 <a href="#" wire:click.prevent="$set('tab', 'channels')">{{ __('Add a channel') }}</a>
-                            </div>
+                            </x-notice>
                         @endif
                         <div class="table-responsive">
                             <table class="table align-middle mb-0">
@@ -179,9 +179,7 @@
                                             </td>
                                         </tr>
                                     @empty
-                                        <tr>
-                                            <td class="text-muted small py-4 text-center" colspan="6">{{ __('No alerts yet. Add one, e.g. Status for all devices, or use the bell on a device.') }}</td>
-                                        </tr>
+                                        <x-empty-state colspan="6">{{ __('No alerts yet. Add one, e.g. Status for all devices, or use the bell on a device.') }}</x-empty-state>
                                     @endforelse
                                 </tbody>
                             </table>
@@ -198,7 +196,7 @@
                         <div class="vstack gap-2">
                             @forelse ($channelOptions as $channel => $label)
                                 <div class="d-flex align-items-center gap-2 rounded bg-body-tertiary p-2">
-                                    <span class="icon-tile"><i class="{{ $channel === 'email' ? 'fas fa-envelope' : 'fas fa-paper-plane' }}"></i></span>
+                                    <x-icon-tile :icon="$channel === 'email' ? 'fas fa-envelope' : 'fas fa-paper-plane'" />
                                     <div class="min-w-0">
                                         <div class="fw-medium">{{ $channel === 'email' ? __('E-mail') : \App\Support\Notifier::serviceName($channel) }}</div>
                                         <div class="small text-muted text-truncate">{{ \Illuminate\Support\Str::after($label, ' · ') }}</div>

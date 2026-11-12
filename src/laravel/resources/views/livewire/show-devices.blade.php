@@ -126,7 +126,7 @@
                                     @endif
                                 </a>
                             @empty
-                                <div class="list-group-item text-muted small">{{ $total === 0 ? __('No devices enrolled yet.') : __('No device matches the filters.') }}</div>
+                                <x-empty-state>{{ $total === 0 ? __('No devices enrolled yet.') : __('No device matches the filters.') }}</x-empty-state>
                             @endforelse
                         </div>
                         <div class="d-grid mt-2">

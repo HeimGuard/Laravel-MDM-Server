@@ -53,9 +53,7 @@
         @endif
 
         @if ($scanned === 0)
-            <div class="alert alert-info small" wire:key="security-no-inventory">
-                <i class="fas fa-info-circle me-1"></i>{{ __('No device has sent a security inventory yet: it needs agent :version or newer (collected hourly, or now with Sync).', ['version' => Device::SECURITY_VERSION]) }}
-            </div>
+            <x-notice wire:key="security-no-inventory">{{ __('No device has sent a security inventory yet: it needs agent :version or newer (collected hourly, or now with Sync).', ['version' => Device::SECURITY_VERSION]) }}</x-notice>
         @endif
 
         @if ($tab === 'events')
@@ -77,7 +75,7 @@
                     <option value="7">{{ __('Last 7 days') }}</option>
                     <option value="0">{{ __('All (:days days)', ['days' => SecurityEvent::RETENTION_DAYS]) }}</option>
                 </select>
-                <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" type="search" wire:model.live.debounce.300ms="eventSearch" style="max-width: 20rem">
+                <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" wire:model.live.debounce.300ms="eventSearch" />
                 <span class="small text-muted align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
             </div>
             <div class="card overflow-hidden">
@@ -106,7 +104,7 @@
                                     <td class="d-none d-lg-table-cell small text-muted text-break pe-3">{{ $event->message }}</td>
                                 </tr>
                             @empty
-                                <tr><td class="text-muted small py-4 text-center" colspan="7">{{ __('No events.') }}</td></tr>
+                                <x-empty-state colspan="7">{{ __('No events.') }}</x-empty-state>
                             @endforelse
                         </tbody>
                     </table>
@@ -254,7 +252,7 @@
                         <option value="{{ $level }}">{{ __(ucfirst($level)) }}</option>
                     @endforeach
                 </select>
-                <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" type="search" wire:model.live.debounce.300ms="search" style="max-width: 20rem">
+                <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" wire:model.live.debounce.300ms="search" />
                 @if ($findings->isNotEmpty())
                     <a class="btn btn-sm btn-light ms-auto" href="{{ route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== '')) }}" download title="{{ __('The findings of the filters as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
                 @endif
@@ -265,23 +263,17 @@
                 @endif
             </div>
             @if ($remediateError)
-                <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+                <x-notice type="danger">{{ $remediateError }}</x-notice>
             @endif
 @if ($remediateDone)
-                <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+                <x-notice type="success">{{ $remediateDone }}</x-notice>
             @endif
             <div class="card overflow-hidden">
                 <div class="list-group list-group-flush">
                     @forelse ($findings as $finding)
                         @include('livewire.security-scan.partials.finding', ['finding' => $finding, 'showDevice' => true])
                     @empty
-                        <div class="list-group-item text-muted py-4 text-center">
-                            @if ($status === 'open')
-                                <i class="fas fa-shield-alt text-success me-2"></i>{{ __('Nothing needs attention.') }}
-                            @else
-                                {{ __('Nothing here.') }}
-                            @endif
-                        </div>
+                        <x-empty-state :icon="$status === 'open' ? 'fas fa-shield-alt text-success' : null">{{ $status === 'open' ? __('Nothing needs attention.') : __('Nothing here.') }}</x-empty-state>
                     @endforelse
                 </div>
             </div>

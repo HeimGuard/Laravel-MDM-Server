@@ -8,10 +8,10 @@
         @endif
     </div>
     @if ($fixError)
-        <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $fixError }}</div>
+        <x-notice type="danger">{{ $fixError }}</x-notice>
     @endif
     @if ($run->error)
-        <div class="alert alert-danger small py-2">{{ $run->error }}</div>
+        <x-notice type="danger">{{ $run->error }}</x-notice>
     @endif
     @if ($run->script && in_array($run->status, ['failed', 'error'], true) && \App\Services\AiService::available())
         @can('is-system-admin')
