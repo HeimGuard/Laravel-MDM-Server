@@ -19,7 +19,7 @@
             <ul class="app-nav nav flex-column">
                 @foreach ($mainMenuItems as $item)
                     <li class="nav-item {{ ($item->isActive() || $item->isUse()) ? 'is-active' : '' }}">
-                        <a class="nav-link" href="{{ route($item->route) }}">
+                        <a class="nav-link" href="{{ route($item->route) }}" @if ($item->isActive() || $item->isUse()) aria-current="page" @endif>
                             <i class="nav-link-ico {{ $item->icon }}"></i>
                             <div class="nav-link-title">{{ __($item->title) }}</div>
                             @if ($item->route === 'notifications' && ($firing = \App\Models\AlertEvent::firingCountFor(auth()->user())) > 0)
@@ -33,7 +33,7 @@
                 {{-- The system pages in the same list (system admins only, see GenerateMenus). --}}
                 @foreach ($systemMenuItems as $item)
                     <li class="nav-item {{ ($item->isActive() || $item->isUse()) ? 'is-active' : '' }}">
-                        <a class="nav-link" href="{{ route($item->route) }}">
+                        <a class="nav-link" href="{{ route($item->route) }}" @if ($item->isActive() || $item->isUse()) aria-current="page" @endif>
                             <i class="nav-link-ico {{ $item->icon }}"></i>
                             <div class="nav-link-title">{{ __($item->title) }}</div>
                         </a>

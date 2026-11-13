@@ -11,7 +11,7 @@
                 @endif
             @endforeach
             @if (count($alerts) > 4)
-                <button class="btn btn-sm text-body-secondary align-self-center" type="button" x-on:click="all = !all">
+                <button class="btn btn-sm text-body-secondary align-self-center" type="button" x-bind:aria-expanded="all" x-on:click="all = !all">
                     <span x-show="!all">{{ __('Show all (:count)', ['count' => count($alerts)]) }} <i class="fas fa-chevron-down ms-1"></i></span>
                     <span x-show="all" x-cloak style="display: none">{{ __('Show less') }} <i class="fas fa-chevron-up ms-1"></i></span>
                 </button>

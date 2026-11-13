@@ -8,12 +8,12 @@
                     <input class="form-check-input" type="checkbox" id="autoload-toggle" role="switch" checked>
                     <label class="form-check-label" for="autoload-toggle">{{ __('Auto-load') }}</label>
                 </div>
-                <a href='{{ route('system.log.download', ['file' => $filename]) }}' class="btn btn-primary">
+                <a href='{{ route('system.log.download', ['file' => $filename]) }}' class="btn btn-primary" title="{{ __('Download') }}" aria-label="{{ __('Download') }}">
                     <i class="fa fa-download"></i>
                 </a>
                 <form method="POST" action="{{ route('system.log.delete', ['file' => $filename]) }}" class="d-inline" onsubmit="return confirm('{{ __('Are you sure?') }}')">
                     @csrf
-                    <button type="submit" class="btn btn-danger"><i class="fa fa-trash"></i></button>
+                    <button type="submit" class="btn btn-danger" title="{{ __('Delete') }}" aria-label="{{ __('Delete') }}"><i class="fa fa-trash"></i></button>
                 </form>
             </div>
         </div>

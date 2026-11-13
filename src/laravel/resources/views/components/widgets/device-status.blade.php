@@ -2,7 +2,7 @@
 <div class="card card-body h-100" x-on:mdm-devices-changed.window="$wire.$refresh()">
     <div class="lh-1 mb-3">
         <h5 class="mb-0">{{ $config['name'] }}</h5>
-        <small class="text-body-tertiary">{{ $config['description'] }}</small>
+        <small class="text-body-secondary">{{ $config['description'] }}</small>
     </div>
 
     @if ($total === 0)

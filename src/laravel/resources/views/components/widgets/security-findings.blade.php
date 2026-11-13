@@ -3,7 +3,7 @@
     <div class="d-flex justify-content-between align-items-start gap-2 lh-1 mb-3">
         <div>
             <h5 class="mb-0">{{ $config['name'] }}</h5>
-            <small class="text-body-tertiary">{{ $config['description'] }}</small>
+            <small class="text-body-secondary">{{ $config['description'] }}</small>
         </div>
         <a class="small text-nowrap" href="{{ route('security') }}">{{ __('Open') }}</a>
     </div>

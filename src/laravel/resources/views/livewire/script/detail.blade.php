@@ -25,13 +25,13 @@
             {{-- One group: the buttons wrap together, Run never alone on its own line. --}}
             <div class="d-flex flex-wrap gap-2">
                 <a class="btn btn-secondary" href="{{ route('script.index') }}">
-                    <i class="me-2 fas fa-arrow-left"></i><span>{{ __('Back') }}</span>
+                    <i class="me-1 fas fa-arrow-left"></i><span>{{ __('Back') }}</span>
                 </a>
                 <button class="btn btn-light" type="button" wire:click="edit">
-                    <i class="me-2 fas fa-pen"></i><span>{{ __('Edit') }}</span>
+                    <i class="me-1 fas fa-pen"></i><span>{{ __('Edit') }}</span>
                 </button>
                 <button class="btn btn-light" type="button" wire:click="schedule">
-                    <i class="me-2 fas fa-calendar-alt"></i><span>{{ __('Schedule') }}</span>
+                    <i class="me-1 fas fa-calendar-alt"></i><span>{{ __('Schedule') }}</span>
                 </button>
                 @if ($failedDevices !== [])
                     @php
@@ -41,11 +41,11 @@
                             .(count($failedDevices) > count($shown) ? "\n".__('and :count more', ['count' => count($failedDevices) - count($shown)]) : '');
                     @endphp
                     <button class="btn btn-danger" type="button" wire:click="rerunFailed" wire:confirm="{{ $confirm }}" wire:loading.attr="disabled" wire:target="rerunFailed" title="{{ __('Runs the script again on the devices where its latest run failed') }}">
-                        <i class="me-2 fas fa-redo"></i><span>{{ __('Rerun failed') }} ({{ count($failedDevices) }})</span>
+                        <i class="me-1 fas fa-redo"></i><span>{{ __('Rerun failed') }} ({{ count($failedDevices) }})</span>
                     </button>
                 @endif
                 <button class="btn btn-primary" type="button" wire:click="run">
-                    <i class="me-2 fas fa-play"></i><span>{{ __('Run') }}</span>
+                    <i class="me-1 fas fa-play"></i><span>{{ __('Run') }}</span>
                 </button>
             </div>
         </div>
@@ -93,7 +93,7 @@
                                 <button class="nav-link" role="tab" type="button" x-bind:aria-selected="code === 'remediation'" x-bind:class="{ active: code === 'remediation' }" x-on:click="code = 'remediation'">
                                     <i class="fas fa-wrench me-2"></i>{{ __('Remediation') }}
                                     @if ($script->remediation === null)
-                                        <span class="small text-body-tertiary">({{ __('none') }})</span>
+                                        <span class="small text-body-secondary">({{ __('none') }})</span>
                                     @endif
                                 </button>
                             </li>
@@ -136,7 +136,7 @@
             </div>
         </div>
 
-        <h4 class="mt-4">{{ __('Runs') }}</h4>
+        <h2 class="h6 fw-semibold mt-4 mb-2">{{ __('Runs') }}</h2>
         <div>
             @livewire('script-run.data-table', ['scriptId' => $script->id], key('script-runs-'.$script->id))
         </div>

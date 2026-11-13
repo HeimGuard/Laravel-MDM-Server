@@ -29,7 +29,7 @@
 
     <div class="d-flex justify-content-end">
         <button class="btn btn-primary" type="button" wire:click="start" @disabled(count($selected) === 0)>
-            <i class="fas fa-play me-2"></i>{{ trans_choice('Run on :count device|Run on :count devices', count($selected), ['count' => count($selected)]) }}
+            <i class="fas fa-play me-1"></i>{{ trans_choice('Run on :count device|Run on :count devices', count($selected), ['count' => count($selected)]) }}
         </button>
     </div>
 </div>

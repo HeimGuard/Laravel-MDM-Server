@@ -23,16 +23,12 @@
                         </div>
                         <div class="col-12">
                             @error('token_name')
-                                <span class="invalid-feedback" role="alert">
-                                    <strong>{{ $message }}</strong>
-                                </span>
+                                <div class="small text-danger" role="alert">{{ $message }}</div>
                             @enderror
                         </div>
                         <div class="col-12">
                             @error('expire_at')
-                                <span class="invalid-feedback" role="alert">
-                                    <strong>{{ $message }}</strong>
-                                </span>
+                                <div class="small text-danger" role="alert">{{ $message }}</div>
                             @enderror
                         </div>
                     </form>
@@ -57,10 +53,10 @@
                             <td>{{ $token->last_used_at ??  __('Never')  }}</td>
                             <td>{{ $token->expires_at ??  __('Never') }}</td>
                             <td>
-                                <form action="{{ route('profile.api.remove', ['token_id' => $token->id]) }}" method="post">
+                                <form action="{{ route('profile.api.remove', ['token_id' => $token->id]) }}" method="post" onsubmit="return confirm('{{ __('Are you sure?') }}')">
                                     @method('DELETE')
                                     @csrf
-                                    <input class="btn btn-danger" type="submit" value="{{ __('Remove') }}" />
+                                    <input class="btn btn-sm btn-danger" type="submit" value="{{ __('Remove') }}" />
                                 </form>
                             </td>
                         </tr>

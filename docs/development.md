@@ -80,5 +80,8 @@ Things that have broken tests before:
 - **Seeded rows.** Some tables have rows after the migrations (scripts): count before and after, never expect 0.
 - **The agent version moves.** A test device with an outdated `AgentVersion` gets an "agent outdated" alert; use
   `AgentScript::version()` where the test does not care.
+- **Blade: no inline `@php(...)` in a view that also has `@php ... @endphp` blocks.** Blade pairs every `@php` with the
+  next `@endphp`, so the inline form swallows everything up to the next block (it is printed as raw text and the view
+  fails with `unexpected token "endforeach"`). Write `@php $x = ...; @endphp` on one line, as the views do.
 - A view test that looks for a text (`assertSee`) breaks when the text moves into an attribute; assert the tooltip
   (`title`) then.

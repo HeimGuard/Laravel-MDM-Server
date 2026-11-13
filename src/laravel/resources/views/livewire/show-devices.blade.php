@@ -105,7 +105,7 @@
                                 <a class="list-group-item list-group-item-action d-flex align-items-start gap-2 py-2 {{ $item->id === $selectedDevice?->id ? 'active' : '' }}"
                                     href="{{ route('devices', ['selectedDeviceId' => $item->id]) }}" wire:click.prevent="selectDevice({{ $item->id }})" x-on:click="open = false" wire:key="switch-device-{{ $item->id }}"
                                     @if ($item->id === $selectedDevice?->id) aria-current="true" @endif>
-                                    <span class="device-dot mt-2 {{ $item->offline ? 'is-offline' : 'is-online' }}" title="{{ $item->offline ? __('Offline') : __('Online') }}"></span>
+                                    <span aria-label="{{ $item->offline ? __('Offline') : __('Online') }}" class="device-dot mt-2 {{ $item->offline ? 'is-offline' : 'is-online' }}" role="img" title="{{ $item->offline ? __('Offline') : __('Online') }}"></span>
                                     <span class="min-w-0 flex-grow-1">
                                         <span class="d-block text-truncate fw-medium"><i class="{{ $item->typeIcon }} fa-fw me-1 opacity-75"></i>{{ $item->displayName }}</span>
                                         @if ($item->tagList !== [])
@@ -122,7 +122,7 @@
                                         <i class="fas fa-stream fa-fw text-body-secondary mt-1" title="{{ __('Sends syslog to the server') }}"></i>
                                     @endif
                                     @if ($row['attention'] && ! $item->offline)
-                                        <i class="fas fa-exclamation-circle text-warning mt-1" title="{{ collect($row['flags'])->pluck('label')->implode(', ') }}"></i>
+                                        <i aria-label="{{ collect($row['flags'])->pluck('label')->implode(', ') }}" class="fas fa-exclamation-circle text-warning mt-1" role="img" title="{{ collect($row['flags'])->pluck('label')->implode(', ') }}"></i>
                                     @endif
                                 </a>
                             @empty
