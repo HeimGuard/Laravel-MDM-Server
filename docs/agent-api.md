@@ -64,6 +64,51 @@ the agent treats as "given up, expected"). States of the web: `queued` (waiting 
 | `scanNetwork` | `cidr` of an interface of the agent, /22 or smaller | `running` progress with "N answered", `running` 95, `succeeded` after the report with the ARP table | Network map |
 | `scanPorts` | `ip` (+ `ports` or `all`) in a network of the agent | `running` progress with "N open", `succeeded` after `/device/port-scan` | Host ports on the network map, findings |
 
+## Command outcomes: the specification (proposed, not implemented yet)
+
+**Principle.** A command is not done because the agent says it issued it, but because the web sees its effect. `wake` already
+works like this (the server completes it when the woken device reports); the other commands should too. Today `turnOff` is
+`succeeded` the moment the agent starts the shutdown, `restart` when the agent process is back (a restart of the agent alone
+passes), and `installUpdate` / `doUpdates` when the installer says so (not that the update is gone from the list).
+
+**States.** `queued` > `sent` > `running` > **`verifying`** > `succeeded` | `failed` (and `expired`, `cancelled` as now).
+`verifying` means the agent did its part and the server waits for the proof: it is an active state, it says what it waits
+for and until when. A command that the agent finishes in a way that proves nothing (`turnOff`, `restart`, the installs) ends
+in `verifying`, not in `succeeded`. Old agents that report `succeeded` at once are still verified by the server.
+
+**What the server looks at** (all of it exists today, no new data): heartbeat (every 30 s) and WebSocket, the report (every
+5 min), the answer to the ping of a relay agent, the uptime of the device in the report and the heartbeat (boot time = now minus
+uptime), the update lists of the next inventory.
+
+| Command | Does | OK: the verified effect | Fails when (the text of the web) | Limit |
+|---|---|---|---|---|
+| `wake` | a relay agent sends the magic packet | the device reports (heartbeat or report) or the ping of a relay answers | the agent could not send it (its message); nothing within the limit: "did not come online within 3 minutes" | **3 min** after the packet (today 10) |
+| `turnOff` | the agent shuts the device down | the device is silent: no heartbeat, report or WebSocket for 60 s (a failing ping where a relay pings it) | the agent refused (its message); still active after the limit: "still running 2 minutes after the shutdown command" | **2 min** after the agent confirmed (today: `succeeded` at once) |
+| `restart` | the agent reboots the device | the device is back (heartbeat or report) **and its boot time is after the command** (the uptime counter was reset) | the agent refused; not back in time; back **without a reboot** (boot time before the command): "the agent restarted, the device did not reboot" | 30 min (unchanged) |
+| `installUpdate` | one update is installed | the next inventory (collected right after the install) no longer lists it, or the installed version is at least the offered one | the installer failed (its message); still listed and no restart pending: "installed, but still offered" | as today |
+| `doUpdates` | every offered update is installed | as `installUpdate` for each row; the result names the rows installed, failed and remaining | any row failed or remains: the rows are named (as today, ", restart required" appended) | as today |
+| `updateAgent` | the script is replaced and restarted | the agent reports the target version (as today, incl. the rollback) | rolled back: "version X did not report within 5 minutes" | as today |
+| `sync` | inventory and disk health are collected and reported | a report whose collection time is after the command | none arrived | as today |
+| `pingNow` | the pinging agent pings now | the result arrives | no answer | as today |
+| `scanNetwork`, `scanPorts` | an agent scans | the result report arrives (with the counts) | none arrived | as today |
+| `runScripts` | a trigger only (untracked) | each run has its own result | | |
+
+The limits `wake` 3 min and `turnOff` 2 min are the owner's decision. Two notes on them: a device that boots slowly (a NAS, a
+server with a long firmware check) can need more than 3 minutes, so a limit per device may be needed later; the turn-off check
+uses 60 s of silence and not the 90 s `Device::HEARTBEAT_TIMEOUT` of "offline", because the last heartbeat can be 30 s older than
+the power-off and the shutdown takes 10-40 s: 90 s of silence could come after the 2 minutes.
+
+**What the web shows** for every finished command (the command bar and the history): one line each of what was expected, what
+was observed and, when it failed, why; the texts come from this table, not from the agent.
+
+**Open point.** `restart` where the device comes back with an unchanged boot time: proposed as `failed` (the reboot did not
+happen), not as a warning.
+
+**Order of work.** (1) this specification; (2) the server: the table as code (`label`, expectation, limit, verifier), the state
+`verifying`, the verifiers of `turnOff`, `restart`, `sync`, `pingNow` and the scans (no change of the agent), the lines of the
+web, a test per command; (3) the agent: the list of installed, failed and remaining updates and the evidence it can add (a new
+agent version).
+
 ## Known quirks (not defects, do not "fix" one side)
 
 - `Avaliable` vs `Available` (above).
