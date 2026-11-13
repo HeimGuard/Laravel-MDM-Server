@@ -8,10 +8,12 @@ use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
 use App\Support\SecurityScanner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\Concerns\SimulatesSecurityAgent;
 use Tests\TestCase;
 
 /** The incremental scan: it finds what a full scan finds and does not do work it does not need to. */
+#[Group('slow')]
 class SecurityScanPerformanceTest extends TestCase
 {
     use RefreshDatabase, SimulatesSecurityAgent;
