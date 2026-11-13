@@ -1,7 +1,8 @@
 # MySQL instead of SQLite: docker compose -f docker-compose.mysql.yml --env-file src/laravel/.env up -d
 services:
-  app:
+  mdm:
     image: ghcr.io/heimguard/laravel-mdm-server:latest
+    container_name: mdm
     build:
       context: .
       dockerfile: src/docker/Dockerfile

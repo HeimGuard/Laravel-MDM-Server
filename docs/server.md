@@ -40,8 +40,8 @@ Installations from before the setup page got a default account (`the-email@examp
 `the-password-of-choice`). Change its e-mail and password in the profile; the portal warns after
 logging in with that password.
 
-Run the scheduler every minute (it removes CPU/RAM history older than 7 days and runs backups;
-the Docker image runs it for you):
+Run the scheduler every minute (alert rules, scheduled scripts, the daily clean-up of old data, the feeds; the
+Docker image runs it for you). It does not run backups: see [Retention, backup and restore](#retention-backup-and-restore).
 
 ```cron
 * * * * * cd /path/to/src/laravel && php artisan schedule:run >> /dev/null 2>&1
@@ -122,8 +122,80 @@ is loaded (a superuser, such as `POSTGRES_USER` of the official image). Make a c
 The application logs to daily files in the `storage` volume (`storage/logs`, shown in
 **System → Logs**) and to `docker logs` at the same time. Another file channel in the environment or
 in `.env` (e.g. `LOG_CHANNEL=single`) is used instead of the daily files; `LOG_CHANNEL=stderr` logs
-to `docker logs` only. Database backups from the system pages are not supported in the image (no
-`mysqldump`).
+to `docker logs` only. **System → Backup** does not work in the image (no `mysqldump`): back up as described
+in [Retention, backup and restore](#retention-backup-and-restore).
+
+## Retention, backup and restore
+
+**What is kept how long.** The scheduler cleans up once a day (`routes/console.php`):
+
+| Data | Kept | Applied |
+|------|------|---------|
+| Measured values: CPU, memory, disks, battery, ping (`value_samples`) | `history_days` (System > Settings, default 30); a value that is not measured any more goes with its last sample | daily |
+| Finished device commands (`device_commands`) | 90 days | daily |
+| Log events of the security scanner (`events`) | 30 days | daily |
+| Unknown devices of the network discovery | 30 days since last seen, ignored ones 180 days | daily |
+
+Not cleaned up today, so they grow: the history of the inventory (`inventory_samples`: services, containers,
+updates, software, ...; `InventoryService::prune()` exists but is not scheduled and `history_days` does not apply to
+it), port scan results (the model has a 30-day limit that nothing runs), alert history (`alert_events`), the audit
+log (`activities`), script runs and security findings. The history keeps changes only, so they grow slowly.
+
+**Backups are not scheduled.** The scheduler runs none, and **System → Backup** does not work in the Docker image
+(no `mysqldump`). The operator backs up two things:
+
+1. The **`storage` volume**: `secrets.env` (`APP_KEY` and the Reverb keys), the signing key `mdm-signing.key` (the
+   agents pin it: without it every agent has to be pinned again, see `-ResetServerKey` in
+   [installation](installation.md#installation)), uploads, and the SQLite file `database.sqlite` when SQLite is used.
+2. The **database** when it is not SQLite: a dump of PostgreSQL (`pg_dump`) or MySQL (`mysqldump`) made in the
+   database container.
+
+```bash
+# SQLite: stop the app so the file is not written, then copy the whole volume (name: docker volume ls)
+docker compose stop
+docker run --rm -v <project>_storage:/data -v "$PWD":/backup alpine tar czf /backup/storage.tgz -C /data .
+docker compose start
+
+# PostgreSQL: the dump, next to the copy of the storage volume above
+docker compose -f docker-compose.postgres.yml exec -T database pg_dump -U mdm -Fc mdm > mdm.dump
+```
+
+**Restore.** Stop the app, put the files back into an empty `storage` volume
+(`docker run --rm -v <project>_storage:/data -v "$PWD":/backup alpine tar xzf /backup/storage.tgz -C /data`) and
+start it: with SQLite that is all. With PostgreSQL start the database, then
+`docker compose -f docker-compose.postgres.yml exec -T database pg_restore -U mdm -d mdm --clean --if-exists < mdm.dump`
+and start the app (it runs the migrations of its own version). Restore into the version of the image the backup came from or a
+newer one: the migrations only go forward.
+
+## Who may do what
+
+There are no roles. Every signed-in user is a trusted operator, and there is **no read-only role**: whoever can open
+the portal can also change things on the devices. Give an account only to people you trust with all of the first list.
+
+**Every signed-in user** can:
+
+- see all devices, networks, findings and alerts, and edit tags, ping and Wake-on-LAN settings of a device;
+- add devices (enrolment codes) and **delete devices**;
+- run commands on a device: turn off, restart, install updates, update the agent, wake, sync, ping now, scan the
+  network or ports; cancel a command;
+- acknowledge findings (one or all), use **Explain with AI**, and ask the AI for a remediation script (it is saved
+  for a system admin to review and run);
+- add, ignore and restore the unknown devices of the network discovery;
+- keep their own notification channels and alert rules, dashboards and API tokens (**Profile**).
+
+**System admins** can in addition (users flagged by `APP_SYSTEM_ADMINS`, the `is-system-admin` Gate):
+
+- manage users;
+- open the system pages under `/system`: Settings (also `history_days`), Audit, Users, API, Jobs (re-run, stop,
+  retry), Cache, Logs and Backup;
+- use the **Scripts** pages: create, edit, schedule, run and delete remediation scripts, read their runs and
+  output, and run a remediation from a smart alert (scripts run as SYSTEM / root on the devices);
+- add, edit, switch off, duplicate and delete the rules and parsers of the security scanner, update the feed and
+  rescan;
+- switch network discovery and port scans on or off for the whole portal, and reset the key of a device;
+- edit every dashboard, not only their own.
+
+`APP_SYSTEM_ADMINS` is a comma-separated list of user IDs. Without it the first user (ID 1) is the system admin.
 
 ## Real-time commands (WebSocket)
 
@@ -196,7 +268,7 @@ A new kind of value is a new key: no table and no migration. Keys in use: `cpu` 
 each disk (named `C:` on Windows, the mount point on Linux) from the reports, `ping.up` (1 / 0), `ping.rtt` (ms) and
 `ping.relay_id` (the agent that pinged) from the pings of ping-only devices. The last ping of a device
 (`$device->ping_rtt`, `$device->ping_relay_id`) is read from these values, there is no column for it. How long the history is kept is one setting for all of it (System > Settings, `history_days`, 30 days by
-default); what is older is deleted daily. The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
+default, 1 to 3650); what is older is deleted daily. The history of `device_metrics` and `ping_results`, which these replace, is copied by the migration.
 
 ## Settings of a device
 

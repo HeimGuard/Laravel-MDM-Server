@@ -2,8 +2,9 @@
 # An existing SQLite database (storage/database.sqlite of the storage volume) is copied into PostgreSQL once on
 # the first start with it (pgloader, see docs/server.md); the file is kept as database.sqlite.bkp.
 services:
-  app:
+  mdm:
     image: ghcr.io/heimguard/laravel-mdm-server:latest
+    container_name: mdm
     build:
       context: .
       dockerfile: src/docker/Dockerfile

@@ -11,11 +11,13 @@ A lightweight PowerShell agent on each device reports to the portal and takes co
 ```yaml
 # docker-compose.yml
 services:
-  heim_guard:
+  mdm:
     image: ghcr.io/heimguard/laravel-mdm-server:latest
-    container_name: 
+    container_name: mdm
     ports:
-      - "8000:8000"
+      - "8000:8000"  # web and agent WebSocket (/app)
+      - "514:5514/udp"  # syslog from other servers and devices (only from the IP addresses of devices)
+      - "514:5514/tcp"
     volumes:
       - storage:/var/www/storage
     restart: unless-stopped
@@ -51,7 +53,7 @@ Details: [Installing the agent](docs/installation.md).
 
 | Topic | |
 |---|---|
-| [Server](docs/server.md) | Setup, Docker, MySQL, real-time WebSocket, PWA |
+| [Server](docs/server.md) | Setup, Docker, MySQL / PostgreSQL, retention and backup, who may do what, real-time WebSocket, PWA |
 | [Installing the agent](docs/installation.md) | Install, parameters, `config.json`, checking, uninstalling |
 | [Agent](docs/agent.md) | How it works, feature matrix, signed communication |
 | [Alerts and notifications](docs/alerts.md) | Smart alerts, agent errors, rules, notification channels |
@@ -61,6 +63,8 @@ Details: [Installing the agent](docs/installation.md).
 | [Security scanner](docs/security-scanner.md) | Inventory, logs, parsers and detection rules |
 | [Dashboard](docs/dashboard.md) | Configurable dashboards and widgets |
 | [Development](docs/development.md) | Map of the code, the update flow, tests and their pitfalls |
+| [Releasing](docs/releasing.md) | Versions, tags, the Docker image, the changelog |
+| [Changelog](src/laravel/CHANGELOG.md) | What changed in each version (also in the portal under `/changelog`) |
 
 ## Screenshots
 
@@ -75,4 +79,4 @@ Details: [Installing the agent](docs/installation.md).
 | `src/laravel` | Server application (Laravel) |
 | `src/powershell` | Agent (Windows, Debian / Ubuntu) |
 | `src/docker` | Container image and its configuration |
-| `docker-compose.yml`, `docker-compose.mysql.yml` | Running the image |
+| `docker-compose.yml`, `docker-compose.mysql.yml`, `docker-compose.postgres.yml` | Running the image (SQLite, MySQL, PostgreSQL) |
