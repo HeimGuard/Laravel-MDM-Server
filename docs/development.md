@@ -68,6 +68,13 @@ Rules for the look:
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)
   runs them on every push and pull request and builds the image only when they pass.
 - Also PostgreSQL: `DB_CONNECTION=pgsql DB_DATABASE=... php artisan test` (see `CLAUDE.md` for what only PostgreSQL rejects).
+- Who may do what is a ratchet, not a convention: no roles, every signed-in user is a trusted operator; an action that
+  only system admins may call has `Gate::authorize('is-system-admin')` and is marked `admin` in `tests/Support/LivewireActions.php`.
+  - `LivewireActionsClassifiedTest`: every public action of every Livewire component is in that map as `ui`, `user` or
+    `admin` (a new action fails until somebody decides; `admin` must call the Gate, `ui` must not write data).
+    `LivewireAdminActionsForbiddenTest` calls the admin actions as a normal user (403).
+  - `RoutesRequireAuthTest`: every route has `auth`, `device.signature`, `guest` or `is-system-admin`, or is in the allowlist
+    of public routes in the test with the reason; every route named `system.*` has `is-system-admin`.
 - The PowerShell check of the scripts (`App\Support\PowerShellCheck`) uses `pwsh` when there is one (`mdm.pwsh`),
   otherwise a lighter check in PHP; the agent itself is never run by the tests.
 - The cloud sessions of Claude have PHP 8.3 and no access to `git.steelants.cz` (SteelAnts packages), so
