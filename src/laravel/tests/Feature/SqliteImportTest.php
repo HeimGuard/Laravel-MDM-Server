@@ -16,7 +16,7 @@ class SqliteImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    private string $source;
+    private string $source = '';
 
     protected function setUp(): void
     {
@@ -32,7 +32,9 @@ class SqliteImportTest extends TestCase
 
     protected function tearDown(): void
     {
-        @unlink($this->source);
+        if ($this->source !== '') {
+            @unlink($this->source);
+        }
         $this->forgetState();
         parent::tearDown();
     }
