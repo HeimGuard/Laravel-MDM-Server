@@ -17,6 +17,13 @@ concurrency:
 
 jobs:
   # The image is only built (and pushed) when the tests of the same workflow run pass.
+  #
+  # Database of the tests: a SQLite FILE instead of ":memory:". With an in-memory database RefreshDatabase
+  # runs all migrations again for every test; with a file it migrates once per process and wraps every test in a
+  # transaction that is rolled back. Safe for this suite: no test commits on its own, opens a second connection or
+  # reads the file from outside. The two kinds that do not fit a transaction (a test that changes the schema, the
+  # SQLite import) are in the group `fresh-db` and run in a separate step on the old in-memory database.
+  # The `env:` of a step wins over phpunit.xml (its <env> has no force="true"), so running the tests locally is unchanged.
   tests:
     runs-on: ubuntu-latest
     defaults:
@@ -45,10 +52,54 @@ jobs:
 
       - run: cp .env.example .env && php artisan key:generate
 
-      - run: php artisan test
+      - name: Tests (SQLite file, migrated once)
+        run: |
+          touch "$DB_DATABASE"
+          php artisan test --exclude-group=slow,fresh-db
+        env:
+          DB_DATABASE: ${{ runner.temp }}/testing.sqlite
+
+      - name: Tests that need their own in-memory database (fresh-db)
+        run: php artisan test --group=fresh-db
+
+  # The slow tests (wall-clock based performance test) run in parallel to the others.
+  slow:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/laravel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_sqlite, sqlite3
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/laravel/package-lock.json
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: cp .env.example .env && php artisan key:generate
+
+      - name: Slow tests
+        run: |
+          touch "$DB_DATABASE"
+          php artisan test --group=slow
+        env:
+          DB_DATABASE: ${{ runner.temp }}/testing.sqlite
 
   build:
-    needs: tests
+    needs: [tests, slow]
     runs-on: ubuntu-latest
     permissions:
       actions: write
