@@ -18,6 +18,10 @@ to test and what has broken tests before. Read it instead of searching the code 
   otherwise it does not exist in the job.
 - `pwsh` is not available in the cloud session: say that the agent code was not run.
 
+## Changelog
+
+- Every user-visible change adds a line to `src/laravel/CHANGELOG.md` under Unreleased (see `docs/releasing.md`).
+
 ## UI texts
 
 - Every new text of the UI (`__('...')`, `@lang`, `{{ __(...) }}`) needs a translation in **every** file of

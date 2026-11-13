@@ -43,6 +43,7 @@ Parameters:
 | `-ResetServerKey` | Pin the current server key again (after it was replaced on purpose) |
 | `-DisableScripts`, `-EnableScripts` | Remediation scripts on this device ([Remediation scripts](remediation-scripts.md#remediation-scripts)) |
 | `-NetworkDiscovery off\|neighbours\|scan` | [Network discovery](networks.md#network-discovery) |
+| `-PortScan off\|on` | Whether the agent scans the open ports of an address of its network when asked in the portal |
 | `-SecurityLogs off\|on` | [Security scanner](security-scanner.md#security-scanner): whether the records of the security logs are sent (default off) |
 
 Everything else is in `config.json` next to the agent, read on every start (the server cannot change
@@ -80,7 +81,8 @@ Agents older than 1.1.0 cannot update themselves and have to be reinstalled via 
 
 The token is stored next to the script (`Token.xml` on Windows, `token` readable by root only on
 Linux) and logs are written to `agent.log`. The agent only executes the commands `turnOff`, `restart`,
-`doUpdates`, `installUpdate`, `updateAgent`, `runScripts` and `wake`.
+`doUpdates`, `installUpdate`, `updateAgent`, `runScripts`, `sync`, `wake`, `pingNow`, `scanNetwork` and `scanPorts`
+(`$AllowedCommands` in `app.ps1`); any other name is answered as failed.
 
 ## Checking the agent
 

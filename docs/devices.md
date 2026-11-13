@@ -79,6 +79,6 @@ address, the prefix of its network (`/24`) and optionally the MAC address for Wa
 - The detail has a monitor in the style of [Uptime Kuma](https://github.com/louislam/uptime-kuma):
   the last 50 pings as a bar (green answered, red not), the response now and on average, the
   uptime of the last 24 hours and 30 days, and the response time over 1 h, 24 h, 7 d or 30 d with
-  the unanswered periods marked. Every ping is kept for 30 days (`ping_results`, pruned daily).
+  the unanswered periods marked. Every ping is stored as measured values (`ping.up`, `ping.rtt`, see [Measured values](server.md#measured-values)) and kept as long as the history setting says (`history_days` in System > Settings, 30 days by default, cleaned daily): with fewer days the 30-day views are shorter.
 - In the device list it has a network icon; alerts offer the status only (offline for *n* minutes). Its address, prefix and MAC are changed in
   **Ping settings** in the device menu.

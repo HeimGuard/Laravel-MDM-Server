@@ -22,6 +22,7 @@ changes are in [`CLAUDE.md`](../CLAUDE.md), the data model in [data-model.md](da
 | AI | `App\Services\AiService` (provider, `available()`, `ask()`), `ScriptGeneratorService` (remediation scripts), `FindingExplanationService` (`explain()`, `describe()`: what is sent about a finding, `SAFE_FIELDS`); settings in [remediation-scripts.md](remediation-scripts.md) |
 | First user | `AuthController::login` redirects to `/setup` while the `users` table is empty (checked on every request) |
 | Translations | `src/laravel/lang/{cs,de,es,fr,it}.json`, every UI text in all of them (`LocaleTest`) |
+| Release, changelog | [releasing.md](releasing.md): versions and tags, the Docker workflow, `src/laravel/CHANGELOG.md` (shown under `/changelog`) |
 
 ## The updates of a device
 
