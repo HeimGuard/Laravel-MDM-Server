@@ -1,7 +1,7 @@
 # Instructions for Claude
 
 Start with [`docs/development.md`](docs/development.md): where the code of each area is, how the updates work, how
-to test and what has broken tests before. Read it instead of searching the code for the same.
+to test and what has broken tests before. Read it instead of searching the code for the same. The interface between the agent and the server (every field, endpoint and command result, and where the web shows it) is in [`docs/agent-api.md`](docs/agent-api.md): read it before changing either side.
 
 ## Agent (`src/powershell/app.ps1`)
 

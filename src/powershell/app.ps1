@@ -134,7 +134,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.32.0'
+$AgentVersion = '1.33.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -846,12 +846,12 @@ function Install-PowerShellRelease {
             }
             Remove-Item -Path "$dir.mdm-old" -Recurse -Force -ErrorAction SilentlyContinue
         } else {
-            $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/quiet', '/norestart') -Wait -PassThru
+            $msiCode = Invoke-Msiexec -File $file -Display '/quiet'
             # 3010: installed, a restart completes it.
-            if ($process.ExitCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec exit $($process.ExitCode)"); return }
+            if ($msiCode -notin 0, 3010) { [void]$State.Failures.Add("PowerShell ${Version}: msiexec $(if ($msiCode -eq -1) { 'did not finish within 30 minutes and was ended' } else { "exit $msiCode" })"); return }
             # Files in use (the agent runs from this installation) are replaced only by the restart: until then the
             # directory mixes both releases and pwsh can crash (ParseCommandLine). It is not started before the restart.
-            $pending = $process.ExitCode -eq 3010 -or (Test-PendingFileRename -Path $dir)
+            $pending = $msiCode -eq 3010 -or (Test-PendingFileRename -Path $dir)
             if ($pending) {
                 "PowerShell ${Version}: installed, the restart of the device finishes it"
                 $State.Restart = $true
@@ -961,10 +961,10 @@ function Install-ChromeRelease {
         }
         "Google Chrome: $asset downloaded, signed by Google LLC"
 
-        $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$file`"", '/qn', '/norestart') -Wait -PassThru
+        $msiCode = Invoke-Msiexec -File $file -Display '/qn'
         # 3010: installed, a restart completes it.
-        if ($process.ExitCode -notin 0, 3010) {
-            [void]$State.Failures.Add("Google Chrome ${Version}: msiexec exit $($process.ExitCode)")
+        if ($msiCode -notin 0, 3010) {
+            [void]$State.Failures.Add("Google Chrome ${Version}: msiexec $(if ($msiCode -eq -1) { 'did not finish within 30 minutes and was ended' } else { "exit $msiCode" })")
             return
         }
         $after = Get-ChromeInstall
@@ -984,6 +984,30 @@ function Install-ChromeRelease {
     finally {
         Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Invoke-Msiexec {
+    # msiexec /i with a time limit: an installer that waits for a window or a locked file never ends by
+    # itself and would keep the update job, and every update after it, waiting for good. Returns the exit
+    # code, -1 when it was ended after the limit.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $File,
+        [string]
+        $Display = '/qn',
+        [int]
+        $TimeoutMinutes = 30
+    )
+
+    $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$File`"", $Display, '/norestart') -PassThru
+    # Without the handle ExitCode stays empty in Windows PowerShell.
+    $null = $process.Handle
+    if (-not $process.WaitForExit($TimeoutMinutes * 60000)) {
+        & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null
+        return -1
+    }
+    return $process.ExitCode
 }
 
 function Test-PendingReboot {
@@ -3046,6 +3070,40 @@ function Protect-AgentPath {
     icacls $Path /inheritance:r /grant:r "*S-1-5-18:$grant" "*S-1-5-32-544:$grant" | Out-Null
 }
 
+function Write-AgentFile {
+    # Writes a file of the agent as a whole or not at all: the text goes to a temporary file beside it, which
+    # then replaces it, so a crash, a power loss or a full disk never leaves half a file (a half config.json
+    # stops the agent from starting, a half agent.ps1 is never repaired). -Protect restricts the temporary file
+    # to SYSTEM / root and administrators before the content is written (keys, tokens), not after.
+    # Not for the jobs (it is not in their -Functions lists).
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Path,
+        [AllowEmptyString()]
+        [string]
+        $Text,
+        [switch]
+        $Protect,
+        [switch]
+        $NoNewline
+    )
+
+    $temp = "$Path.tmp"
+    try {
+        if ($Protect) {
+            New-Item -ItemType File -Path $temp -Force | Out-Null
+            Protect-AgentPath -Path $temp
+        }
+        Set-Content -LiteralPath $temp -Value $Text -Encoding UTF8 -NoNewline:$NoNewline
+        Move-Item -LiteralPath $temp -Destination $Path -Force
+    }
+    catch {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
 function ConvertTo-Hashtable {
     # ConvertFrom-Json -AsHashtable does not exist in Windows PowerShell 5.1.
     param (
@@ -3084,8 +3142,7 @@ function Save-AgentConfig {
     )
 
     $path = Join-Path $AgentDir 'config.json'
-    $Config | ConvertTo-Json -Depth 4 | Set-Content -Path $path -Encoding UTF8
-    Protect-AgentPath -Path $path
+    Write-AgentFile -Path $path -Text ($Config | ConvertTo-Json -Depth 4) -Protect
 }
 
 function Set-ServerKey {
@@ -3121,7 +3178,7 @@ function Initialize-ServerKey {
     if (-not $key) {
         $key = $embedded
         if (-not $key) {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri "$($ServerUrl.TrimEnd('/'))/agent/signing-key"
+            $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 -Uri "$($ServerUrl.TrimEnd('/'))/agent/signing-key"
             $announced = $response.Content | ConvertFrom-Json
             $key = @{ n = $announced.n; e = $announced.e }
         }
@@ -3182,8 +3239,7 @@ function Get-DeviceKey {
             $rsa.ImportRSAPrivateKey([Convert]::FromBase64String((Get-Content -Path $path -Raw).Trim()), [ref]$read)
         } else {
             $rsa.KeySize = 3072
-            Set-Content -Path $path -Value ([Convert]::ToBase64String($rsa.ExportRSAPrivateKey())) -NoNewline
-            Protect-AgentPath -Path $path
+            Write-AgentFile -Path $path -Text ([Convert]::ToBase64String($rsa.ExportRSAPrivateKey())) -Protect -NoNewline
             Write-AgentLog 'Device key created'
         }
         return $script:DeviceKey = $rsa
@@ -3323,8 +3379,7 @@ function Add-ExecutedRun {
     $runs.Add($RunId)
     while ($runs.Count -gt 500) { $runs.RemoveAt(0) }
     $path = Join-Path $AgentDir 'state.json'
-    @{ executed_runs = @($runs) } | ConvertTo-Json -Compress | Set-Content -Path $path -Encoding UTF8
-    Protect-AgentPath -Path $path
+    Write-AgentFile -Path $path -Text (@{ executed_runs = @($runs) } | ConvertTo-Json -Compress) -Protect
 }
 
 function Get-ScriptFingerprint {
@@ -3642,10 +3697,15 @@ function Write-AgentLog {
     )
 
     $LogPath = "$AgentDir/agent.log"
-    if ((Test-Path -Path $LogPath) -and (Get-Item -Path $LogPath).Length -gt 1MB) {
-        Move-Item -Path $LogPath -Destination "$LogPath.1" -Force
+    try {
+        if ((Test-Path -Path $LogPath) -and (Get-Item -Path $LogPath).Length -gt 1MB) {
+            Move-Item -Path $LogPath -Destination "$LogPath.1" -Force
+        }
+        "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message | Add-Content -Path $LogPath -Encoding UTF8
     }
-    "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message | Add-Content -Path $LogPath -Encoding UTF8
+    catch {
+        # A full disk or a file another process holds: the message is still counted for the server below.
+    }
     if ($IsError -or ($ErrorRecord -and -not (Test-NetworkError -ErrorRecord $ErrorRecord))) {
         Add-AgentError -Message $Message
     }
@@ -3694,7 +3754,7 @@ function Add-AgentError {
             if ($script:AgentErrors.Count -ge 30) { $script:AgentErrors.RemoveAt(0) }
             [void]$script:AgentErrors.Add([ordered]@{ message = $text; count = 1; first = $now; last = $now })
         }
-        ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress | Set-Content -Path "$AgentDir/pending-errors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/pending-errors.json" -Text (ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress)
     }
     catch {
         # Never break the log line itself.
@@ -3737,7 +3797,7 @@ function Send-AgentErrors {
     if ($script:AgentErrors.Count -eq 0) {
         Remove-Item -Path "$AgentDir/pending-errors.json" -Force -ErrorAction SilentlyContinue
     } else {
-        ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress | Set-Content -Path "$AgentDir/pending-errors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/pending-errors.json" -Text (ConvertTo-Json -InputObject @($script:AgentErrors) -Depth 3 -Compress)
     }
 }
 
@@ -3958,8 +4018,7 @@ function Get-AgentToken {
         # SecureString export is Windows only (DPAPI); keep the token in a root-only file.
         $tokenPath = "$AgentDir/token"
         if (-not (Test-Path -Path $tokenPath)) {
-            Set-Content -Path $tokenPath -Value (Register-MDMDevice -EnrolmentCode (Get-EnrolmentCode)) -NoNewline
-            Protect-AgentPath -Path $tokenPath
+            Write-AgentFile -Path $tokenPath -Text (Register-MDMDevice -EnrolmentCode (Get-EnrolmentCode)) -Protect -NoNewline
         }
         return (Get-Content -Path $tokenPath -Raw).Trim()
     }
@@ -4414,6 +4473,28 @@ function Start-AgentJob {
     }
 }
 
+function Test-JobOverdue {
+    # A background collection that runs much longer than it should is hung (a tool that waits for ever, a
+    # COM call that does not return): until it ends nothing new is collected. Reported once per job as an
+    # error of the agent (an alert of the device); a restart of the agent ends the job.
+    param (
+        $Job,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Label,
+        [Parameter(Mandatory = $true)]
+        [int]
+        $Minutes
+    )
+
+    if (-not $Job -or $Job.State -ne 'Running' -or $Job.PSBeginTime -isnot [datetime]) { return }
+    if (((Get-Date) - $Job.PSBeginTime).TotalMinutes -lt $Minutes) { return }
+    if (-not $script:OverdueJobs) { $script:OverdueJobs = @{} }
+    if ($script:OverdueJobs.ContainsKey($Job.Id)) { return }
+    $script:OverdueJobs[$Job.Id] = $true
+    Write-AgentLog "$Label has been running for more than $Minutes minutes, it may be stuck (restarting the agent ends it)" -IsError
+}
+
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
     return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-BadPowerShellVersions', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
@@ -4473,7 +4554,7 @@ function Start-SecurityCollection {
         $CursorsJson = ''
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
@@ -4493,7 +4574,7 @@ function Get-SecurityPolicy {
     try {
         $policy = Invoke-MdmApi -Method Get -Path 'device/security/policy' -Token $Token
         if ($policy -and $policy.sources) {
-            $policy | ConvertTo-Json -Depth 6 -Compress | Set-Content -Path $path -Encoding UTF8
+            Write-AgentFile -Path $path -Text ($policy | ConvertTo-Json -Depth 6 -Compress)
             return $policy
         }
     }
@@ -4696,14 +4777,14 @@ function Send-SecurityInventory {
         if ($deltas.Pending.ContainsKey($property.Name) -and $deltas.Pending[$property.Name].state -eq $property.Value) { $kept[$property.Name] = $deltas.Pending[$property.Name] }
     }
     foreach ($source in $acknowledged.Keys) { if (-not $kept.ContainsKey($source)) { $kept[$source] = $acknowledged[$source] } }
-    $kept | ConvertTo-Json -Depth 4 -Compress | Set-Content -Path "$AgentDir/security-state.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/security-state.json" -Text ($kept | ConvertTo-Json -Depth 4 -Compress)
     # The logs are read on from where the server took them.
     if ($response.cursors) {
         $cursors = Get-SecurityCursors
         foreach ($property in $response.cursors.PSObject.Properties) { $cursors[$property.Name] = $property.Value }
-        $cursors | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/security-cursors.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/security-cursors.json" -Text ($cursors | ConvertTo-Json -Compress)
     }
-    @{ since = $StartedAt.ToString('o'); sent_at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/security.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/security.json" -Text (@{ since = $StartedAt.ToString('o'); sent_at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
 
     $changed = 0
     foreach ($delta in $deltas.Sources) { $changed += @($delta.upsert).Count + @($delta.remove).Count }
@@ -4744,7 +4825,7 @@ function Save-CachedInventory {
         $Name = 'inventory'
     )
 
-    @{ collected_at = (Get-Date).ToString('o'); agent_version = $AgentVersion; data = $Data } | ConvertTo-Json -Depth 6 -Compress | Set-Content -Path "$AgentDir/$Name.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/$Name.json" -Text (@{ collected_at = (Get-Date).ToString('o'); agent_version = $AgentVersion; data = $Data } | ConvertTo-Json -Depth 6 -Compress)
 }
 
 function Get-Report {
@@ -4805,7 +4886,7 @@ function Send-Report {
 
     $response = Invoke-MdmApi -Method Post -Path 'device' -Body $Data -Token $Token
     # Commands returned here were not delivered over the WebSocket (the server hands them over once).
-    Invoke-DeviceCommands -Response $response
+    if ($response) { Invoke-DeviceCommands -Response $response }
     if ($response.scripts_pending) {
         $script:ScriptsRequested = $true
     }
@@ -5045,8 +5126,12 @@ function Update-Agent {
 
         # Kept for the rollback (see Restart-AgentTask), confirmed by the new agent once it reached the server.
         Copy-Item -Path (Join-Path $AgentDir 'app.ps1') -Destination (Join-Path $AgentDir 'app.ps1.previous') -Force
-        @{ from = $AgentVersion; to = $version; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/agent-update.json" -Encoding UTF8
-        [System.IO.File]::WriteAllBytes((Join-Path $AgentDir 'app.ps1'), $bytes)
+        Write-AgentFile -Path "$AgentDir/agent-update.json" -Text (@{ from = $AgentVersion; to = $version; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
+        # Beside it and then moved over it: a power loss in the middle of the write must not leave a half
+        # script, which no rollback sees (the one that watches is started only after this).
+        $new = Join-Path $AgentDir 'app.ps1.new'
+        [System.IO.File]::WriteAllBytes($new, $bytes)
+        Move-Item -LiteralPath $new -Destination (Join-Path $AgentDir 'app.ps1') -Force
     }
     catch {
         Write-AgentLog "Agent update failed: $($_.Exception.Message)" -ErrorRecord $_
@@ -5114,7 +5199,7 @@ function Save-PendingCommand {
     # agent that starts next (see Complete-PendingCommand).
     param ($Id, [string]$Command)
 
-    @{ id = $Id; command = $Command; agent_version = $AgentVersion; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress | Set-Content -Path "$AgentDir/pending-command.json" -Encoding UTF8
+    Write-AgentFile -Path "$AgentDir/pending-command.json" -Text (@{ id = $Id; command = $Command; agent_version = $AgentVersion; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress)
 }
 
 function Complete-PendingCommand {
@@ -5161,6 +5246,9 @@ function Test-UpdateParams {
     # expected form (they are passed as arguments, never as code).
     param ($Params)
 
+    foreach ($name in 'kind', 'id', 'user', 'edition', 'version', 'source', 'scope') {
+        if ("$($Params.$name)" -match '[\x00-\x1f\x7f]') { throw "invalid $name" }
+    }
     $kind = "$($Params.kind)"
     if (-not $UpdateKinds.ContainsKey($kind) -or "$($Params.id)" -notmatch $UpdateKinds[$kind] -or "$($Params.id)".Length -gt 200) {
         throw "invalid update '$kind' '$($Params.id)'"
@@ -5187,7 +5275,7 @@ function Test-WakeParams {
     # wake parameters, checked again on the device: MAC addresses and IPv4 broadcast addresses only.
     param ($Params)
 
-    $macs = @($Params.macs | ForEach-Object { "$_" } | Where-Object { $_ -match '^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$' })
+    $macs = @($Params.macs | ForEach-Object { "$_" } | Where-Object { $_ -match '^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}\z' })
     $broadcasts = @($Params.broadcasts | ForEach-Object {
             $address = $null
             if ([System.Net.IPAddress]::TryParse("$_", [ref]$address) -and $address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork) { $address }
@@ -5349,7 +5437,7 @@ function Save-ScanNames {
     $all = @{}
     foreach ($entry in (Get-ScanNames).GetEnumerator()) { $all[$entry.Key] = @{ name = $entry.Value; at = (Get-Date).ToString('o') } }
     foreach ($entry in $Names.GetEnumerator()) { $all[$entry.Key] = @{ name = "$($entry.Value)"; at = (Get-Date).ToString('o') } }
-    $all | ConvertTo-Json -Depth 3 -Compress | Set-Content -Path $path -Encoding UTF8
+    Write-AgentFile -Path $path -Text ($all | ConvertTo-Json -Depth 3 -Compress)
 }
 
 function Test-ScanParams {
@@ -5848,7 +5936,7 @@ function Save-CommandState {
         deferred_agent_update = $script:DeferredAgentUpdate
     }
     try {
-        $state | ConvertTo-Json -Depth 5 -Compress | Set-Content -Path "$AgentDir/commands-state.json" -Encoding UTF8
+        Write-AgentFile -Path "$AgentDir/commands-state.json" -Text ($state | ConvertTo-Json -Depth 5 -Compress)
     }
     catch {
         Write-AgentLog "Command state not saved: $($_.Exception.Message)" -ErrorRecord $_
@@ -5924,7 +6012,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6701,15 +6789,36 @@ function Invoke-DeviceCommands {
     if ($Response.PSObject.Properties['tasks']) {
         foreach ($task in @($Response.tasks)) {
             if ($task -and $task.command) {
-                Invoke-DeviceCommand -Command $task.command -Id $task.id -Params $task.params
+                Invoke-DeviceCommandSafely -Command $task.command -Id $task.id -Params $task.params
             }
         }
         return
     }
     foreach ($command in @($Response.commands)) {
         if ($command) {
-            Invoke-DeviceCommand -Command $command
+            Invoke-DeviceCommandSafely -Command $command
         }
+    }
+}
+
+function Invoke-DeviceCommandSafely {
+    # An error of one command is logged and reported as its result: the commands after it in the same
+    # response were taken from the server too (they would wait for their timeout), and the connection
+    # is not reset for it.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Command,
+        $Id,
+        $Params
+    )
+
+    try {
+        Invoke-DeviceCommand -Command $Command -Id $Id -Params $Params
+    }
+    catch {
+        Write-AgentLog "Command '$Command'$(if ($Id) { " ($Id)" }) failed: $($_.Exception.Message)" -ErrorRecord $_
+        if ($Id) { [void](Send-CommandStatus -Id $Id -Status failed -Message "Failed: $($_.Exception.Message)") }
     }
 }
 
@@ -6757,7 +6866,20 @@ function Start-Realtime {
 
     $socket = New-Object System.Net.WebSockets.ClientWebSocket
     $socket.Options.KeepAliveInterval = [TimeSpan]::FromSeconds(30)
-    $socket.ConnectAsync([Uri]$uri, [System.Threading.CancellationToken]::None).GetAwaiter().GetResult() | Out-Null
+    # A server (or a proxy) that accepts the connection and never answers the handshake would hold the
+    # whole agent, the heartbeat included: the attempt ends after 30 s.
+    $limit = New-Object System.Threading.CancellationTokenSource
+    try {
+        $limit.CancelAfter(30000)
+        $socket.ConnectAsync([Uri]$uri, $limit.Token).GetAwaiter().GetResult() | Out-Null
+    }
+    catch {
+        $socket.Dispose()
+        throw
+    }
+    finally {
+        $limit.Dispose()
+    }
     Write-AgentLog "WebSocket connected to $uri"
 
     return @{ Socket = $socket; Config = $config; Subscribed = $false }
@@ -6794,6 +6916,11 @@ function Receive-WsMessage {
         $Realtime.Message = New-Object System.IO.MemoryStream
     }
     $Realtime.Message.Write($Realtime.Buffer, 0, $result.Count)
+    # Messages of the server are a few kB: one that never ends is a broken or hostile connection.
+    if ($Realtime.Message.Length -gt 1MB) {
+        $Realtime.Message = $null
+        throw (New-Object System.Net.WebSockets.WebSocketException 'WebSocket message is larger than 1 MB')
+    }
 
     if (-not $result.EndOfMessage) {
         return $null
@@ -6855,7 +6982,7 @@ function Invoke-RealtimeMessage {
                 return
             }
             $response = Invoke-MdmApi -Method Post -Path 'device/commands/take' -Token $Token -Body @{}
-            Invoke-DeviceCommands -Response $response
+            if ($response) { Invoke-DeviceCommands -Response $response }
         }
     }
 }
@@ -7075,7 +7202,7 @@ function Save-Backlog {
     $path = "$AgentDir/backlog-$Kind.json"
     try {
         if ($list.Count -eq 0) { Remove-Item -Path $path -Force -ErrorAction SilentlyContinue; return }
-        ConvertTo-Json -InputObject @($list) -Depth 4 -Compress | Set-Content -Path $path -Encoding UTF8
+        Write-AgentFile -Path $path -Text (ConvertTo-Json -InputObject @($list) -Depth 4 -Compress)
     }
     catch { Write-AgentLog "Backlog ${Kind} not saved: $($_.Exception.Message)" -ErrorRecord $_ }
 }
@@ -7333,9 +7460,13 @@ function Start-Agent {
             }
             if (-not $inventoryJob -and (Get-Date) -ge $nextInventory) {
                 Write-AgentLog 'Inventory collection started'
-                $inventoryJob = Start-InventoryCollection
                 $nextInventory = (Get-Date).AddSeconds($InventoryInterval)
+                $inventoryJob = Start-InventoryCollection
             }
+
+            Test-JobOverdue -Job $inventoryJob -Label 'The inventory collection' -Minutes 180
+            Test-JobOverdue -Job $healthJob -Label 'The disk health collection' -Minutes 60
+            Test-JobOverdue -Job $securityJob -Label 'The security collection' -Minutes 120
 
             if ($healthJob -and $healthJob.State -ne 'Running') {
                 if ($healthJob.State -eq 'Completed') {
@@ -7350,8 +7481,8 @@ function Start-Agent {
                 $healthJob = $null
             }
             if (-not $healthJob -and (Get-Date) -ge $nextHealth) {
-                $healthJob = Start-HealthCollection -Previous $health.Data
                 $nextHealth = (Get-Date).AddSeconds($HealthInterval)
+                $healthJob = Start-HealthCollection -Previous $health.Data
             }
 
             if ($securityJob -and $securityJob.State -ne 'Running') {
@@ -7376,10 +7507,10 @@ function Start-Agent {
                 $state = Get-SecurityState
                 $since = if ($state -and $state.Since -gt (Get-Date).AddDays(-1)) { $state.Since } else { (Get-Date).AddDays(-1) }
                 $securityStarted = Get-Date
+                $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
                 $sendLogs = (Get-SecurityLogsLevel) -eq 'on'
                 $policy = if ($sendLogs) { Get-SecurityPolicy -Token $Token } else { $null }
                 $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
-                $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
             }
 
             if ($script:SyncRequest -and $script:SyncRequest.Phase -eq 'collecting' -and $script:SyncRequest.InventoryDone -and -not $healthJob) {

@@ -19,24 +19,22 @@ Route::middleware(['device.signature', 'auth:api'])->post('/device', function (R
     /** @var Device $device */
     $device = auth()->user();
 
-    if ($device === null) {
-        return;
-    }
+    abort_if($device === null, 401);
 
+    // A report that is not the agent's JSON (or has no machine) is an error the agent logs (an alert of the device), not an empty answer.
     $data = json_decode($request->getContent(), true);
-
-    if ($data === null) {
-        return;
+    if (! is_array($data) || ! is_array($data['machine'] ?? null)) {
+        return response()->json(['error' => 'invalid_report', 'message' => 'The report is not a JSON object with a machine.'], 422);
     }
 
-    $device->drives = $data['machine']['Drives'];
+    $device->drives = $data['machine']['Drives'] ?? [];
     // The address the device reaches the server from (the first proxy hop when behind one): devices
     // behind the same one are in the same network, which Wake-on-LAN relays rely on. Only a hint,
     // the device can send any header.
     $forwarded = trim(explode(',', (string) $request->header('X-Forwarded-For'))[0]);
     $device->public_ip = filter_var($forwarded, FILTER_VALIDATE_IP) ? $forwarded : $request->ip();
-    $device->name = $data['machine']['Hostname'];
-    $device->os = $data['machine']['os'] ?? '';
+    $device->name = is_string($data['machine']['Hostname'] ?? null) && $data['machine']['Hostname'] !== '' ? mb_substr($data['machine']['Hostname'], 0, 255) : $device->name;
+    $device->os = is_string($data['machine']['os'] ?? null) ? mb_substr($data['machine']['os'], 0, 255) : '';
 
     $report = json_encode($data);
     $device->last_http_at = now();

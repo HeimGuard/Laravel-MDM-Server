@@ -62,23 +62,23 @@ class DeviceCommand extends Model
     public const MAX_SCAN_PORTS = 1024;
 
     /** A MAC address as the agents report it (Windows AA-BB-..., Linux aa:bb:...). */
-    public const MAC_PATTERN = '/^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/';
+    public const MAC_PATTERN = '/^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$/D';
 
     /** Kinds of single updates the agent can install (installUpdate), with the pattern of their id. */
     public const UPDATE_KINDS = [
-        'windows' => '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
-        'apt' => '/^[a-z0-9][a-z0-9+.\-]*(:[a-z0-9]+)?$/',
-        'winget' => '/^[A-Za-z0-9][A-Za-z0-9._+\-]*$/',
-        'flatpak' => '/^[A-Za-z0-9_\-]+(\.[A-Za-z0-9_\-]+)+$/',
-        'snap' => '/^[a-z0-9][a-z0-9\-]*$/',
-        'module' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
+        'windows' => '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di',
+        'apt' => '/^[a-z0-9][a-z0-9+.\-]*(:[a-z0-9]+)?$/D',
+        'winget' => '/^[A-Za-z0-9][A-Za-z0-9._+\-]*$/D',
+        'flatpak' => '/^[A-Za-z0-9_\-]+(\.[A-Za-z0-9_\-]+)+$/D',
+        'snap' => '/^[a-z0-9][a-z0-9\-]*$/D',
+        'module' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
         // A PowerShell 7 release from GitHub (installations no package manager knows about).
-        'pwsh' => '/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$/',
+        'pwsh' => '/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$/D',
         // Google Chrome of all users (Windows) from Google's enterprise MSI, by the version it is updated to.
-        'chrome' => '/^[0-9]{1,4}(\.[0-9]{1,5}){3}$/',
+        'chrome' => '/^[0-9]{1,4}(\.[0-9]{1,5}){3}$/D',
         // A Python package (pip --user) or a pipx app, by its name.
-        'pip' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
-        'pipx' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/',
+        'pip' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
+        'pipx' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
     ];
 
     public const MODULE_EDITIONS = ['Windows PowerShell', 'PowerShell 7'];
@@ -184,7 +184,7 @@ class DeviceCommand extends Model
         $clean = ['kind' => $kind, 'id' => $id];
         $user = $params['user'] ?? null;
         if ($user !== null) {
-            if (! in_array($kind, ['flatpak', 'module', 'pip', 'pipx'], true) || ! is_string($user) || ! preg_match('/^[a-z_][a-z0-9_.\-]{0,31}$/', $user)) {
+            if (! in_array($kind, ['flatpak', 'module', 'pip', 'pipx'], true) || ! is_string($user) || ! preg_match('/^[a-z_][a-z0-9_.\-]{0,31}$/D', $user)) {
                 return null;
             }
             $clean['user'] = $user;
@@ -192,7 +192,7 @@ class DeviceCommand extends Model
         if ($kind === 'module') {
             $edition = $params['edition'] ?? null;
             $version = $params['version'] ?? null;
-            if (! in_array($edition, self::MODULE_EDITIONS, true) || ! is_string($version) || ! preg_match('/^[0-9][0-9A-Za-z.\-]{0,49}$/', $version)) {
+            if (! in_array($edition, self::MODULE_EDITIONS, true) || ! is_string($version) || ! preg_match('/^[0-9][0-9A-Za-z.\-]{0,49}$/D', $version)) {
                 return null;
             }
             $clean['edition'] = $edition;
