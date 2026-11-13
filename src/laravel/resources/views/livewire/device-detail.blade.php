@@ -244,6 +244,15 @@
                     @livewire('ping-monitor', ['deviceId' => $selectedDevice->id], key('ping-monitor' . $selectedDevice->id))
                 @else
                     @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
+                    {{-- The open ports of the host, the same card as of a ping-only device (the scan runs on another agent). --}}
+                    @php $portScan = $selectedDevice->portScanState(); @endphp
+                    @if ($portScan && ($portScan['result'] || $portScan['command'] || $portScan['scanner']))
+                        <div class="row g-3 mt-0">
+                            <div class="col-12 col-lg-6">
+                                @include('partials.device.open-ports', ['portScan' => $portScan])
+                            </div>
+                        </div>
+                    @endif
                 @endif
                 @endif
             </div>

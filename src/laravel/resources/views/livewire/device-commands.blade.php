@@ -204,39 +204,6 @@
         </div>
     @endif
 
-    {{-- The last port scan of this host (it runs on another agent); of a ping-only device in the Open
-         ports card of its overview. Everything shown comes from the scanned host and is printed as escaped text. --}}
-    @if ($portScan && $portScan['result'] && ! $portScan['command'] && ! $selectedDevice->isPingOnly)
-        @php $result = $portScan['result']; @endphp
-        <div class="small mt-2">
-            <details>
-                <summary class="text-body-secondary">
-                    <i class="fas fa-plug me-1"></i>{{ trans_choice(':count open port|:count open ports', count($result->ports)) }}
-                    @if ($result->findings)<span class="text-warning-emphasis ms-1"><i class="fas fa-triangle-exclamation me-1"></i>{{ trans_choice(':count note|:count notes', count($result->findings)) }}</span>@endif
-                    · {{ $result->scanned_at->diffForHumans() }}
-                </summary>
-                @if ($result->ports)
-                    <ul class="list-unstyled mb-0 mt-1 ms-3">
-                        @foreach ($result->ports as $port)
-                            <li class="text-break">
-                                <span class="fw-medium">{{ $port['port'] }}</span>
-                                @if (!empty($port['service']))<span class="text-body-secondary">{{ $port['service'] }}</span>@endif
-                                @if (!empty($port['banner']))<span class="text-body-secondary">— {{ $port['banner'] }}</span>@endif
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-                @if ($result->findings)
-                    <ul class="list-unstyled mb-0 mt-1 ms-3 text-warning-emphasis">
-                        @foreach ($result->findings as $finding)
-                            <li class="text-break"><i class="fas fa-triangle-exclamation me-1"></i>{{ $finding }}</li>
-                        @endforeach
-                    </ul>
-                @endif
-            </details>
-        </div>
-    @endif
-
     @error('command')
         <x-notice class="mt-2" type="danger">{{ $message }}</x-notice>
     @enderror
