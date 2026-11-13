@@ -27,7 +27,8 @@ class AgentContractTest extends TestCase
 
     private function machine(array $extra = []): array
     {
-        return ['Hostname' => 'win1', 'Platform' => 'windows', 'AgentVersion' => '1.33.1', 'os' => 'Microsoft Windows 11 Pro (10.0.22631)'] + $extra;
+        // $extra first: with + the left side wins, so a key of the test has to be on the left to replace a default.
+        return $extra + ['Hostname' => 'win1', 'Platform' => 'windows', 'AgentVersion' => '1.33.1', 'os' => 'Microsoft Windows 11 Pro (10.0.22631)'];
     }
 
     public function test_a_report_without_a_machine_is_an_error_and_not_an_empty_answer(): void
