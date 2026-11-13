@@ -61,15 +61,15 @@ jobs:
 
       - run: cp .env.example .env && php artisan key:generate
 
+      # PHPUnit directly: `php artisan test --exclude-group=...` ignores the option (the first CI run executed all 444
+      # tests in this job). Everything but the slow group runs on the SQLite file, the schema is migrated once and each
+      # test runs in a transaction (the tests of the group fresh-db pass there too).
       - name: Tests (SQLite file, migrated once)
         run: |
           touch "$DB_DATABASE"
-          php artisan test --exclude-group=slow,fresh-db
+          php -d memory_limit=-1 vendor/bin/phpunit --exclude-group=slow
         env:
           DB_DATABASE: ${{ runner.temp }}/testing.sqlite
-
-      - name: Tests that need their own in-memory database (fresh-db)
-        run: php artisan test --group=fresh-db
 
   # The slow tests (wall-clock based performance test) run in parallel to the others.
   slow:
@@ -112,7 +112,7 @@ jobs:
       - name: Slow tests
         run: |
           touch "$DB_DATABASE"
-          php artisan test --group=slow
+          php -d memory_limit=-1 vendor/bin/phpunit --group=slow
         env:
           DB_DATABASE: ${{ runner.temp }}/testing.sqlite
 
@@ -173,7 +173,8 @@ jobs:
       - run: cp .env.example .env && php artisan key:generate
 
       - name: Tests (PostgreSQL)
-        run: php artisan test --exclude-group=slow,fresh-db
+        # fresh-db: the tests of the SQLite import and the one that drops a column need SQLite (they assert the driver).
+        run: php -d memory_limit=-1 vendor/bin/phpunit --exclude-group=slow,fresh-db
         env:
           DB_CONNECTION: pgsql
           DB_HOST: 127.0.0.1

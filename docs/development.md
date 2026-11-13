@@ -67,15 +67,16 @@ Rules for the look:
 
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)
   runs them on every push and pull request and builds the image only when they pass.
+- **`php artisan test` ignores `--exclude-group` / `--group`**: to filter by group call `vendor/bin/phpunit` directly.
 - Also PostgreSQL: `DB_CONNECTION=pgsql DB_DATABASE=... php artisan test` (see `CLAUDE.md` for what only PostgreSQL rejects).
-- CI jobs (`.github/workflows/docker.yml`): `tests` (SQLite in a file, migrated once per process, `--exclude-group=slow`;
-  a second step runs the `fresh-db` group on in-memory SQLite), `slow` (`--group=slow`: `SecurityScanPerformanceTest`, in
-  parallel), `tests-pgsql` (the same on PostgreSQL 17, `continue-on-error`: it does not block yet), `lint` (`php -l` of
+- CI jobs (`.github/workflows/docker.yml`, all call `vendor/bin/phpunit`): `tests` (SQLite in a file, migrated once per
+  process, `--exclude-group=slow`), `slow` (`--group=slow`: `SecurityScanPerformanceTest`, in parallel), `tests-pgsql`
+  (PostgreSQL 17, `--exclude-group=slow,fresh-db`, `continue-on-error`: it does not block yet), `lint` (`php -l` of
   all PHP files, `pint --test` non-blocking) and `build` (needs `tests`, `slow`, `lint`, not `tests-pgsql`).
-- Locally: `php artisan test --group=slow` for the slow group, `php artisan test --exclude-group=slow` without it;
-  PostgreSQL: `DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=... DB_USERNAME=... DB_PASSWORD=... php artisan test`.
-  A test that changes the schema or needs its own database gets `#[Group('fresh-db')]` (CI runs those on in-memory SQLite,
-  where every test migrates again).
+- Locally: `vendor/bin/phpunit --group=slow` for the slow group, `vendor/bin/phpunit --exclude-group=slow` without it;
+  PostgreSQL: `DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=... DB_USERNAME=... DB_PASSWORD=... vendor/bin/phpunit --exclude-group=slow,fresh-db`.
+  A test that asserts the SQLite driver or changes the schema (the SQLite import, a dropped column) gets
+  `#[Group('fresh-db')]`: it runs on SQLite only and is excluded from the PostgreSQL job.
 - `BladeViewsCompileTest` compiles every `resources/views/**/*.blade.php` and parses the PHP: a broken directive (an
   inline `@php(...)` paired with a later `@endphp`) fails there with the view and the line, not in 34 other tests.
 - Who may do what is a ratchet, not a convention: no roles, every signed-in user is a trusted operator; an action that
