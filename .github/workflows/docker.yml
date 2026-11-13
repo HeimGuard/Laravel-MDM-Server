@@ -98,6 +98,63 @@ jobs:
         env:
           DB_DATABASE: ${{ runner.temp }}/testing.sqlite
 
+  # The same tests on PostgreSQL (CLAUDE.md lists what only PostgreSQL rejects). Nobody has run the suite there in CI
+  # yet, so failures are expected: `continue-on-error` keeps this job from failing the workflow and `build` does not
+  # need it. Remove `continue-on-error` once it is green. The `fresh-db` group is left out (the SQLite import test is
+  # specific to SQLite); the slow group runs on SQLite only.
+  tests-pgsql:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: src/laravel
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: heimguard_test
+          POSTGRES_USER: heimguard
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U heimguard -d heimguard_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_pgsql, pgsql
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/laravel/package-lock.json
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: cp .env.example .env && php artisan key:generate
+
+      - name: Tests (PostgreSQL)
+        run: php artisan test --exclude-group=slow,fresh-db
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: heimguard_test
+          DB_USERNAME: heimguard
+          DB_PASSWORD: secret
+
   build:
     needs: [tests, slow]
     runs-on: ubuntu-latest
