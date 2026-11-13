@@ -44,6 +44,15 @@ jobs:
           cache: npm
           cache-dependency-path: src/laravel/package-lock.json
 
+      - id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('src/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
       - run: composer install --no-interaction --no-progress --prefer-dist
 
       - run: npm ci
@@ -82,6 +91,15 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: src/laravel/package-lock.json
+
+      - id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('src/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
 
       - run: composer install --no-interaction --no-progress --prefer-dist
 
@@ -137,6 +155,15 @@ jobs:
           cache: npm
           cache-dependency-path: src/laravel/package-lock.json
 
+      - id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('src/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
       - run: composer install --no-interaction --no-progress --prefer-dist
 
       - run: npm ci
@@ -155,8 +182,50 @@ jobs:
           DB_USERNAME: heimguard
           DB_PASSWORD: secret
 
+  # Static checks. `php -l` of every PHP file (fails on a syntax error, silent otherwise); Pint only reports for now
+  # (the existing code may not follow it), so it does not fail the job.
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/laravel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip
+          coverage: none
+
+      - name: Syntax of every PHP file
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            if ! output=$(php -l "$file" 2>&1); then
+              echo "$output"
+              status=1
+            fi
+          done < <(find app tests routes config database -name '*.php' -print0)
+          exit "$status"
+
+      - id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('src/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Pint (code style, not blocking yet)
+        run: vendor/bin/pint --test
+        continue-on-error: true
+
   build:
-    needs: [tests, slow]
+    needs: [tests, slow, lint]
     runs-on: ubuntu-latest
     permissions:
       actions: write
