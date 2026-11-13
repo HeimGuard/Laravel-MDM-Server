@@ -13,7 +13,7 @@
     $asAlert = $asAlert ?? false;
 @endphp
 <div class="{{ $asAlert ? 'smart-alert' : 'list-group-item d-flex gap-3 align-items-start px-0' }}" role="{{ $asAlert ? 'alert' : 'listitem' }}" wire:key="alert-{{ $device->id }}-{{ $alert['key'] }}">
-    <span class="icon-tile bg-{{ $tone }}-subtle text-{{ $tone }}-emphasis"><i class="{{ $alert['icon'] }}"></i></span>
+    <x-icon-tile :icon="$alert['icon']" :tone="$tone" />
     {{-- Text and actions wrap: on narrow screens the buttons go below the text. --}}
     {{-- Actions sit in the top right corner, next to the title. --}}
     <div class="flex-grow-1 min-w-0 d-flex flex-wrap align-items-start column-gap-3 row-gap-2">

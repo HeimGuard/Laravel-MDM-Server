@@ -33,6 +33,34 @@ changes are in [`CLAUDE.md`](../CLAUDE.md), the data model in [data-model.md](da
 - A new PowerShell release is not started before the restart that finishes its MSI (agents 1.31.2+); the modules
   wait for the next run.
 
+## UI components
+
+Anonymous Blade components in `src/laravel/resources/views/components`. Use them instead of writing the markup again;
+other attributes (`class`, `title`, `wire:*`, `x-*`) are passed to the outer element. New texts in them need the
+translations like any other text.
+
+| Component | Props | When |
+|---|---|---|
+| `<x-icon-tile icon="fas fa-robot" tone="primary" />` | `icon`, `tone` (a Bootstrap colour, `null` = neutral grey), `size` (`lg`) | The square icon before the title of a row, a card or an alert (`.icon-tile`) |
+| `<x-notice type="danger">...</x-notice>` | `type` (`danger`, `warning`, `info`, `success`), `icon` (default of the type, `false` for none) | A message inside a page: the error of an action, a hint, a warning about the data. Small, the icon on the left; `role="alert"` for `danger`, otherwise `status` |
+| `<x-search-input x-model="search" />` | `width` (max width, `20rem`; `null` for none); `placeholder` (default `Search`, also the `aria-label`) | The search field above a list or a table |
+| `<x-empty-state>...</x-empty-state>` | `icon`, `colspan` (a table row instead of a `list-group-item`) | The row of an empty list or table, grey and centred |
+| `<x-status-label icon="far fa-clock">...</x-status-label>` | `icon`, `tone` (`muted`, `primary`, `success`, ...), `spinner`, `compact` (on phones only the icon: give a `title`) | Where something stands: Queued, Installing 40 %, Done, Connected |
+| `<x-button icon="fas fa-download" wire:click="...">Label</x-button>` | `icon`, `variant` (`light`, `primary`, `outline-primary`, ...), `tone` (icon colour, `null` = none), `compact` (label only from `sm` up: give a `title`), `loading` (the `wire:target`: a spinner replaces the icon while it runs), `busy` (the same spinner for an action that is already running), `href` (renders an `<a>`) | The small button with an icon and a label (`btn btn-sm`) |
+| `<x-card-header icon="fas fa-robot" tone="primary" title="Agent">actions</x-card-header>` | `icon`, `tone`, `title` and `subtitle` (a text or `<x-slot:title>` for markup), `tag` (`h2`, ... makes the title a small heading) | The header of a card or section: tile, bold title, subtitle, and the actions on the right in the default slot. On phones the actions wrap below the title |
+| `<x-list-row icon="fas fa-globe" tone="primary" title="..." subtitle="...">` | `icon`, `tone`, `title` (a text or `<x-slot:title>` for a title with a badge), `subtitle`, `icon-title`; slots: default (details), `actions` (right) | A row of a `<ul class="list-group">`: tile, title, grey subtitle, details, actions. Not where the buttons have to go under the text on phones (the finding row, smart alerts keep their own layout) |
+
+Also `x-badge` (`color`, `variant="subtle"`, `size`, `icon`), `x-stat`, `x-tag` / `x-tags`, `x-mac`.
+
+Rules for the look:
+- Grey secondary text is `text-body-secondary` everywhere. `text-muted` is not used: the theme gives it the fixed colour
+  `#a7abc3`, while `text-body-secondary` follows the light and dark theme.
+- A button hides its label on phones (`compact`) only in a row of a table or list; toolbar and page-header buttons keep it,
+  and buttons next to each other behave the same. The icon of a light button has no tint, except the primary action of a
+  row (Update, Install: `tone="primary"`).
+- A spinner next to a label is `spinner-border spinner-border-sm me-1` (`me-sm-1` for a compact label); `x-button` and
+  `x-status-label` render their own.
+
 ## Tests
 
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)

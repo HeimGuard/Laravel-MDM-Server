@@ -16,10 +16,10 @@
     </div>
 
     @if ($targetMode === 'all')
-        <div class="small text-muted">{{ __('Every device, also the ones enrolled later.') }}</div>
+        <div class="small text-body-secondary">{{ __('Every device, also the ones enrolled later.') }}</div>
     @elseif ($targetMode === 'tags')
         @if ($pickerTags === [])
-            <div class="small text-muted">{{ __('No tags yet. Add them to devices in the device menu (Edit tags).') }}</div>
+            <div class="small text-body-secondary">{{ __('No tags yet. Add them to devices in the device menu (Edit tags).') }}</div>
         @else
             <div class="mdm-tags">
                 @foreach ($pickerTags as $pickerTag)
@@ -28,7 +28,7 @@
                     </x-tag>
                 @endforeach
             </div>
-            <div class="small text-muted mt-1">{{ __('Devices with any of the chosen tags, also the ones tagged later.') }}</div>
+            <div class="small text-body-secondary mt-1">{{ __('Devices with any of the chosen tags, also the ones tagged later.') }}</div>
         @endif
     @else
         <div class="list-group" style="max-height: 14rem; overflow-y: auto;">
@@ -40,7 +40,7 @@
                     <x-tags class="justify-content-end" :tags="$pickerDevice->tagList" />
                 </label>
             @empty
-                <div class="list-group-item text-muted small">{{ __('No devices.') }}</div>
+                <x-empty-state class="small">{{ __('No devices.') }}</x-empty-state>
             @endforelse
         </div>
     @endif

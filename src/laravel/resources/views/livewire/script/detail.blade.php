@@ -4,7 +4,7 @@
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1 class="mb-1 text-break">{{ $script->name }}</h1>
-                <div class="d-flex flex-wrap align-items-center gap-2 small text-muted">
+                <div class="d-flex flex-wrap align-items-center gap-2 small text-body-secondary">
                     <x-badge color="secondary" size="sm" variant="subtle" :icon="match ($script->platform) { 'windows' => 'fab fa-windows', 'linux' => 'fab fa-linux', default => 'fas fa-desktop' }">{{ __(\App\Models\Script::PLATFORMS[$script->platform]) }}</x-badge>
                     <x-badge color="primary" size="sm" variant="subtle">v{{ $script->version }}</x-badge>
                     @if ($script->detectsOnly)
@@ -24,11 +24,11 @@
             </div>
             {{-- One group: the buttons wrap together, Run never alone on its own line. --}}
             <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-secondary" href="{{ route('script.index') }}" title="{{ __('Back') }}" aria-label="{{ __('Back') }}">
-                    <i class="me-sm-2 fas fa-arrow-left"></i><span class="d-none d-sm-inline">{{ __('Back') }}</span>
+                <a class="btn btn-secondary" href="{{ route('script.index') }}">
+                    <i class="me-2 fas fa-arrow-left"></i><span>{{ __('Back') }}</span>
                 </a>
-                <button class="btn btn-light" type="button" wire:click="edit" title="{{ __('Edit') }}" aria-label="{{ __('Edit') }}">
-                    <i class="me-sm-2 fas fa-pen"></i><span class="d-none d-sm-inline">{{ __('Edit') }}</span>
+                <button class="btn btn-light" type="button" wire:click="edit">
+                    <i class="me-2 fas fa-pen"></i><span>{{ __('Edit') }}</span>
                 </button>
                 <button class="btn btn-light" type="button" wire:click="schedule">
                     <i class="me-2 fas fa-calendar-alt"></i><span>{{ __('Schedule') }}</span>
@@ -72,7 +72,7 @@
             @endforeach
             @if ($outdated > 0)
                 <div class="col-12">
-                    <div class="small text-muted"><i class="fas fa-info-circle me-1"></i>{{ trans_choice(':count device ran an older version, run it again to apply v:version.|:count devices ran an older version, run it again to apply v:version.', $outdated, ['version' => $script->version]) }}</div>
+                    <div class="small text-body-secondary"><i class="fas fa-info-circle me-1"></i>{{ trans_choice(':count device ran an older version, run it again to apply v:version.|:count devices ran an older version, run it again to apply v:version.', $outdated, ['version' => $script->version]) }}</div>
                 </div>
             @endif
         </div>
@@ -100,15 +100,15 @@
                         </ul>
 
                         <div x-show="code === 'detection'">
-                            <p class="small text-muted">{{ __('Exit 0 = compliant, exit 1 = runs the remediation.') }}</p>
+                            <p class="small text-body-secondary">{{ __('Exit 0 = compliant, exit 1 = runs the remediation.') }}</p>
                             <x-code-viewer :code="$script->detection" wire:key="detection-{{ $script->fingerprint }}" />
                         </div>
                         <div x-cloak x-show="code === 'remediation'" style="display: none">
                             @if ($script->remediation !== null)
-                                <p class="small text-muted">{{ __('Runs when the detection exits with 1, then the detection runs again.') }}</p>
+                                <p class="small text-body-secondary">{{ __('Runs when the detection exits with 1, then the detection runs again.') }}</p>
                                 <x-code-viewer :code="$script->remediation" wire:key="remediation-{{ $script->fingerprint }}" />
                             @else
-                                <p class="text-muted mb-0">{{ __('No remediation script: the detection only reports whether the device is compliant.') }}</p>
+                                <p class="text-body-secondary mb-0">{{ __('No remediation script: the detection only reports whether the device is compliant.') }}</p>
                             @endif
                         </div>
                     </div>
@@ -119,18 +119,18 @@
                     <div class="card-header">{{ __('Details') }}</div>
                     <div class="card-body">
                         <dl class="row small mb-0">
-                            <dt class="col-5 fw-normal text-muted">{{ __('Platform') }}</dt>
+                            <dt class="col-5 fw-normal text-body-secondary">{{ __('Platform') }}</dt>
                             <dd class="col-7">{{ __(\App\Models\Script::PLATFORMS[$script->platform]) }}</dd>
-                            <dt class="col-5 fw-normal text-muted">{{ __('Version') }}</dt>
+                            <dt class="col-5 fw-normal text-body-secondary">{{ __('Version') }}</dt>
                             <dd class="col-7">v{{ $script->version }}</dd>
-                            <dt class="col-5 fw-normal text-muted">{{ __('Timeout') }}</dt>
+                            <dt class="col-5 fw-normal text-body-secondary">{{ __('Timeout') }}</dt>
                             <dd class="col-7">{{ $script->timeout }} s</dd>
-                            <dt class="col-5 fw-normal text-muted">{{ __('Devices') }}</dt>
+                            <dt class="col-5 fw-normal text-body-secondary">{{ __('Devices') }}</dt>
                             <dd class="col-7">{{ $devices }}</dd>
-                            <dt class="col-12 fw-normal text-muted">{{ __('Fingerprint') }}</dt>
+                            <dt class="col-12 fw-normal text-body-secondary">{{ __('Fingerprint') }}</dt>
                             <dd class="col-12 mb-0"><code class="text-break">{{ $script->fingerprint }}</code></dd>
                         </dl>
-                        <p class="small text-muted mt-3 mb-0">{{ __('Runs as SYSTEM / root without network access. The agent checks the fingerprint signed by the server before it runs anything.') }}</p>
+                        <p class="small text-body-secondary mt-3 mb-0">{{ __('Runs as SYSTEM / root without network access. The agent checks the fingerprint signed by the server before it runs anything.') }}</p>
                     </div>
                 </div>
             </div>

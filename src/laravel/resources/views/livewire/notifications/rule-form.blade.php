@@ -8,7 +8,7 @@
 <form wire:submit="save">
     <div class="vstack gap-4">
         <div>
-            <div class="small fw-medium text-muted mb-2">{{ __('What') }}</div>
+            <div class="small fw-medium text-body-secondary mb-2">{{ __('What') }}</div>
             <div class="d-flex flex-wrap gap-2" role="radiogroup" aria-label="{{ __('Alert') }}">
                 @foreach ($types as $value => $option)
                     <input autocomplete="off" class="btn-check" id="rule-type-{{ $value }}" type="radio" value="{{ $value }}" wire:model.live="type">
@@ -20,7 +20,7 @@
         </div>
 
         <div>
-            <div class="small fw-medium text-muted mb-2">{{ __('When') }}</div>
+            <div class="small fw-medium text-body-secondary mb-2">{{ __('When') }}</div>
             <div class="rounded border bg-body-tertiary p-3">
                 <div class="d-flex flex-wrap align-items-center gap-2">
                     @switch($type)
@@ -73,7 +73,7 @@
                 @endforeach
             </div>
             @if ($preview)
-                <div class="small mt-2 {{ $preview['matching'] ? 'text-warning-emphasis' : 'text-muted' }}">
+                <div class="small mt-2 {{ $preview['matching'] ? 'text-warning-emphasis' : 'text-body-secondary' }}">
                     @if ($preview['matching'])
                         <i class="fas fa-exclamation-circle me-1"></i>{{ __('Would fire now on: :devices.', ['devices' => implode(', ', array_slice($preview['matching'], 0, 6)).(count($preview['matching']) > 6 ? ' …' : '')]) }}
                     @else
@@ -85,7 +85,7 @@
 
         @if (\App\Models\AlertRule::isEvent($type))
             <div>
-                <div class="small fw-medium text-muted mb-2">{{ __('On') }}</div>
+                <div class="small fw-medium text-body-secondary mb-2">{{ __('On') }}</div>
                 <div class="small text-body-secondary"><i class="fas fa-globe me-1"></i>{{ match ($type) {
                     'unknown_device' => __('Every device an agent sees in its network (its ARP table or a scan) that no device of the portal has the MAC address of, from now on, once each. Ignored ones on the Networks page are left out.'),
                     'address_changed' => __('Every time a ping-only device with a MAC address is seen at another IP address (DHCP): the portal follows it, the alert says to reserve the address in the router.'),
@@ -94,16 +94,16 @@
             </div>
         @else
             <div>
-                <div class="small fw-medium text-muted mb-2">{{ __('On') }}</div>
+                <div class="small fw-medium text-body-secondary mb-2">{{ __('On') }}</div>
                 @include('partials.target-picker')
                 @error('target') <div class="small text-danger mt-1">{{ $message }}</div> @enderror
             </div>
         @endif
 
         <div>
-            <div class="small fw-medium text-muted mb-2">{{ __('Send to') }}</div>
+            <div class="small fw-medium text-body-secondary mb-2">{{ __('Send to') }}</div>
             @if ($channelOptions === [])
-                <div class="small text-muted">
+                <div class="small text-body-secondary">
                     {{ __('No channels yet: the alert is recorded but not sent.') }}
                     <a href="{{ route('notifications', ['tab' => 'channels']) }}">{{ __('Add a channel') }}</a>
                 </div>

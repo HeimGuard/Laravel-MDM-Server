@@ -57,12 +57,12 @@
                     @else
                         {{-- Renamed from the device menu (⋯). --}}
                         <h2 class="d-flex align-items-center gap-3 mb-2 text-break">
-                            <span class="icon-tile icon-tile-lg bg-primary-subtle text-primary-emphasis" title="{{ __(ucfirst($selectedDevice->type)) }}"><i class="{{ $selectedDevice->typeIcon }}"></i></span>
+                            <x-icon-tile :icon="$selectedDevice->typeIcon" size="lg" title="{{ __(ucfirst($selectedDevice->type)) }}" tone="primary" />
                             <span class="min-w-0">{{ $selectedDevice->DisplayName }}</span>
                         </h2>
                     @endif
 
-                    <div class="text-muted small d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
+                    <div class="text-body-secondary small d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
                         @if ($selectedDevice->offline)
                             <x-badge color="secondary" size="sm" variant="subtle" title="{{ ($selectedDevice->last_seen_at ?? $selectedDevice->updated_at)?->toDateTimeString() }}">
                                 {{ __('Offline') }} · {{ ($selectedDevice->last_seen_at ?? $selectedDevice->updated_at)?->diffForHumans() }}
@@ -254,14 +254,14 @@
                         @foreach ($selectedDevice->drives as $drive)
                             <div class="col-12 col-md-6">
                                 <div class="d-flex align-items-center gap-3">
-                                    <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-muted"></i>
+                                    <i class="fas {{ ($drive['DriveType'] ?? null) == 5 ? 'fa-compact-disc' : 'fa-hdd' }} fa-2x text-body-secondary"></i>
                                     <div class="flex-grow-1">
                                         <div>{{ $drive['FriendlyName'] ?? '' }} ({{ $drive['DriveLetter'] ?? '?' }})</div>
                                         @if (isset($drive['Size']) && isset($drive['PercentUsed']))
                                             <div class="progress my-1" style="height: 6px;">
                                                 <div aria-valuemax="100" aria-valuemin="0" aria-valuenow="{{ $drive['PercentUsed'] }}" class="progress-bar {{ $drive['PercentUsed'] > 90 ? 'bg-danger' : '' }}" role="progressbar" style="width: {{ $drive['PercentUsed'] }}%"></div>
                                             </div>
-                                            <small class="text-muted">
+                                            <small class="text-body-secondary">
                                                 {{ __(':free free of :total', ['free' => \App\Support\Bytes::format($drive['SizeRemaining'] ?? 0), 'total' => \App\Support\Bytes::format($drive['Size'])]) }}
                                             </small>
                                         @endif
@@ -272,11 +272,9 @@
                     </div>
                     @endif
                     @if ($diskHealth !== null)
-                        <h6 class="{{ empty($selectedDevice->drives) ? '' : 'mt-4 pt-3 border-top' }} mb-3"><i class="fas fa-heartbeat me-2 text-muted"></i>{{ __('Disk health') }}</h6>
+                        <h6 class="{{ empty($selectedDevice->drives) ? '' : 'mt-4 pt-3 border-top' }} mb-3"><i class="fas fa-heartbeat me-2 text-body-secondary"></i>{{ __('Disk health') }}</h6>
                     @if ($diskHealth['error'])
-                        <div class="alert alert-warning mb-3" role="alert">
-                            <i class="fas fa-heartbeat me-2"></i>{{ $diskHealth['error'] }}
-                        </div>
+                        <x-notice icon="fas fa-heartbeat" type="warning">{{ $diskHealth['error'] }}</x-notice>
                     @endif
                     @if (count($diskHealth['disks']) > 0)
                         <div class="row g-3">
@@ -296,7 +294,7 @@
                                     <div class="card h-100">
                                         <div class="card-body">
                                             <div class="d-flex align-items-start gap-3">
-                                                <i class="fas {{ ($disk['MediaType'] ?? '') === 'HDD' ? 'fa-hdd' : 'fa-memory' }} fa-2x text-muted"></i>
+                                                <i class="fas {{ ($disk['MediaType'] ?? '') === 'HDD' ? 'fa-hdd' : 'fa-memory' }} fa-2x text-body-secondary"></i>
                                                 <div class="flex-grow-1 min-w-0">
                                                     <div class="d-flex justify-content-between gap-2">
                                                         <span class="fw-semibold text-break">{{ $disk['Model'] ?? $disk['Device'] }}</span>
@@ -304,16 +302,16 @@
                                                             {{ match ($health) { 'passed' => __('Healthy'), 'failed' => __('Failing'), 'warning' => __('Warning'), default => __('Unknown') } }}
                                                         </x-badge>
                                                     </div>
-                                                    <div class="small text-muted text-break">
+                                                    <div class="small text-body-secondary text-break">
                                                         {{ collect([$disk['Device'] ?? null, $disk['MediaType'] ?? null, $disk['Protocol'] ?? null, isset($disk['Size']) ? \App\Support\Bytes::format($disk['Size']) : null, $disk['Serial'] ?? null])->filter()->implode(' · ') }}
                                                     </div>
                                                     @if (! empty($disk['Standby']))
-                                                        <div class="small text-muted mt-1"><i class="fas fa-moon me-1"></i>{{ __('Disk is asleep, showing the last known values.') }}</div>
+                                                        <div class="small text-body-secondary mt-1"><i class="fas fa-moon me-1"></i>{{ __('Disk is asleep, showing the last known values.') }}</div>
                                                     @endif
                                                     @if ($values)
                                                         <dl class="row small mb-0 mt-2">
                                                             @foreach ($values as $label => $value)
-                                                                <dt class="col-6 fw-normal text-muted">{{ $label }}</dt>
+                                                                <dt class="col-6 fw-normal text-body-secondary">{{ $label }}</dt>
                                                                 <dd class="col-6 mb-1 text-end">{{ $value }}</dd>
                                                             @endforeach
                                                         </dl>
@@ -326,9 +324,9 @@
                             @endforeach
                         </div>
                     @elseif (! $diskHealth['error'])
-                        <p class="text-muted mb-0">{{ __('No disks with S.M.A.R.T. support found.') }}</p>
+                        <x-empty-state>{{ __('No disks with S.M.A.R.T. support found.') }}</x-empty-state>
                     @endif
-                    <p class="small text-muted mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
+                    <p class="small text-body-secondary mt-3 mb-0">{{ __('Checked by the agent every hour; sleeping disks are not woken up.') }}</p>
                     @endif
                     @endif
                 </div>
@@ -344,25 +342,23 @@
                 <div aria-labelledby="updates-tab" class="tab-pane fade {{ $activeTab === 'updates' ? 'show active' : '' }}" id="updates-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'updates')
                     @if ($selectedDevice->data->os_updates_error ?? null)
-                        <div class="alert alert-warning small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</div>
+                        <x-notice type="warning">{{ __('The check for OS updates failed, the list may be out of date: :error', ['error' => $selectedDevice->data->os_updates_error]) }}</x-notice>
                     @endif
                     <div class="d-flex align-items-center gap-2 mb-3">
-                        <input class="form-control form-control-sm flex-grow-1 min-w-0" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
+                        <x-search-input class="flex-grow-1 min-w-0" x-model="search" />
                         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
                             @if ($updatesRunning)
                                 <div style="min-width: 14rem;">@include('partials.device.command-progress', ['command' => $updatesRunning])</div>
                             @elseif ($pendingUpdates > 0)
-                                <button class="btn btn-sm btn-light" type="button" wire:click="installAll" wire:loading.attr="disabled" wire:target="installAll" @disabled($selectedDevice->offline)>
-                                    <i class="fas fa-download me-1 text-primary"></i>{{ __('Install all (:count)', ['count' => $pendingUpdates]) }}
-                                </button>
+                                <x-button icon="fas fa-download" tone="primary" wire:click="installAll" wire:loading.attr="disabled" wire:target="installAll" :disabled="$selectedDevice->offline">{{ __('Install all (:count)', ['count' => $pendingUpdates]) }}</x-button>
                             @endif
                         </div>
                     </div>
                     @error('update')
-                        <div class="alert alert-danger py-2 small">{{ $message }}</div>
+                        <x-notice type="danger">{{ $message }}</x-notice>
                     @enderror
                     @unless ($selectedDevice->commandTracking)
-                        <p class="small text-muted">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
+                        <p class="small text-body-secondary">{{ __('Updating single packages needs agent :version or newer.', ['version' => \App\Models\Device::TRACKING_VERSION]) }}</p>
                     @endunless
                     @if (count($selectedDevice->updates) > 0)
                         <div x-show="!search || @js($osSearch).some(text => text.includes(search.toLowerCase()))">
@@ -414,10 +410,10 @@
                                     <span class="flex-grow-1 min-w-0">
                                         <span class="fw-semibold text-break">{{ $appUpdate['Id'] ?? '' }}</span>
                                         @if (! empty($appUpdate['Source']))
-                                            <span class="small text-muted ms-1">{{ $appUpdate['Source'] }}</span>
+                                            <span class="small text-body-secondary ms-1">{{ $appUpdate['Source'] }}</span>
                                         @endif
                                         @if (($appUpdate['Scope'] ?? null) === 'user')
-                                            <span class="small text-muted ms-1" title="{{ __('Installed only for the logged-on user: updated in their session') }}"><i class="fas fa-user me-1"></i>{{ __('user') }}</span>
+                                            <span class="small text-body-secondary ms-1" title="{{ __('Installed only for the logged-on user: updated in their session') }}"><i class="fas fa-user me-1"></i>{{ __('user') }}</span>
                                         @endif
                                         {{-- On phones the versions go under the name, the button keeps its place. --}}
                                         <span class="d-block d-sm-none small text-primary-emphasis">{{ $versions }}</span>
@@ -433,9 +429,9 @@
                                     <li class="list-group-item d-flex align-items-center gap-2" wire:key="module-{{ $loop->index }}" x-show="!search || @js($moduleSearch[$loop->index]).includes(search.toLowerCase())">
                                         <span class="flex-grow-1 min-w-0">
                                             <span class="fw-semibold text-break">{{ $module['Name'] ?? '' }}</span>
-                                            <span class="small text-muted ms-1">{{ __('module') }} · {{ $module['Edition'] ?? '' }}</span>
+                                            <span class="small text-body-secondary ms-1">{{ __('module') }} · {{ $module['Edition'] ?? '' }}</span>
                                             @if (! empty($module['User']))
-                                                <span class="small text-muted" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
+                                                <span class="small text-body-secondary" title="{{ __('Installed in the user profile, the user updates it (Update-Module).') }}"><i class="fas fa-user ms-1 me-1"></i>{{ $module['User'] }}</span>
                                             @endif
                                             <span class="d-block d-sm-none small text-primary-emphasis">{{ $module['Version'] ?? '?' }} → {{ $module['Available'] ?? '?' }}</span>
                                         </span>
@@ -458,45 +454,37 @@
                     @if ($activeTab === 'networks')
                     <ul class="list-group">
                         @if (\App\Models\Device::isPublicIp($selectedDevice->public_ip))
-                            <li class="list-group-item d-flex align-items-start gap-3">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-globe"></i></span>
-                                <div class="flex-grow-1 min-w-0">
-                                    <div class="fw-semibold">{{ __('Public address') }}</div>
-                                    <div class="small text-muted">{{ __('The address the device reaches the server from, behind NAT the one of its router.') }}</div>
-                                    <div class="small font-monospace">{{ $selectedDevice->public_ip }}</div>
-                                </div>
-                            </li>
+                            <x-list-row icon="fas fa-globe" tone="primary" :title="__('Public address')" :subtitle="__('The address the device reaches the server from, behind NAT the one of its router.')">
+                                <div class="small font-monospace">{{ $selectedDevice->public_ip }}</div>
+                            </x-list-row>
                         @endif
                         @foreach (\App\Models\Device::sortNetworks($selectedDevice->networks) as $network)
                             @php $type = \App\Models\Device::NETWORK_TYPES[$network['Type']]; @endphp
-                            <li class="list-group-item d-flex align-items-start gap-3 {{ $network['Connected'] ? '' : 'text-body-secondary' }}" wire:key="network-{{ $loop->index }}">
-                                <span class="icon-tile {{ $network['Connected'] ? 'bg-primary-subtle text-primary-emphasis' : '' }}" title="{{ __($type['label']) }}"><i class="{{ $type['icon'] }}"></i></span>
-                                <div class="flex-grow-1 min-w-0">
-                                    {{-- Name and type in one line that wraps; the state is on the right of the row. --}}
+                            <x-list-row :class="$network['Connected'] ? '' : 'text-body-secondary'" :icon="$type['icon']" :icon-title="__($type['label'])" :subtitle="$network['Description'] && $network['Description'] !== $network['Name'] ? $network['Description'] : null" :tone="$network['Connected'] ? 'primary' : null" wire:key="network-{{ $loop->index }}">
+                                {{-- Name and type in one line that wraps; the state is on the right of the row. --}}
+                                <x-slot:title>
                                     <div class="d-flex flex-wrap align-items-center column-gap-2 row-gap-1">
                                         <span class="fw-semibold text-break">{{ $network['Name'] }}</span>
                                         <x-badge color="secondary" size="sm" variant="subtle">{{ __($type['label']) }}</x-badge>
                                     </div>
-                                    @if ($network['Description'] && $network['Description'] !== $network['Name'])
-                                        <div class="small text-muted text-break">{{ $network['Description'] }}</div>
-                                    @endif
-                                    @foreach ($network['IPAddresses'] as $ipAddress)
-                                        <div class="small text-muted">
-                                            <span class="font-monospace">{{ $ipAddress }}</span>
-                                            @if (\App\Models\Device::isPublicIp($ipAddress))
-                                                <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
-                                            @endif
-                                        </div>
-                                    @endforeach
-                                    @if ($network['Mac'])
-                                        <x-mac :mac="$network['Mac']" class="d-block small text-body-tertiary" title="{{ __('MAC address') }}" />
-                                    @endif
-                                </div>
+                                </x-slot:title>
+                                @foreach ($network['IPAddresses'] as $ipAddress)
+                                    <div class="small text-body-secondary">
+                                        <span class="font-monospace">{{ $ipAddress }}</span>
+                                        @if (\App\Models\Device::isPublicIp($ipAddress))
+                                            <x-badge class="ms-1" color="primary" size="sm" variant="subtle" title="{{ __('Reachable from the internet') }}">{{ __('Public') }}</x-badge>
+                                        @endif
+                                    </div>
+                                @endforeach
+                                @if ($network['Mac'])
+                                    <x-mac :mac="$network['Mac']" class="d-block small text-body-tertiary" title="{{ __('MAC address') }}" />
+                                @endif
                                 {{-- On phones only the icon (its text in the tooltip). --}}
-                                <span class="flex-shrink-0 small text-nowrap {{ $network['Connected'] ? 'text-success' : 'text-body-secondary' }}" title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">
-                                    <i class="fas {{ $network['Connected'] ? 'fa-check-circle' : 'fa-times-circle' }}"></i><span class="d-none d-sm-inline ms-1">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</span>
-                                </span>
-                            </li>
+                                <x-slot:actions>
+                                    <x-status-label compact :icon="$network['Connected'] ? 'fas fa-check-circle' : 'fas fa-times-circle'" :tone="$network['Connected'] ? 'success' : 'muted'"
+                                        title="{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}{{ $network['Status'] ? ' · ' . $network['Status'] : '' }}">{{ $network['Connected'] ? __('Connected') : __('Disconnected') }}</x-status-label>
+                                </x-slot:actions>
+                            </x-list-row>
                         @endforeach
                     </ul>
                     @endif
@@ -507,8 +495,8 @@
                 <div aria-labelledby="services-tab" class="tab-pane fade {{ $activeTab === 'services' ? 'show active' : '' }}" id="services-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'services')
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-                        <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
-                        <span class="small text-muted ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
+                        <x-search-input x-model="search" />
+                        <span class="small text-body-secondary ms-auto">{{ __(':running running, :other not running', ['running' => count($services) - $failedServices, 'other' => $failedServices]) }}</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
@@ -528,9 +516,9 @@
                                     <tr wire:key="service-{{ $loop->index }}" x-show="!search || @js($search).includes(search.toLowerCase())">
                                         <td class="text-break">
                                             <span class="fw-semibold">{{ $service['Name'] ?? '' }}</span>
-                                            <div class="small text-muted d-md-none">{{ $service['DisplayName'] ?? '' }}</div>
+                                            <div class="small text-body-secondary d-md-none">{{ $service['DisplayName'] ?? '' }}</div>
                                         </td>
-                                        <td class="d-none d-md-table-cell text-muted">{{ $service['DisplayName'] ?? '' }}</td>
+                                        <td class="d-none d-md-table-cell text-body-secondary">{{ $service['DisplayName'] ?? '' }}</td>
                                         <td class="text-end text-nowrap">
                                             <x-badge :color="$state === 'running' ? 'success' : ($state === 'failed' ? 'danger' : 'warning')" variant="subtle">
                                                 {{ __(ucfirst($state)) }}
@@ -549,12 +537,10 @@
                 <div aria-labelledby="docker-tab" class="tab-pane fade {{ $activeTab === 'docker' ? 'show active' : '' }}" id="docker-tab-pane" role="tabpanel" tabindex="0" x-data="{ search: '' }">
                     @if ($activeTab === 'docker')
                     @if ($docker['error'])
-                        <div class="alert alert-warning mb-3" role="alert">
-                            <i class="fab fa-docker me-2"></i>{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}
-                        </div>
+                        <x-notice icon="fab fa-docker" type="warning">{{ __('Docker is installed but the agent cannot read the containers: :error', ['error' => $docker['error']]) }}</x-notice>
                     @endif
                     @if (count($docker['containers']) > 0)
-                        <input class="form-control form-control-sm mb-3" placeholder="{{ __('Search') }}" style="max-width: 20rem;" type="search" x-model="search">
+                        <x-search-input class="mb-3" x-model="search" />
                         <div class="table-responsive">
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
@@ -592,19 +578,19 @@
                                                         @if ($icons !== [])
                                                             <img src="{{ $icons[0] }}" alt="" width="28" height="28" style="object-fit: contain;">
                                                         @else
-                                                            <i class="fab fa-docker text-muted fa-lg"></i>
+                                                            <i class="fab fa-docker text-body-secondary fa-lg"></i>
                                                         @endif
                                                     </span>
                                                     <div class="min-w-0">
                                                         <span class="fw-semibold">{{ $container['Name'] ?? '' }}</span>
                                                         @if (\App\Support\SecurityParsers::readsImage($logImages, (string) ($container['Image'] ?? '')))
-                                                            <i class="fas fa-file-alt text-muted ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
+                                                            <i class="fas fa-file-alt text-body-secondary ms-1" title="{{ __('The log of this container is read and parsed for events') }}"></i>
                                                         @endif
-                                                        <div class="small text-muted">{{ $container['Image'] ?? '' }}</div>
+                                                        <div class="small text-body-secondary">{{ $container['Image'] ?? '' }}</div>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="d-none d-lg-table-cell small text-muted text-nowrap">{{ implode(', ', $published) }}</td>
+                                            <td class="d-none d-lg-table-cell small text-body-secondary text-nowrap">{{ implode(', ', $published) }}</td>
                                             <td class="d-none d-md-table-cell">
                                                 @if ($beats !== [])
                                                     <div class="ping-beats ping-beats-xs" role="img" aria-label="{{ __('Last 12 hours') }}">
@@ -621,7 +607,7 @@
                                             </td>
                                             <td class="text-end">
                                                 <x-badge :color="$color" variant="subtle">{{ ($container['Health'] ?? null) === 'unhealthy' ? __('Unhealthy') : __(ucfirst($state)) }}</x-badge>
-                                                <div class="small text-muted text-nowrap">{{ $container['Status'] ?? '' }}</div>
+                                                <div class="small text-body-secondary text-nowrap">{{ $container['Status'] ?? '' }}</div>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -629,7 +615,7 @@
                             </table>
                         </div>
                     @elseif (! $docker['error'])
-                        <p class="text-muted mb-0">{{ __('No containers.') }}</p>
+                        <x-empty-state>{{ __('No containers.') }}</x-empty-state>
                     @endif
                     @endif
                 </div>
@@ -640,7 +626,7 @@
                     @if ($activeTab === 'scripts')
                     @livewire('script-run.data-table', ['deviceId' => $selectedDevice->id], key('device-script-runs-'.$selectedDevice->id))
                     @unless ($selectedDevice->scriptsEnabled)
-                        <p class="small text-muted mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
+                        <p class="small text-body-secondary mt-3 mb-0">{{ __('Remediation scripts are disabled on this device.') }}</p>
                     @endunless
                     @endif
                 </div>
@@ -658,7 +644,7 @@
                     @if ($activeTab === 'history')
                     {{-- Parsed from the audit log (App\Support\Audit): commands with their status, other actions as they were logged. --}}
                     @if ($history->isEmpty())
-                        <div class="text-body-secondary small">{{ __('Nothing done with the device yet.') }}</div>
+                        <x-empty-state>{{ __('Nothing done with the device yet.') }}</x-empty-state>
                     @else
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
@@ -732,10 +718,7 @@
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-robot"></i></span>
-                                <span class="fw-semibold">{{ __('Agent') }}</span>
-                            </div>
+                            <x-card-header icon="fas fa-robot" tone="primary" :title="__('Agent')" />
                             <div class="{{ $row }}">
                                 <span class="small text-body-secondary">{{ __('Version') }}</span>
                                 <span class="d-flex align-items-center gap-2">
@@ -760,10 +743,7 @@
 
                     <div class="col-12 col-md-6">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile {{ $selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'bg-success-subtle text-success-emphasis' : '' }}"><i class="fas fa-plug"></i></span>
-                                <span class="fw-semibold">{{ __('Connection') }}</span>
-                            </div>
+                            <x-card-header icon="fas fa-plug" :tone="$selectedDevice->connectedViaWebsocket || $selectedDevice->connectedViaApi ? 'success' : null" :title="__('Connection')" />
                             <div class="{{ $row }}">
                                 <span>
                                     <span class="small text-body-secondary d-block">WebSocket</span>
@@ -784,11 +764,9 @@
                     @php $features = $selectedDevice->features; @endphp
                     <div class="col-12">
                         <div class="card card-body">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile bg-primary-subtle text-primary-emphasis"><i class="fas fa-sliders-h"></i></span>
-                                <span class="fw-semibold me-auto">{{ __('Features') }}</span>
+                            <x-card-header icon="fas fa-sliders-h" tone="primary" :title="__('Features')">
                                 <span class="small text-body-secondary">{{ __(':on of :count on', ['on' => collect($features)->where('on', true)->count(), 'count' => count($features)]) }}</span>
-                            </div>
+                            </x-card-header>
                             @foreach ($features as $feature)
                                 <div class="{{ $row }}" wire:key="feature-{{ $feature['key'] }}">
                                     <span class="min-w-0">
@@ -809,17 +787,13 @@
 
                     <div class="col-12">
                         <div class="card card-body h-100">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <span class="icon-tile {{ $selectedDevice->signsRequests ? 'bg-success-subtle text-success-emphasis' : 'bg-warning-subtle text-warning-emphasis' }}"><i class="fas {{ $selectedDevice->signsRequests ? 'fa-lock' : 'fa-unlock' }}"></i></span>
-                                <span class="fw-semibold">{{ __('Security') }}</span>
+                            <x-card-header :icon="$selectedDevice->signsRequests ? 'fas fa-lock' : 'fas fa-unlock'" :tone="$selectedDevice->signsRequests ? 'success' : 'warning'" :title="__('Security')">
                                 @can('is-system-admin')
                                     @if ($selectedDevice->signsRequests)
-                                        <button class="btn btn-sm btn-light ms-auto text-nowrap" type="button" title="{{ __('The agent registers a new key with its next request, e.g. after it was reinstalled with a new key.') }}" wire:click="resetDeviceKey" wire:confirm="{{ __('Reset the device key? Until the agent registers a key again, the device only gets the agent update.') }}">
-                                            <i class="fas fa-undo me-1 text-body-secondary"></i>{{ __('Reset device key') }}
-                                        </button>
+                                        <x-button icon="fas fa-undo" class="ms-auto text-nowrap" title="{{ __('The agent registers a new key with its next request, e.g. after it was reinstalled with a new key.') }}" wire:click="resetDeviceKey" wire:confirm="{{ __('Reset the device key? Until the agent registers a key again, the device only gets the agent update.') }}">{{ __('Reset device key') }}</x-button>
                                     @endif
                                 @endcan
-                            </div>
+                            </x-card-header>
                             <div class="{{ $row }}">
                                 <span class="small text-body-secondary">{{ __('Signing') }}</span>
                                 @if ($selectedDevice->signsRequests)

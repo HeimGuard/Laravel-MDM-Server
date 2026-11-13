@@ -12,7 +12,7 @@
                 <div class="card">
                     <form class="card-body" wire:submit="createPingDevice">
                         <h5 class="card-title">{{ __('Add a ping-only device') }}</h5>
-                        <p class="text-muted">{{ __('For a printer, a NAS or a PC without the agent: an agent (1.10.0+, not on a battery) in the same network pings it every 30 seconds for its online status and wakes it with Wake-on-LAN.') }}</p>
+                        <p class="text-body-secondary">{{ __('For a printer, a NAS or a PC without the agent: an agent (1.10.0+, not on a battery) in the same network pings it every 30 seconds for its online status and wakes it with Wake-on-LAN.') }}</p>
                         <div class="row g-3" style="max-width: 44rem">
                             <div class="col-12">
                                 <label class="form-label" for="ping-name">{{ __('Name') }}</label>
@@ -31,7 +31,7 @@
                                 </div>
                             </div>
                             <div class="col-12 col-md-4">
-                                <label class="form-label" for="ping-mac">{{ __('MAC address') }} <span class="text-muted">({{ __('for Wake-on-LAN') }})</span></label>
+                                <label class="form-label" for="ping-mac">{{ __('MAC address') }} <span class="text-body-secondary">({{ __('for Wake-on-LAN') }})</span></label>
                                 <input class="form-control font-monospace" id="ping-mac" placeholder="AA:BB:CC:DD:EE:FF" type="text" wire:model="pingMac">
                             </div>
                             @error('pingAddress') <div class="col-12 small text-danger">{{ $message }}</div> @enderror
@@ -43,9 +43,9 @@
             <div class="card">
                 <div class="card-body">
                     <h5 class="card-title">{{ __('Enrol new device') }}</h5>
-                    <p class="text-muted mb-2">{{ __('Enter this code in the agent to register the device.') }}</p>
+                    <p class="text-body-secondary mb-2">{{ __('Enter this code in the agent to register the device.') }}</p>
                     <h2 class="display-5 fw-semibold">{{ $enrollmentCode }}</h2>
-                    <p class="text-muted">
+                    <p class="text-body-secondary">
                         <i class="far fa-clock me-1"></i>{{ __('Expires') }} {{ $enrollmentCodeExpiration->diffForHumans() }} ({{ $enrollmentCodeExpiration }})
                     </p>
 
@@ -67,12 +67,12 @@
                         @foreach (['windows' => __('Run in PowerShell as Administrator.'), 'pwsh' => __('Run in pwsh as Administrator on Windows, or with sudo pwsh on Debian / Ubuntu.')] as $variant => $hint)
                             <div x-show="tab === '{{ $variant }}'" @if ($variant !== 'windows') x-cloak style="display: none" @endif>
                                 <x-copy-command :command="$installCommands[$variant]" />
-                                <p class="small text-muted mt-2 mb-0">{{ $hint }}</p>
+                                <p class="small text-body-secondary mt-2 mb-0">{{ $hint }}</p>
                             </div>
                         @endforeach
                     </div>
 
-                    <p class="small text-muted mt-3 mb-0" title="{{ __('The agent accepts only commands, responses and updates signed with this key. It logs the fingerprint it pinned in agent.log.') }}">
+                    <p class="small text-body-secondary mt-3 mb-0" title="{{ __('The agent accepts only commands, responses and updates signed with this key. It logs the fingerprint it pinned in agent.log.') }}">
                         <i class="fas fa-key me-1"></i>{{ __('Server key fingerprint') }}:
                         <code class="text-break">{{ \App\Support\Signing::fingerprint() }}</code>
                     </p>
@@ -84,7 +84,7 @@
                 {{-- The device list: beside the detail on wide screens, behind a button on phones. --}}
                 <aside class="col-12 col-lg-3" x-data="{ open: false }">
                     <button class="btn btn-light w-100 d-flex align-items-center d-lg-none" type="button" x-on:click="open = ! open" x-bind:aria-expanded="open">
-                        <i class="fas fa-list me-2"></i>{{ __('Devices') }} <span class="text-muted ms-1">{{ $total }}</span>
+                        <i class="fas fa-list me-2"></i>{{ __('Devices') }} <span class="text-body-secondary ms-1">{{ $total }}</span>
                         <i class="fas fa-chevron-down ms-auto small" x-bind:class="{ 'fa-rotate-180': open }"></i>
                     </button>
                     <div class="device-switcher d-lg-block mt-2 mt-lg-0" x-bind:class="{ 'd-none': ! open }">
@@ -126,7 +126,7 @@
                                     @endif
                                 </a>
                             @empty
-                                <div class="list-group-item text-muted small">{{ $total === 0 ? __('No devices enrolled yet.') : __('No device matches the filters.') }}</div>
+                                <x-empty-state>{{ $total === 0 ? __('No devices enrolled yet.') : __('No device matches the filters.') }}</x-empty-state>
                             @endforelse
                         </div>
                         <div class="d-grid mt-2">

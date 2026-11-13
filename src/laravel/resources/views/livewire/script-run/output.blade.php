@@ -1,5 +1,5 @@
 <div>
-    <div class="d-flex flex-wrap align-items-center gap-2 small text-muted mb-2">
+    <div class="d-flex flex-wrap align-items-center gap-2 small text-body-secondary mb-2">
         <x-badge :color="$run->statusColor" size="sm" variant="subtle">{{ \App\Models\ScriptRun::statusLabel($run->status) }}</x-badge>
         <span>{{ $run->script?->name }} v{{ $run->version }}</span>
         <span>· {{ $run->device?->displayName }}</span>
@@ -8,10 +8,10 @@
         @endif
     </div>
     @if ($fixError)
-        <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $fixError }}</div>
+        <x-notice type="danger">{{ $fixError }}</x-notice>
     @endif
     @if ($run->error)
-        <div class="alert alert-danger small py-2">{{ $run->error }}</div>
+        <x-notice type="danger">{{ $run->error }}</x-notice>
     @endif
     @if ($run->script && in_array($run->status, ['failed', 'error'], true) && \App\Services\AiService::available())
         @can('is-system-admin')
@@ -29,6 +29,6 @@
     @if ($run->output)
         <pre class="small bg-body-tertiary p-3 rounded mb-0" style="max-height: 60vh; white-space: pre-wrap; word-break: break-word;"><code>{{ $run->output }}</code></pre>
     @else
-        <p class="text-muted mb-0">{{ __('No output.') }}</p>
+        <p class="text-body-secondary mb-0">{{ __('No output.') }}</p>
     @endif
 </div>

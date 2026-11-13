@@ -65,14 +65,11 @@
 
         @unless ($discovery)
             {{-- Off for the whole portal: no neighbours are taken and no scans sent, the unknown devices go stale. --}}
-            <div class="alert alert-warning d-flex align-items-start gap-2 py-2 small mb-3" role="status">
-                <i class="fas fa-eye-slash mt-1"></i>
-                <div>
-                    <strong>{{ __('Network discovery is off.') }}</strong>
-                    {{ __('The portal takes no ARP tables from the agents and sends no scans, so unknown devices are not updated.') }}
-                    @if ($admin) {{ __('Turn it on in the settings (the cog above).') }} @endif
-                </div>
-            </div>
+            <x-notice icon="fas fa-eye-slash" type="warning">
+                <strong>{{ __('Network discovery is off.') }}</strong>
+                {{ __('The portal takes no ARP tables from the agents and sends no scans, so unknown devices are not updated.') }}
+                @if ($admin) {{ __('Turn it on in the settings (the cog above).') }} @endif
+            </x-notice>
         @endunless
 
         @if ($unknownCount > 0)
@@ -97,9 +94,8 @@
         </ul>
 
         @if (($counts['device'] ?? 0) === 0)
-            <div class="card card-body text-center text-body-secondary py-5">
-                <i class="fas fa-project-diagram fa-2x mb-3"></i>
-                <div>{{ __('No devices yet: the map is built from what their agents report.') }}</div>
+            <div class="card overflow-hidden">
+                <x-empty-state class="border-0 py-5" icon="fas fa-project-diagram">{{ __('No devices yet: the map is built from what their agents report.') }}</x-empty-state>
             </div>
         @elseif ($view === 'map')
             <div class="card card-body p-2 mb-3" wire:key="network-map-view">
@@ -194,7 +190,7 @@
                                 <tr id="{{ $network['anchor'] }}" wire:key="network-{{ $network['id'] }}">
                                     <td>
                                         <div class="d-flex align-items-center gap-2">
-                                            <span class="icon-tile d-none d-sm-inline-flex bg-{{ $kind['tone'] }}-subtle text-{{ $kind['tone'] }}-emphasis"><i class="{{ $kind['icon'] }}"></i></span>
+                                            <x-icon-tile class="d-none d-sm-inline-flex" :icon="$kind['icon']" :tone="$kind['tone']" />
                                             <div class="min-w-0">
                                                 <a class="fw-semibold text-body font-monospace" href="{{ $url }}">{{ $network['cidr'] }}</a>
                                                 <div class="small text-body-secondary">{{ $kind['label'] }}</div>
@@ -231,16 +227,9 @@
                                     </td>
                                     <td class="text-end text-nowrap">
                                         @if ($scan)
-                                            <button class="btn btn-sm btn-outline-primary nm-scan-btn" type="button" wire:click="scan(@js($network['id']))" aria-label="{{ __('Scan') }}" wire:loading.attr="disabled"
-                                                @disabled(! $scan['agent'] || $command?->active)
-                                                title="{{ $scan['agent'] ? __('Ping every address of the network from :agent and take what answers', ['agent' => $scan['name']]) : $scan['refusal'] }}">
-                                                @if ($command?->active)
-                                                    <span aria-hidden="true" class="spinner-border spinner-border-sm me-sm-1"></span>
-                                                @else
-                                                    <i class="fas fa-search-location me-sm-1"></i>
-                                                @endif
-                                                <span class="d-none d-sm-inline">{{ __('Scan') }}</span>
-                                            </button>
+                                            <x-button variant="outline-primary" icon="fas fa-search-location" compact :busy="(bool) $command?->active" class="nm-scan-btn" wire:click="scan(@js($network['id']))" aria-label="{{ __('Scan') }}" wire:loading.attr="disabled"
+                                                :disabled="(bool) (! $scan['agent'] || $command?->active)"
+                                                title="{{ $scan['agent'] ? __('Ping every address of the network from :agent and take what answers', ['agent' => $scan['name']]) : $scan['refusal'] }}">{{ __('Scan') }}</x-button>
                                             @error('scan.'.$network['anchor']) <div class="text-danger small text-wrap">{{ $message }}</div> @enderror
                                         @endif
                                     </td>
@@ -253,10 +242,7 @@
 
             {{-- Agents with no other agent in their networks: nothing next to them can wake them or ping around them. --}}
             @foreach ($isolated as $node)
-                <div class="alert alert-warning d-flex align-items-start gap-2 py-2 small mt-3 mb-0" wire:key="isolated-{{ $node['id'] }}">
-                    <i class="fas fa-exclamation-triangle mt-1"></i>
-                    <div><a class="fw-semibold" href="{{ $node['url'] }}">{{ $node['label'] }}</a> · {{ __('No other agent in its networks: nothing next to it can wake it or ping the devices around it.') }}</div>
-                </div>
+                <x-notice class="mt-3 mb-0" type="warning" wire:key="isolated-{{ $node['id'] }}"><a class="fw-semibold" href="{{ $node['url'] }}">{{ $node['label'] }}</a> · {{ __('No other agent in its networks: nothing next to it can wake it or ping the devices around it.') }}</x-notice>
             @endforeach
 
             @if ($ignored->isNotEmpty())

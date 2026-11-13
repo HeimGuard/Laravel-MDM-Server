@@ -18,7 +18,7 @@
 <div class="mt-4">
     @include('partials.chart-section-header', [
         'icon' => 'fas fa-network-wired',
-        'tile' => 'bg-success-subtle text-success-emphasis',
+        'tone' => 'success',
         'title' => e(__('Ping')).' · <span class="font-monospace">'.e($device->ping_address).'</span>',
         'subtitle' => $subtitle,
         'ranges' => array_keys(\App\Livewire\PingMonitor::RANGES),
@@ -85,16 +85,9 @@
                             @if ($result)<span class="text-body-secondary fw-normal ms-1">{{ count($result->ports) }}</span>@endif
                         </span>
                         {{-- DeviceCommands sends the scan and shows its progress in the device card. --}}
-                        <button class="btn btn-sm btn-outline-secondary text-nowrap" type="button" x-on:click="Livewire.dispatch('scan-ports')"
+                        <x-button variant="outline-secondary" icon="fas fa-bullseye" :busy="(bool) $scanning" class="text-nowrap" x-on:click="Livewire.dispatch('scan-ports')"
                             title="{{ $scanning ? ($scanning->displayMessage ?: $scanning->statusLabel) : ($portScan['scanner'] ? __('Scan the open ports of :ip and read what each service returns', ['ip' => $portScan['address']]) : __('No online agent in its network can scan it.')) }}"
-                            @disabled($scanning || ! $portScan['scanner'])>
-                            @if ($scanning)
-                                <span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>
-                            @else
-                                <i class="fas fa-bullseye me-1"></i>
-                            @endif
-                            {{ __('Scan ports') }}
-                        </button>
+                            :disabled="$scanning || ! $portScan['scanner']">{{ __('Scan ports') }}</x-button>
                     </div>
                     @if ($result && $result->ports)
                         <table class="table table-sm small mb-0">

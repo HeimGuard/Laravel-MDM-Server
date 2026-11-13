@@ -13,12 +13,10 @@
         @if ($bulk->isNotEmpty())
             <div class="d-flex flex-wrap gap-2 mb-2">
                 @foreach ($bulk as $key => $group)
-                    <button class="btn btn-sm btn-light" type="button"
+                    <x-button :icon="$group['action']['icon']"
                         wire:click="runForAll('{{ $key }}')" wire:loading.attr="disabled" wire:target="runForAll('{{ $key }}')"
                         wire:confirm="{{ __(':action on :count devices?', ['action' => $group['action']['label'], 'count' => $group['count']]) }}"
-                        title="{{ $group['title'] }}">
-                        <i class="{{ $group['action']['icon'] }} me-1 text-primary"></i>{{ __(':action (:count devices)', ['action' => $group['action']['label'], 'count' => $group['count']]) }}
-                    </button>
+                        title="{{ $group['title'] }}">{{ __(':action (:count devices)', ['action' => $group['action']['label'], 'count' => $group['count']]) }}</x-button>
                 @endforeach
             </div>
         @endif

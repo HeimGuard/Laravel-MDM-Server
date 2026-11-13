@@ -1,7 +1,7 @@
 {{-- One finding of the scanner: severity, rule, message, since when; explain / remediate with AI, acknowledge / open again. --}}
 {{-- On a phone the buttons go under the text, side by side; from md they are a column on the right. --}}
 <div class="list-group-item d-flex flex-wrap flex-md-nowrap align-items-start gap-3 py-3" wire:key="security-finding-{{ $finding->id }}">
-    <span class="icon-tile bg-{{ $finding->severityColor }}-subtle text-{{ $finding->severityColor }}-emphasis" title="{{ __(ucfirst($finding->severity)) }}"><i class="fas fa-shield-alt"></i></span>
+    <x-icon-tile icon="fas fa-shield-alt" :tone="$finding->severityColor" title="{{ __(ucfirst($finding->severity)) }}" />
     <div class="flex-grow-1 min-w-0" style="flex-basis: 0">
         <div class="d-flex flex-wrap align-items-center column-gap-2">
             <x-badge :color="$finding->severityColor" size="sm" variant="subtle">{{ __(ucfirst($finding->severity)) }}</x-badge>
@@ -25,7 +25,7 @@
             <div class="small text-body-secondary mt-1"><i class="fas fa-info-circle me-1"></i>{{ __('Worst CVE: :severity (nothing can be done about it yet)', ['severity' => __(ucfirst($finding->worstSeverity))]) }}</div>
         @endif
         @if ($finding->remediation)
-            <div class="small text-muted mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
+            <div class="small text-body-secondary mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>
         @endif
         @php($links = $finding->urls)
         @if ($links)

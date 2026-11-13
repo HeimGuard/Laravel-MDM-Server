@@ -17,7 +17,7 @@
                 <span class="ping-beat {{ $beat->up ? 'is-up' : 'is-down' }}" title="{{ $beat->created_at->format('j. n. H:i:s') }} · {{ $beat->up ? $format($beat->rtt, 'ms') : __('No answer') }}"></span>
             @endforeach
         </div>
-        <div class="d-flex justify-content-between small text-muted mb-3">
+        <div class="d-flex justify-content-between small text-body-secondary mb-3">
             <span>{{ $beats->first()?->created_at->diffForHumans() ?? '' }}</span>
             <span>{{ __('now') }}</span>
         </div>
@@ -30,7 +30,7 @@
                 [__('Uptime'), '30 d', $format($stats['uptime30'] ?? null, '%'), $uptimeColor($stats['uptime30'] ?? null)],
             ] as [$label, $period, $value, $class])
                 <div class="col-6 col-md-3">
-                    <div class="small text-muted">{{ $label }} <span class="opacity-75">({{ $period }})</span></div>
+                    <div class="small text-body-secondary">{{ $label }} <span class="opacity-75">({{ $period }})</span></div>
                     <div class="fs-5 fw-semibold {{ $class }}">{{ $value }}</div>
                 </div>
             @endforeach

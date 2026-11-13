@@ -1,5 +1,5 @@
 <form wire:submit="save">
-    <p class="small text-muted">{{ __('Another agent in the same network sends the magic packet. Leave the fields empty to use what the agent of this device reports.') }}</p>
+    <p class="small text-body-secondary">{{ __('Another agent in the same network sends the magic packet. Leave the fields empty to use what the agent of this device reports.') }}</p>
     <div class="row g-3">
         <div class="col-12">
             <label class="form-label" for="wake-settings-mac">{{ __('MAC address') }}</label>

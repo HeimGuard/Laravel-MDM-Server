@@ -25,18 +25,18 @@
     @endphp
 
     @if ($remediateError ?? null)
-    <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+    <x-notice type="danger">{{ $remediateError }}</x-notice>
 @endif
 @if ($remediateDone ?? null)
-    <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+    <x-notice type="success">{{ $remediateDone }}</x-notice>
 @endif
 {{-- Side by side also on a phone: they share the width (a long label wraps inside its button). --}}
 <div class="d-flex justify-content-end gap-2 mb-2">
         @if ($findings->isNotEmpty() || $acknowledged->isNotEmpty())
-            <a class="btn btn-sm btn-light flex-fill flex-md-grow-0" href="{{ route('security.export', ['device' => $deviceId, 'status' => 'unresolved']) }}" download title="{{ __('The open findings as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
+            <x-button icon="fas fa-file-alt" class="flex-fill flex-md-grow-0" :href="route('security.export', ['device' => $deviceId, 'status' => 'unresolved'])" download title="{{ __('The open findings as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
         @endif
         @if ($inventory)
-            <button class="btn btn-sm btn-light flex-fill flex-md-grow-0" type="button" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}"><i class="fas fa-file-code me-1"></i>{{ __('Export inventory (JSON)') }}</button>
+            <x-button icon="fas fa-file-code" class="flex-fill flex-md-grow-0" wire:click="exportInventory" title="{{ __('The security inventory and the findings of this device as JSON, for an AI to analyse') }}">{{ __('Export inventory (JSON)') }}</x-button>
         @endif
     </div>
     {{-- What needs attention; the acknowledged ones are folded away (and can be opened again). --}}
@@ -45,7 +45,7 @@
             @forelse ($findings as $finding)
                 @include('livewire.security-scan.partials.finding', ['finding' => $finding, 'showDevice' => false])
             @empty
-                <div class="list-group-item text-muted py-3"><i class="fas fa-shield-alt text-success me-2"></i>{{ $acknowledged->isEmpty() ? __('No findings.') : __('Nothing needs attention.') }}</div>
+                <x-empty-state icon="fas fa-shield-alt text-success">{{ $acknowledged->isEmpty() ? __('No findings.') : __('Nothing needs attention.') }}</x-empty-state>
             @endforelse
         </div>
     </div>
@@ -53,7 +53,7 @@
     @if ($acknowledged->isNotEmpty())
         <details class="card overflow-hidden mb-3" wire:key="security-acknowledged">
             <summary class="card-body py-2 d-flex align-items-center gap-2" style="cursor: pointer">
-                <span class="fw-medium">{{ __('Acknowledged') }}</span><span class="small text-muted">{{ $acknowledged->count() }}</span>
+                <span class="fw-medium">{{ __('Acknowledged') }}</span><span class="small text-body-secondary">{{ $acknowledged->count() }}</span>
             </summary>
             <div class="list-group list-group-flush">
                 @foreach ($acknowledged as $finding)
@@ -66,22 +66,22 @@
     @if ($inventory === null && $device->isPingOnly)
         {{-- No agent: only the findings of the server's own checks (port scans). --}}
     @elseif ($inventory === null)
-        <div class="small text-muted">{{ __('No security inventory yet: it needs agent :version or newer.', ['version' => Device::SECURITY_VERSION]) }}</div>
+        <div class="small text-body-secondary">{{ __('No security inventory yet: it needs agent :version or newer.', ['version' => Device::SECURITY_VERSION]) }}</div>
     @else
         <div class="d-flex align-items-center mb-2">
             <div class="fw-medium me-auto">{{ __('What the agent reports') }}</div>
-            <input class="form-control form-control-sm" placeholder="{{ __('Search') }}" style="max-width: 16rem;" type="search" x-model="search">
+            <x-search-input x-model="search" />
         </div>
         <div class="d-flex flex-column gap-2">
             @foreach ($lists as $key => [$label, $count])
                 <details class="card" wire:key="security-list-{{ $key }}" @if ($key === 'posture') open @endif>
                     <summary class="card-body py-2 d-flex align-items-center gap-2" style="cursor: pointer">
-                        <span class="fw-medium">{{ $label }}</span><span class="small text-muted">{{ $count }}</span>
+                        <span class="fw-medium">{{ $label }}</span><span class="small text-body-secondary">{{ $count }}</span>
                     </summary>
                     <div class="px-3 pb-3">
                         @if ($key === 'posture')
                             @if ($posture === [])
-                                <div class="small text-muted">{{ __('Not reported.') }}</div>
+                                <div class="small text-body-secondary">{{ __('Not reported.') }}</div>
                             @else
                                 <div class="row g-2">
                                     @foreach ($posture as $field => $value)
@@ -104,11 +104,11 @@
                                                 <td class="fw-medium text-nowrap">{{ $event->label }}</td>
                                                 <td class="text-end">{{ $event->count }}×</td>
                                                 <td class="text-break">{{ $event->user }}</td>
-                                                <td class="d-none d-md-table-cell text-break text-muted">{{ $event->source }}</td>
-                                                <td class="d-none d-lg-table-cell text-break text-muted">{{ $event->message }}</td>
+                                                <td class="d-none d-md-table-cell text-break text-body-secondary">{{ $event->source }}</td>
+                                                <td class="d-none d-lg-table-cell text-break text-body-secondary">{{ $event->message }}</td>
                                             </tr>
                                         @empty
-                                            <tr><td class="text-muted">{{ __('No events.') }}</td></tr>
+                                            <x-empty-state colspan="6">{{ __('No events.') }}</x-empty-state>
                                         @endforelse
                                     </tbody>
                                 </table>
@@ -129,7 +129,7 @@
                                             @php($text = mb_strtolower(implode(' ', array_map(fn ($value) => is_scalar($value) ? (string) $value : '', $item))))
                                             <tr wire:key="security-{{ $key }}-{{ $loop->index }}" x-show="!search || @js($text).includes(search.toLowerCase())">
                                                 @foreach ($columns[$key] as $field)
-                                                    <td class="text-break {{ $loop->index > 1 ? 'd-none d-md-table-cell text-muted' : '' }} {{ $loop->first ? 'fw-medium' : '' }}">{{ $yesNo($item[$field] ?? null) ?? '—' }}</td>
+                                                    <td class="text-break {{ $loop->index > 1 ? 'd-none d-md-table-cell text-body-secondary' : '' }} {{ $loop->first ? 'fw-medium' : '' }}">{{ $yesNo($item[$field] ?? null) ?? '—' }}</td>
                                                 @endforeach
                                             </tr>
                                         @endforeach

@@ -1,6 +1,6 @@
 <x-layout-auth>
     <h2 class="h4 mb-1">{{ __('Welcome') }}</h2>
-    <p class="text-muted mb-4">{{ __('Create the first account. It is the system admin and can add other users later.') }}</p>
+    <p class="text-body-secondary mb-4">{{ __('Create the first account. It is the system admin and can add other users later.') }}</p>
 
     <x-form::form method="POST" action="{{ route('setup.store') }}">
         {{-- Picking a language shows the page in it right away (SetLocale keeps ?lang= until signing in). --}}

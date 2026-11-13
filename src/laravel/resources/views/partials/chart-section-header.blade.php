@@ -1,13 +1,10 @@
 {{-- Header of a chart section (performance of an agent, ping of a ping-only device): an icon tile
-     with the title and what the data comes from, the range switch on the right. --}}
-<div class="d-flex flex-wrap flex-md-nowrap align-items-center gap-3 mb-2">
-    <span class="icon-tile {{ $tile ?? 'bg-primary-subtle text-primary-emphasis' }}"><i class="{{ $icon }}"></i></span>
-    <div class="me-auto min-w-0">
-        <h2 class="h6 fw-semibold mb-0">{!! $title !!}</h2>
-        @if (! empty($subtitle))
-            <div class="small text-muted">{!! $subtitle !!}</div>
-        @endif
-    </div>
+     (x-card-header, $tone: primary by default) with the title and what the data comes from, the range switch on the right. --}}
+<x-card-header class="gap-3" :icon="$icon" tag="h2" :tone="$tone ?? 'primary'">
+    <x-slot:title>{!! $title !!}</x-slot:title>
+    @if (! empty($subtitle))
+        <x-slot:subtitle>{!! $subtitle !!}</x-slot:subtitle>
+    @endif
     {{-- Boilerplate segmented switch. --}}
     <ul class="nav nav-switch flex-shrink-0 ms-auto" role="tablist">
         @foreach ($ranges as $option)
@@ -16,4 +13,4 @@
             </li>
         @endforeach
     </ul>
-</div>
+</x-card-header>

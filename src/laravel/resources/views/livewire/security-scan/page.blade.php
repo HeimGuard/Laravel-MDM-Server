@@ -8,18 +8,18 @@
         <div class="page-header">
             <div class="me-auto min-w-0">
                 <h1>{{ __('Security') }}</h1>
-                <div class="text-muted">{{ __('Checks look at what the agents report: installed software, processes, open ports, startup items, administrators, security settings and events.') }}</div>
+                <div class="text-body-secondary">{{ __('Checks look at what the agents report: installed software, processes, open ports, startup items, administrators, security settings and events.') }}</div>
             </div>
             @if ($isAdmin)
                 <div class="d-flex gap-2">
                     <button class="btn btn-light" type="button" wire:click="updateFeed" wire:loading.attr="disabled" wire:target="updateFeed" @disabled(! $feed['enabled']) @if (! $feed['enabled']) title="{{ __('No rules feed is set (MDM_SECURITY_FEED_URL).') }}" @endif>
-                        <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="updateFeed"></span><i class="fas fa-sync-alt me-2" wire:loading.remove wire:target="updateFeed"></i>{{ __('Sync feed') }}
+                        <span class="spinner-border spinner-border-sm me-1" wire:loading wire:target="updateFeed"></span><i class="fas fa-sync-alt me-1" wire:loading.remove wire:target="updateFeed"></i>{{ __('Sync feed') }}
                     </button>
                     <button class="btn btn-light" type="button" wire:click="rescan" wire:loading.attr="disabled" wire:target="rescan">
-                        <span class="spinner-border spinner-border-sm me-2" wire:loading wire:target="rescan"></span><i class="fas fa-sync me-2" wire:loading.remove wire:target="rescan"></i>{{ __('Scan again') }}
+                        <span class="spinner-border spinner-border-sm me-1" wire:loading wire:target="rescan"></span><i class="fas fa-sync me-1" wire:loading.remove wire:target="rescan"></i>{{ __('Scan again') }}
                     </button>
                     <button class="btn btn-primary" type="button" wire:click="addRule">
-                        <i class="fas fa-plus me-2"></i>{{ __('Add check') }}
+                        <i class="fas fa-plus me-1"></i>{{ __('Add check') }}
                     </button>
                 </div>
             @endif
@@ -49,13 +49,11 @@
         </ul>
 
         @if ($pending > 0)
-            <div class="small text-muted mb-3" wire:key="security-pending"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
+            <div class="small text-body-secondary mb-3" wire:key="security-pending"><i class="fas fa-hourglass-half me-1"></i>{{ trans_choice(':count collection waits to be processed|:count collections wait to be processed', $pending) }}</div>
         @endif
 
         @if ($scanned === 0)
-            <div class="alert alert-info small" wire:key="security-no-inventory">
-                <i class="fas fa-info-circle me-1"></i>{{ __('No device has sent a security inventory yet: it needs agent :version or newer (collected hourly, or now with Sync).', ['version' => Device::SECURITY_VERSION]) }}
-            </div>
+            <x-notice wire:key="security-no-inventory">{{ __('No device has sent a security inventory yet: it needs agent :version or newer (collected hourly, or now with Sync).', ['version' => Device::SECURITY_VERSION]) }}</x-notice>
         @endif
 
         @if ($tab === 'events')
@@ -77,8 +75,8 @@
                     <option value="7">{{ __('Last 7 days') }}</option>
                     <option value="0">{{ __('All (:days days)', ['days' => SecurityEvent::RETENTION_DAYS]) }}</option>
                 </select>
-                <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" type="search" wire:model.live.debounce.300ms="eventSearch" style="max-width: 20rem">
-                <span class="small text-muted align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
+                <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search user, source or detail') }}" wire:model.live.debounce.300ms="eventSearch" />
+                <span class="small text-body-secondary align-self-center">{{ __('Kept :days days.', ['days' => SecurityEvent::RETENTION_DAYS]) }}</span>
             </div>
             <div class="card overflow-hidden">
                 <div class="table-responsive">
@@ -103,10 +101,10 @@
                                     <td class="small text-end">{{ $event->count }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->user ?? '—' }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->source ?? '—' }}</td>
-                                    <td class="d-none d-lg-table-cell small text-muted text-break pe-3">{{ $event->message }}</td>
+                                    <td class="d-none d-lg-table-cell small text-body-secondary text-break pe-3">{{ $event->message }}</td>
                                 </tr>
                             @empty
-                                <tr><td class="text-muted small py-4 text-center" colspan="7">{{ __('No events.') }}</td></tr>
+                                <x-empty-state colspan="7">{{ __('No events.') }}</x-empty-state>
                             @endforelse
                         </tbody>
                     </table>
@@ -138,7 +136,7 @@
                                             @unless ($rule->built_in)<x-badge color="primary" size="sm" variant="subtle">{{ __('Custom') }}</x-badge>@endunless
                                         </div>
                                         @if ($rule->definition['description'] ?? null)
-                                            <div class="small text-muted">{{ $rule->definition['description'] }}</div>
+                                            <div class="small text-body-secondary">{{ $rule->definition['description'] }}</div>
                                         @endif
                                         @if ($rule->urls)
                                             <div>@foreach ($rule->urls as $link)<a class="small me-2 text-break" href="{{ $link['url'] }}" rel="noopener noreferrer" target="_blank" title="{{ $link['url'] }}"><i class="fas fa-external-link-alt fa-xs me-1"></i>{{ $link['host'] }}</a>@endforeach</div>
@@ -157,7 +155,7 @@
                                     <td class="pe-3 text-end text-nowrap">
                                         @if ($isAdmin)
                                             <button class="btn btn-sm btn-light" type="button" wire:click="editRule({{ $rule->id }})">{{ $rule->built_in ? __('Show') : __('Edit') }}</button>
-                                            <button class="btn btn-sm btn-light" type="button" wire:click="duplicateRule({{ $rule->id }})" title="{{ __('Copy as a new rule') }}"><i class="far fa-copy"></i></button>
+                                            <x-button icon="far fa-copy" wire:click="duplicateRule({{ $rule->id }})" title="{{ __('Copy as a new rule') }}" aria-label="{{ __('Copy as a new rule') }}" />
                                         @endif
                                     </td>
                                 </tr>
@@ -167,21 +165,21 @@
                 </div>
             </div>
             <details class="mt-4" wire:key="security-advanced" @if ($parsers->isNotEmpty() && request()->query('advanced')) open @endif>
-                <summary class="fw-medium">{{ __('Advanced') }} <span class="small text-muted fw-normal">{{ __('feed, log parsers and JSON') }}</span></summary>
+                <summary class="fw-medium">{{ __('Advanced') }} <span class="small text-body-secondary fw-normal">{{ __('feed, log parsers and JSON') }}</span></summary>
                 <div class="mt-3">
                 <div class="card card-body mb-4">
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <div class="me-auto">
                             <div class="fw-medium">{{ __('Checks feed') }}</div>
                             @if (! $feed['enabled'])
-                                <div class="small text-muted">{{ __('No feed is set (MDM_SECURITY_FEED_URL): only the bundled checks are used.') }}</div>
+                                <div class="small text-body-secondary">{{ __('No feed is set (MDM_SECURITY_FEED_URL): only the bundled checks are used.') }}</div>
                             @elseif (isset($feed['version']))
-                                <div class="small text-muted">
+                                <div class="small text-body-secondary">
                                     {{ __('Version :version', ['version' => $feed['version']]) }}@isset($feed['checked_at']), {{ __('checked :time', ['time' => \Illuminate\Support\Carbon::parse($feed['checked_at'])->diffForHumans()]) }}@endisset
                                     @if (! ($feed['ok'] ?? true))<span class="text-danger"> · {{ $feed['error'] }}</span>@endif
                                 </div>
                             @else
-                                <div class="small text-muted">{{ __('Not fetched yet.') }}</div>
+                                <div class="small text-body-secondary">{{ __('Not fetched yet.') }}</div>
                             @endif
                         </div>
                         @if ($isAdmin && $feed['enabled'])
@@ -192,10 +190,10 @@
             <div class="d-flex align-items-center mt-4 mb-2">
                 <h2 class="h6 fw-semibold mb-0 me-auto">{{ __('Log parsers') }}</h2>
                 @if ($isAdmin)
-                    <button class="btn btn-sm btn-light" type="button" wire:click="addParser"><i class="fas fa-plus me-1"></i>{{ __('Add parser') }}</button>
+                    <x-button icon="fas fa-plus" wire:click="addParser">{{ __('Add parser') }}</x-button>
                 @endif
             </div>
-            <div class="small text-muted mb-2">{{ __('Agents send raw logs; parsers turn their records into the events the rules of the events source look at.') }}</div>
+            <div class="small text-body-secondary mb-2">{{ __('Agents send raw logs; parsers turn their records into the events the rules of the events source look at.') }}</div>
             <div class="card overflow-hidden">
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
@@ -227,7 +225,7 @@
                                     <td class="pe-3 text-end text-nowrap">
                                         @if ($isAdmin)
                                             <button class="btn btn-sm btn-light" type="button" wire:click="editRule({{ $parser->id }})">{{ $parser->built_in ? __('Show') : __('Edit') }}</button>
-                                            <button class="btn btn-sm btn-light" type="button" wire:click="duplicateRule({{ $parser->id }})" title="{{ __('Copy as a new parser') }}"><i class="far fa-copy"></i></button>
+                                            <x-button icon="far fa-copy" wire:click="duplicateRule({{ $parser->id }})" title="{{ __('Copy as a new parser') }}" aria-label="{{ __('Copy as a new parser') }}" />
                                         @endif
                                     </td>
                                 </tr>
@@ -236,7 +234,7 @@
                     </table>
                 </div>
             </div>
-            <div class="small text-muted mt-2">
+            <div class="small text-body-secondary mt-2">
                 {{ __('Built-in checks come from resources/security/rules.json and parsers.json; switch them off or copy one to change it. Inventory findings are resolved when the next inventory no longer matches, event findings when you acknowledge them.') }}
             </div>
                 </div>
@@ -254,39 +252,31 @@
                         <option value="{{ $level }}">{{ __(ucfirst($level)) }}</option>
                     @endforeach
                 </select>
-                <input class="form-control form-control-sm w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" type="search" wire:model.live.debounce.300ms="search" style="max-width: 20rem">
+                <x-search-input class="w-auto flex-grow-1" placeholder="{{ __('Search device, rule or finding') }}" wire:model.live.debounce.300ms="search" />
                 @if ($findings->isNotEmpty())
-                    <a class="btn btn-sm btn-light ms-auto" href="{{ route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== '')) }}" download title="{{ __('The findings of the filters as a Markdown report') }}"><i class="fas fa-file-alt me-1"></i>{{ __('Export Markdown') }}</a>
+                    <x-button icon="fas fa-file-alt" class="ms-auto" :href="route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== ''))" download title="{{ __('The findings of the filters as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
                 @endif
                 @if ($status === 'open' && $findings->isNotEmpty())
-                    <button class="btn btn-sm btn-light" type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">
-                        <i class="fas fa-check-double me-1"></i>{{ __('Acknowledge shown') }}
-                    </button>
+                    <x-button icon="fas fa-check-double" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">{{ __('Acknowledge shown') }}</x-button>
                 @endif
             </div>
             @if ($remediateError)
-                <div class="alert alert-danger small py-2" role="alert"><i class="fas fa-exclamation-triangle me-1"></i>{{ $remediateError }}</div>
+                <x-notice type="danger">{{ $remediateError }}</x-notice>
             @endif
 @if ($remediateDone)
-                <div class="alert alert-success small py-2" role="alert"><i class="fas fa-check me-1"></i>{{ $remediateDone }}</div>
+                <x-notice type="success">{{ $remediateDone }}</x-notice>
             @endif
             <div class="card overflow-hidden">
                 <div class="list-group list-group-flush">
                     @forelse ($findings as $finding)
                         @include('livewire.security-scan.partials.finding', ['finding' => $finding, 'showDevice' => true])
                     @empty
-                        <div class="list-group-item text-muted py-4 text-center">
-                            @if ($status === 'open')
-                                <i class="fas fa-shield-alt text-success me-2"></i>{{ __('Nothing needs attention.') }}
-                            @else
-                                {{ __('Nothing here.') }}
-                            @endif
-                        </div>
+                        <x-empty-state :icon="$status === 'open' ? 'fas fa-shield-alt text-success' : null">{{ $status === 'open' ? __('Nothing needs attention.') : __('Nothing here.') }}</x-empty-state>
                     @endforelse
                 </div>
             </div>
             @if ($findings->count() >= Page::LIMIT)
-                <div class="small text-muted mt-2">{{ __('The first :count are shown, narrow the search.', ['count' => Page::LIMIT]) }}</div>
+                <div class="small text-body-secondary mt-2">{{ __('The first :count are shown, narrow the search.', ['count' => Page::LIMIT]) }}</div>
             @endif
         @endif
     </div>

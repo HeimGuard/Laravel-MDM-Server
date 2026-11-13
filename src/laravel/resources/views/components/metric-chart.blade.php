@@ -44,11 +44,11 @@
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-baseline mb-2">
             <div>
-                <div class="text-muted small">{{ $title }}</div>
+                <div class="text-body-secondary small">{{ $title }}</div>
                 <div class="fs-4 fw-semibold">{{ $current ?? '–' }}</div>
             </div>
             @if ($subtitle)
-                <div class="text-muted small text-end">{{ $subtitle }}</div>
+                <div class="text-body-secondary small text-end">{{ $subtitle }}</div>
             @endif
         </div>
 
@@ -88,7 +88,7 @@
         </svg>
         </div>
 
-        <div class="d-flex justify-content-between text-muted small mt-1" style="padding-right: 2.75rem;">
+        <div class="d-flex justify-content-between text-body-secondary small mt-1" style="padding-right: 2.75rem;">
             <span>{{ $from ?? ($labels[0] ?? '') }}</span>
             <span>{{ $to ?? (end($labels) ?: '') }}</span>
         </div>

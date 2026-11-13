@@ -6,21 +6,17 @@
 @endphp
 {{-- A row's own command looks like a row of "Install all": Queued until the agent runs it, then Installing (with its percent). --}}
 @if ($running && $running->status === 'running')
-    <span class="small text-primary text-nowrap" title="{{ $running->label }} · {{ $running->displayMessage ?: __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}{{ $running->progress !== null ? ' '.$running->progress.' %' : '' }}</span>
+    <x-status-label spinner title="{{ $running->label }} · {{ $running->displayMessage ?: __('Installing now') }}" tone="primary">{{ __('Installing') }}{{ $running->progress !== null ? ' '.$running->progress.' %' : '' }}</x-status-label>
 @elseif ($running)
-    <span class="small text-muted text-nowrap" title="{{ $running->label }} · {{ $running->statusLabel }}"><i class="far fa-clock me-1"></i>{{ __('Queued') }}</span>
+    <x-status-label icon="far fa-clock" title="{{ $running->label }} · {{ $running->statusLabel }}">{{ __('Queued') }}</x-status-label>
 @elseif ($rowState === 'running')
-    <span class="small text-primary text-nowrap" title="{{ __('Installing now') }}"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Installing') }}</span>
+    <x-status-label spinner title="{{ __('Installing now') }}" tone="primary">{{ __('Installing') }}</x-status-label>
 @elseif ($rowState === 'done')
-    <span class="small text-success text-nowrap" title="{{ __('Installed') }}"><i class="fas fa-check me-1"></i>{{ __('Done') }}</span>
+    <x-status-label icon="fas fa-check" title="{{ __('Installed') }}" tone="success">{{ __('Done') }}</x-status-label>
 @elseif ($rowState === 'queued')
-    <span class="small text-muted text-nowrap" title="{{ __('Waiting for its turn') }}"><i class="far fa-clock me-1"></i>{{ __('Queued') }}</span>
+    <x-status-label icon="far fa-clock" title="{{ __('Waiting for its turn') }}">{{ __('Queued') }}</x-status-label>
 @elseif ($target && ! $updatesRunning)
-    <button class="btn btn-sm btn-light text-nowrap" type="button" title="{{ __('Install only this update') }}" aria-label="{{ __('Update') }}"
-        wire:click="{{ $call }}" wire:loading.attr="disabled" wire:target="{{ $call }}" @disabled($selectedDevice->offline)>
-        <i class="fas fa-download me-sm-1 text-primary" wire:loading.remove wire:target="{{ $call }}"></i>
-        <span aria-hidden="true" class="spinner-border spinner-border-sm me-sm-1" wire:loading wire:target="{{ $call }}"></span>
-        {{-- An icon only on phones. --}}
-        <span class="d-none d-sm-inline">{{ __('Update') }}</span>
-    </button>
+    {{-- An icon only on phones. --}}
+    <x-button icon="fas fa-download" tone="primary" compact :loading="$call" class="text-nowrap" title="{{ __('Install only this update') }}" aria-label="{{ __('Update') }}"
+        wire:click="{{ $call }}" wire:loading.attr="disabled" wire:target="{{ $call }}" :disabled="$selectedDevice->offline">{{ __('Update') }}</x-button>
 @endif
