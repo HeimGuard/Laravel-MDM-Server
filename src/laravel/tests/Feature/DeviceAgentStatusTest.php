@@ -32,6 +32,24 @@ class DeviceAgentStatusTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', AgentScript::version());
     }
 
+    public function test_platform_icon_before_the_os_name(): void
+    {
+        $icon = function (array $machine) {
+            $device = $this->createDevice(array_diff_key($machine, ['OS' => 1]));
+            $device->os = $machine['OS'] ?? null;
+
+            return $device->platformIcon;
+        };
+
+        $this->assertSame('fab fa-windows', $icon(['Platform' => 'windows', 'OS' => 'Microsoft Windows 11 Pro']));
+        $this->assertSame('fab fa-linux', $icon(['Platform' => 'linux', 'OS' => 'Synology DSM']));
+        $this->assertSame('fab fa-ubuntu', $icon(['Platform' => 'linux', 'OS' => 'Ubuntu 24.04 LTS']));
+        $this->assertSame('fab fa-debian', $icon(['Platform' => 'linux', 'OS' => 'Debian GNU/Linux 12']));
+        $this->assertSame('fab fa-apple', $icon(['OS' => 'macOS 14.5']));
+        // A device that only answers ping has no operating system to show.
+        $this->assertNull($icon(['Type' => 'ping', 'OS' => 'Ubuntu']));
+    }
+
     public function test_device_type_icon(): void
     {
         $this->assertSame('fas fa-server', $this->createDevice(['Type' => 'server'])->typeIcon);
