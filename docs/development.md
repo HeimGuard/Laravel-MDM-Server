@@ -68,6 +68,16 @@ Rules for the look:
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)
   runs them on every push and pull request and builds the image only when they pass.
 - Also PostgreSQL: `DB_CONNECTION=pgsql DB_DATABASE=... php artisan test` (see `CLAUDE.md` for what only PostgreSQL rejects).
+- CI jobs (`.github/workflows/docker.yml`): `tests` (SQLite in a file, migrated once per process, `--exclude-group=slow`;
+  a second step runs the `fresh-db` group on in-memory SQLite), `slow` (`--group=slow`: `SecurityScanPerformanceTest`, in
+  parallel), `tests-pgsql` (the same on PostgreSQL 17, `continue-on-error`: it does not block yet), `lint` (`php -l` of
+  all PHP files, `pint --test` non-blocking) and `build` (needs `tests`, `slow`, `lint`, not `tests-pgsql`).
+- Locally: `php artisan test --group=slow` for the slow group, `php artisan test --exclude-group=slow` without it;
+  PostgreSQL: `DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=... DB_USERNAME=... DB_PASSWORD=... php artisan test`.
+  A test that changes the schema or needs its own database gets `#[Group('fresh-db')]` (CI runs those on in-memory SQLite,
+  where every test migrates again).
+- `BladeViewsCompileTest` compiles every `resources/views/**/*.blade.php` and parses the PHP: a broken directive (an
+  inline `@php(...)` paired with a later `@endphp`) fails there with the view and the line, not in 34 other tests.
 - The PowerShell check of the scripts (`App\Support\PowerShellCheck`) uses `pwsh` when there is one (`mdm.pwsh`),
   otherwise a lighter check in PHP; the agent itself is never run by the tests.
 - The cloud sessions of Claude have PHP 8.3 and no access to `git.steelants.cz` (SteelAnts packages), so
