@@ -8,6 +8,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Changed
+- The open ports of a host are one card in the Overview of every device, with an agent or ping-only (table, notes of
+  the scan, Scan ports), instead of a collapsed block in the device header.
+- The device page shows the platform icon (Windows, macOS, Ubuntu, Debian, Linux ...) before the name of the OS.
 - Documentation matches the code: what is kept how long and what is not cleaned up yet, how to back up and restore
   (the `storage` volume and the database), who may do what (no roles, no read-only role; system admins), the
   Exposed service alert, the commands the agent accepts, the `-PortScan` option.

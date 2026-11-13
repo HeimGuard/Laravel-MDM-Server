@@ -198,4 +198,28 @@ class PortScanTest extends TestCase
         $this->assertStringNotContainsString('<script>alert(1)</script>', $html);
         $this->assertStringContainsString('&lt;script&gt;', $html);
     }
+
+    public function test_the_open_ports_card_is_one_partial_for_ping_only_and_agent_devices(): void
+    {
+        $this->withoutVite();
+        $html = view('partials.device.open-ports', ['portScan' => [
+            'address' => '192.168.1.10',
+            'scanner' => null,
+            'command' => null,
+            'result' => (object) [
+                'ports' => [['port' => 22, 'service' => 'ssh', 'banner' => 'SSH-2.0-<b>x</b>']],
+                'findings' => ['Port 22: test finding'],
+                'scanned_at' => now()->subMonth(),
+            ],
+        ]])->render();
+
+        $this->assertStringContainsString('Open ports', $html);
+        $this->assertStringContainsString('SSH-2.0-&lt;b&gt;x&lt;/b&gt;', $html);
+        $this->assertStringContainsString('Port 22: test finding', $html);
+
+        // Both overviews use it; the device card no longer has a block of its own for the ports.
+        $this->assertStringContainsString('partials.device.open-ports', file_get_contents(resource_path('views/livewire/ping-monitor.blade.php')));
+        $this->assertStringContainsString('partials.device.open-ports', file_get_contents(resource_path('views/livewire/device-detail.blade.php')));
+        $this->assertStringNotContainsString(':count open port', file_get_contents(resource_path('views/livewire/device-commands.blade.php')));
+    }
 }
