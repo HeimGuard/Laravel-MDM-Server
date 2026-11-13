@@ -8,9 +8,8 @@ The server offers an agent update to a device whose agent is older than `$AgentV
 (`AgentScript::version()`), so the agent version moves with every change of `app.ps1` (see `CLAUDE.md`): new
 feature, minor; fix only, patch.
 
-A release made of server changes only has no new agent number. Take the next patch number in `$AgentVersion` for it
-too (the devices then update to an identical agent) so that the tag, the image and the changelog have a number of
-their own.
+Changes of the server alone do not change the agent number: they go to `Unreleased` of the changelog and reach the
+servers with the image of `master` (`latest`). A number is only needed when you want to tag a release.
 
 ## The changelog
 
@@ -23,6 +22,10 @@ the admin (what changed for them, with the `#NNN` of the pull request), not for 
 (a refactoring, a test, a comment) needs no line.
 
 ## Steps of a release
+
+Tagging is optional. Every merge into `master` already publishes the image `master` / `latest`; a tag only adds the
+fixed `X.Y.Z` and the moving `X.Y` image tags of the same code. Nothing needs a tag, so tag when you want a number to
+point at (for an installation that pins a version, or to say what a changelog heading is).
 
 1. On master, check that the agent version is the number to release (`grep -n 'AgentVersion =' src/powershell/app.ps1`)
    and that the `tests` check of master is green.
