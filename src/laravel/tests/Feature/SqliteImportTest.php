@@ -6,9 +6,11 @@ use App\Models\User;
 use App\Support\SqliteImport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PDO;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /** When the data of an SQLite database is copied into PostgreSQL (the copy itself is pgloader in the entrypoint). */
+#[Group('fresh-db')]
 class SqliteImportTest extends TestCase
 {
     use RefreshDatabase;
