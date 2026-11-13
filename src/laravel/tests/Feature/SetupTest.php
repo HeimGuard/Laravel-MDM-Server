@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class SetupTest extends TestCase
@@ -48,6 +49,10 @@ class SetupTest extends TestCase
     {
         $this->withoutVite();
         config(['boilerplate.system_admins' => ['1']]);
+        // A system admin is the user with ID 1 and PostgreSQL does not reset the sequence between tests.
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER SEQUENCE users_id_seq RESTART WITH 1');
+        }
 
         $this->post('/setup', [
             'name' => 'Admin',

@@ -18,6 +18,7 @@ use Laravel\Reverb\Protocols\Pusher\Channels\ChannelConnection;
 use Laravel\Reverb\Protocols\Pusher\Contracts\ChannelManager;
 use Livewire\Livewire;
 use Mockery;
+use PHPUnit\Framework\Attributes\Group;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -100,6 +101,8 @@ class DeviceHeartbeatTest extends TestCase
         $this->assertNull($device->fresh()->last_seen_at);
     }
 
+    /** Changes the schema: in the fresh-db group (CI runs it on its own in-memory database). */
+    #[Group('fresh-db')]
     public function test_websocket_heartbeat_errors_are_reported(): void
     {
         // Reverb would swallow the exception, it has to reach the application log.

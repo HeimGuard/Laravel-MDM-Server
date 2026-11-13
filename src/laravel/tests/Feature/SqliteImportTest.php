@@ -5,19 +5,26 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Support\SqliteImport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use PDO;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /** When the data of an SQLite database is copied into PostgreSQL (the copy itself is pgloader in the entrypoint). */
+#[Group('fresh-db')]
 class SqliteImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    private string $source;
+    private string $source = '';
 
     protected function setUp(): void
     {
         parent::setUp();
+        // These tests assert the SQLite driver; the PostgreSQL job also skips the group fresh-db, this is the second guard.
+        if (DB::getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('The import of a SQLite database is tested on SQLite.');
+        }
         $this->source = tempnam(sys_get_temp_dir(), 'mdm-sqlite-');
         config(['mdm.sqlite_import_file' => $this->source]);
         $this->forgetState();
@@ -25,7 +32,9 @@ class SqliteImportTest extends TestCase
 
     protected function tearDown(): void
     {
-        @unlink($this->source);
+        if ($this->source !== '') {
+            @unlink($this->source);
+        }
         $this->forgetState();
         parent::tearDown();
     }
