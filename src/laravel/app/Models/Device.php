@@ -530,6 +530,30 @@ class Device extends Model
         return preg_match('/linux|ubuntu|debian/i', (string) $this->os) ? 'linux' : 'windows';
     }
 
+    /**
+     * Brand icon of the operating system for the device page (Windows, macOS, a Linux distribution, Linux),
+     * guessed from the OS name; null for a device that only answers ping (no OS to show).
+     */
+    public function getPlatformIconAttribute(): ?string
+    {
+        if ($this->type === 'ping') {
+            return null;
+        }
+
+        $os = (string) $this->os;
+
+        return match (true) {
+            (bool) preg_match('/mac\s?os|darwin|os\s?x/i', $os) => 'fab fa-apple',
+            (bool) preg_match('/ubuntu/i', $os) => 'fab fa-ubuntu',
+            (bool) preg_match('/debian|raspbian|raspberry/i', $os) => 'fab fa-debian',
+            (bool) preg_match('/fedora/i', $os) => 'fab fa-fedora',
+            (bool) preg_match('/red\s?hat|rhel|centos|rocky|alma/i', $os) => 'fab fa-redhat',
+            (bool) preg_match('/suse/i', $os) => 'fab fa-suse',
+            $this->platform === 'linux' => 'fab fa-linux',
+            default => 'fab fa-windows',
+        };
+    }
+
     public function getTypeIconAttribute(): string
     {
         return self::TYPE_ICONS[$this->type];

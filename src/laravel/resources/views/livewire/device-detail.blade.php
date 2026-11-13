@@ -80,7 +80,7 @@
                             </span>
                         @endif
                         @if (!empty($selectedDevice->os))
-                            <span><i class="fas fa-info-circle me-1"></i>{{ $selectedDevice->os }}</span>
+                            <span><i class="{{ $selectedDevice->platformIcon ?? 'fas fa-info-circle' }} me-1"></i>{{ $selectedDevice->os }}</span>
                         @endif
                         @if (!$selectedDevice->offline)
                             @if (!empty($selectedDevice->lastLogonUser))
