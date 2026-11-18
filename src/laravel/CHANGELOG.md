@@ -12,6 +12,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
 ### Changed
+- The remediation of a vulnerable package without a source of updates (e.g. containerd.io after the Docker repository
+  was lost in a distribution upgrade) names the fixed version and the steps: restore the vendor repository, then
+  `apt install --only-upgrade`.
 - The open ports of a host are one card in the Overview of every device, with an agent or ping-only (table, notes of
   the scan, Scan ports), instead of a collapsed block in the device header.
 - The device page shows the platform icon (Windows, macOS, Ubuntu, Debian, Linux ...) before the name of the OS.
