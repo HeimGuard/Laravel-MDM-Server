@@ -37,8 +37,17 @@ class ScriptGeneratorService
         installed package is the affected product at all (a library or plugin named like the product is not the
         product). When the package is current and nothing can be installed, the finding is a false positive or
         needs a newer release: say so in the output and exit 0 from the detection, do not leave it failing forever.
-        The remediation updates the whole product (all its packages), runs `apt-get update` first and does not
-        fail when the index cannot be refreshed (the device may be offline): it then works with what it has.
+        The script has NO NETWORK (empty network namespace): DNS, curl, wget, Invoke-WebRequest, apt-get update, apt-get
+        install / upgrade, snap, pip, winget and downloads of any kind fail, so never write a step that needs one. The agent
+        itself has the network and installs updates when an admin starts them (Updates tab of the device, apt included):
+        a script never installs or upgrades packages. What a script can do is local: write or restore files (apt sources
+        and keys - put a needed public key into the script as text, the repositories as *.sources), change settings, stop or
+        disable a service or feature, remove software that is not needed. Never remove packages the finding does not
+        concern. For a finding that an update fixes, the detection exits 1 and says in the output what to do (update
+        the packages from the Updates tab; the missing apt source is the thing to restore); the remediation only does the
+        local preparation (a missing repository, a held package) and says that the update still has to be installed.
+        PowerShell is not a POSIX shell: `. file`, `source`, `export`, `&&` of the shell and `$(...)` as in sh do not
+        work; read /etc/os-release by parsing its lines, run programs with `&` and check $LASTEXITCODE.
         A request may name the operating system and its version of the device the script runs on (Ubuntu 26.04 LTS,
         Microsoft Windows 11 Pro (10.0.26200)): write the commands for that system and version (its package manager,
         service manager, paths and PowerShell edition), not for another distribution or an older release.

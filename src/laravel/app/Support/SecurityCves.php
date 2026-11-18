@@ -397,7 +397,13 @@ class SecurityCves
             $lines[] = 'The fix is only in Ubuntu Pro (ESM): attach the machine (sudo pro attach) and run sudo apt update && sudo apt full-upgrade.';
         }
         if (in_array('no_source', $statuses, true)) {
-            $lines[] = 'The package is not from any repository: download a newer version from the vendor (or add the vendor\'s repository so that it updates).';
+            $fixed = array_values(array_unique(array_filter(array_column(array_filter($affecting, fn ($cve) => ($cve['status'] ?? '') === 'no_source'), 'fixed'))));
+            $lines[] = 'The package is not from any repository, so apt never updates it'
+                .($fixed !== [] ? ' (fixed in '.implode(', ', $fixed).')' : '').': '
+                .'check whether the repository of the vendor is missing - a vendor repository (Docker, Microsoft, Zabbix) is often lost in an upgrade to a new release of the distribution '
+                .'(look in /etc/apt/sources.list.d for *.distUpgrade / *.save, or add it again with the codename of the current release), then sudo apt update && sudo apt install --only-upgrade '
+                .($names !== '' ? $names : '<package>').'. '
+                .'Without a repository install a current version by hand from the vendor, or uninstall the package if it is not needed.';
         }
         if (in_array('no_fix', $statuses, true) && $source === 'snap') {
             $name = (string) ($first['Name'] ?? '');

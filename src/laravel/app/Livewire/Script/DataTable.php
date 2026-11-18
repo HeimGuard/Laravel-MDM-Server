@@ -23,12 +23,33 @@ class DataTable extends DataTableComponent
 
     public array $sortableColumns = ['name', 'platform', 'version', 'updated_at'];
 
-    public string $sortBy = 'name';
+    /** Newest on top. */
+    public string $sortBy = 'updated_at';
+
+    public string $sortDirection = 'desc';
 
     public function mount()
     {
         Gate::authorize('is-system-admin');
         parent::mount();
+    }
+
+    /**
+     * Search: every word has to be in the name or the description, in any order and without regard to case
+     * (the package searches the whole text as one phrase with LIKE, which is case-sensitive on PostgreSQL). `*` stands for any text.
+     */
+    protected function applyFilters($query)
+    {
+        $words = preg_split('/\s+/', trim((string) $this->searchValue), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        foreach ($words as $word) {
+            $query->where(function ($q) use ($word) {
+                foreach ($this->searchableColumns as $column) {
+                    $q->orWhereLike($column, '%'.str_replace('*', '%', $word).'%');
+                }
+            });
+        }
+
+        return $query;
     }
 
     public function query(): Builder

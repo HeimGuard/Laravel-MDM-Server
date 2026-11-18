@@ -11,7 +11,17 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
+### Added
+- Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
+  and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
+
 ### Changed
+- Scripts are listed newest first, and the search finds every word you type, in any order and without regard to case.
+- Remediation scripts written by the AI no longer need a network: the prompt says that scripts have none (no `apt update`,
+  no downloads, no installing packages; updates come from the Updates tab) and that PowerShell is not a POSIX shell.
+- The remediation of a vulnerable package without a source of updates (e.g. containerd.io after the Docker repository
+  was lost in a distribution upgrade) names the fixed version and the steps: restore the vendor repository, then
+  `apt install --only-upgrade`.
 - The open ports of a host are one card in the Overview of every device, with an agent or ping-only (table, notes of
   the scan, Scan ports), instead of a collapsed block in the device header.
 - The device page shows the platform icon (Windows, macOS, Ubuntu, Debian, Linux ...) before the name of the OS.

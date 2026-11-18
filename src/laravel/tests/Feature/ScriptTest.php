@@ -248,6 +248,20 @@ class ScriptTest extends TestCase
         $this->get('/scripts/'.$script->id)->assertOk()->assertSee('Firewall on')->assertSee($script->fingerprint);
     }
 
+    public function test_scripts_are_listed_newest_first_and_found_by_every_word_without_case(): void
+    {
+        $this->withoutVite();
+        $this->actingAs($this->admin());
+        $old = $this->script(['name' => 'Firewall on', 'description' => 'Turns the Firewall on']);
+        $new = $this->script(['name' => 'Docker apt repository', 'description' => 'Adds the source of Docker']);
+        Script::query()->whereKey($old->id)->update(['updated_at' => now()->subDay()]);
+
+        Livewire::test(DataTable::class)->assertSeeInOrder(['Docker apt repository', 'Firewall on']);
+        Livewire::test(DataTable::class)->set('searchValue', 'REPOSITORY docker')->assertSee('Docker apt repository')->assertDontSee('Firewall on');
+        Livewire::test(DataTable::class)->set('searchValue', 'source   DOCKER')->assertSee('Docker apt repository')->assertDontSee('Firewall on');
+        Livewire::test(DataTable::class)->set('searchValue', 'docker firewall')->assertDontSee('Docker apt repository')->assertDontSee('Firewall on');
+    }
+
     public function test_admin_creates_and_runs_a_script(): void
     {
         $this->actingAs($this->admin());
