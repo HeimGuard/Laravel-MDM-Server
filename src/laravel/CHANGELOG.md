@@ -16,6 +16,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
 
 ### Changed
+- Scripts are listed newest first, and the search finds every word you type, in any order and without regard to case.
 - Remediation scripts written by the AI no longer need a network: the prompt says that scripts have none (no `apt update`,
   no downloads, no installing packages; updates come from the Updates tab) and that PowerShell is not a POSIX shell.
 - The remediation of a vulnerable package without a source of updates (e.g. containerd.io after the Docker repository
