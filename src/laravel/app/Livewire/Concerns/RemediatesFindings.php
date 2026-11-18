@@ -64,7 +64,7 @@ trait RemediatesFindings
         $related = $this->relatedFindings($finding);
         if ($related->isNotEmpty()) {
             $request .= "\n\nOther open findings on the same device:\n".$related->map(fn ($other) => '- ['.$other->severity.'] '.mb_strimwidth(preg_replace('/\s+/', ' ', ($other->rule?->name ?? '').': '.$other->message), 0, 250, '…'))->implode("\n")
-                ."\n\nOne script has to fix the finding above together with every one of these that the same action resolves: update the whole product or package family (all php packages, not one module), not a single package, and refresh the package index first. Leave out the findings it cannot fix.";
+                ."\n\nOne script has to fix the finding above together with every one of these that the same action resolves: update the whole product or package family (all php packages, not one module), not a single package. The script has no network and installs nothing: for what an update fixes it does only the local preparation. Leave out the findings it cannot fix.";
         }
         $request .= "\nThe detection exits 0 only when the findings it covers are gone (the software is fixed or removed) and 1 as long as any of them is still there: an update that cannot be installed, or none to be had in the channel, is not a fix, so then it exits 1 and says why. When no fix exists, the remediation applies the mitigation of the advisory or the hint, or changes nothing and says what a person has to decide.";
 
