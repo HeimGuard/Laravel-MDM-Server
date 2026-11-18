@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
+  phone shows the current icon instead of the old `storage/images/logo.png`.
+
 ### Changed
 - The open ports of a host are one card in the Overview of every device, with an agent or ping-only (table, notes of
   the scan, Scan ports), instead of a collapsed block in the device header.

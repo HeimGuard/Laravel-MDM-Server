@@ -38,7 +38,7 @@
             <div class="col-md-6 d-flex flex-column grid justify-content-center align-content-center">
                 <div class="container py-4 px-4">
                     <div class="d-md-none text-center mb-4">
-                            <img src="{{ asset('storage/images/logo.png') }}" class="mb-4" width="64px" height="64px">
+                            <img alt="" class="mb-4" height="64" src="{{ asset('/favicon.svg') }}" width="64">
                     </div>
 
                     <x-alerts/>
