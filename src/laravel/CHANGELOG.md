@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.33.1] - 2026-11-18
+
 ### Fixed
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
   phone shows the current icon instead of the old `storage/images/logo.png`.
