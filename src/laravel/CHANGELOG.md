@@ -11,6 +11,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
+### Added
+- Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
+  and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
+
 ### Changed
 - The remediation of a vulnerable package without a source of updates (e.g. containerd.io after the Docker repository
   was lost in a distribution upgrade) names the fixed version and the steps: restore the vendor repository, then
