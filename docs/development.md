@@ -33,6 +33,8 @@ changes are in [`CLAUDE.md`](../CLAUDE.md), the data model in [data-model.md](da
   `updateRowState()` turns into Queued / Installing / Done.
 - **Update** on a row issues one `installUpdate` command with the row's target. The row shows the same Queued /
   Installing (with percent) as a row of Install all; the command and its state are in the tooltip.
+- A winget row that is still offered after its upgrade ran (exit 0 or "nothing to update", but `winget list --upgrade-available --id X`
+  still lists it) is a failure of the command (agents 1.36.1+: `Test-WingetStillOffered`), so it reaches the history and the server log.
 - A new PowerShell release is not started before the restart that finishes its MSI (agents 1.31.2+); the modules
   wait for the next run.
 

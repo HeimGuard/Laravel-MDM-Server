@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.36.0'
+$AgentVersion = '1.36.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -6449,6 +6449,22 @@ function Start-UpdateJob {
             return $false
         }
         $wingetOk = @(0, -1978335189) # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE: nothing to update
+        function Test-WingetStillOffered ([string]$Winget, [string]$Id, [string]$Scope) {
+            # Whether winget still offers an update of the package after it was run (agents 1.36.1+): $true it does, $false it is
+            # gone, $null not known. An exit code of 0 (or "nothing to update") proves nothing: an installer that did not
+            # replace the program (it was running, a per-user install) leaves the row in the list, and that is an error.
+            try {
+                $lines = if ($Scope -eq 'user') {
+                    $session = Invoke-WingetInUserSession -Arguments "list --upgrade-available --id `"$Id`" --exact --accept-source-agreements --disable-interactivity" -Title "checking $Id" -TimeoutSeconds 120
+                    if ($null -eq $session) { return $null }
+                    @($session.Lines)
+                } else {
+                    @(& $Winget list --upgrade-available --id $Id --exact --accept-source-agreements --disable-interactivity 2>$null)
+                }
+                return [bool](@($lines | Where-Object { $_ -match ('(^|\s)' + [regex]::Escape($Id) + '(\s|$)') }).Count)
+            }
+            catch { return $null }
+        }
         # One package, killed with its installer after the timeout: an installer that waits for a
         # window nobody sees (SYSTEM has no desktop) or for an application to close would
         # otherwise hang the whole update forever. Returns the output; $LASTEXITCODE is set.
@@ -6579,7 +6595,11 @@ function Start-UpdateJob {
                         $output = Invoke-WingetUpgrade -Winget $winget -Id $id -Source $Params.source
                     }
                     "winget upgrade ${id}: exit $LASTEXITCODE"
-                    Add-Result "winget upgrade $id" $LASTEXITCODE $output $wingetOk
+                    $wingetCode = $LASTEXITCODE
+                    Add-Result "winget upgrade $id" $wingetCode $output $wingetOk
+                    if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $id -Scope $Params.scope)) {
+                        [void]$state.Failures.Add("winget upgrade ${id}: still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                    }
                 }
                 'apt' {
                     Enter-Step 0 10 'apt-get update'
@@ -6741,7 +6761,11 @@ function Start-UpdateJob {
                     $output = if ($package.Scope -eq 'user') { Invoke-WingetUpgradeAsUser -Id $package.Id -Source $package.Source } else { Invoke-WingetUpgrade -Winget $winget -Id $package.Id -Source $package.Source }
                     if ($null -eq $output) { $output = @('Installed only for a user, who is not logged on now'); $global:LASTEXITCODE = -1 }
                     "winget upgrade $($package.Id): exit $LASTEXITCODE$(if ($LASTEXITCODE) { ': ' + (Get-Tail $output) })"
-                    Add-Result "winget upgrade $($package.Id)" $LASTEXITCODE $output $wingetOk
+                    $wingetCode = $LASTEXITCODE
+                    Add-Result "winget upgrade $($package.Id)" $wingetCode $output $wingetOk
+                    if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $package.Id -Scope $package.Scope)) {
+                        [void]$state.Failures.Add("winget upgrade $($package.Id): still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                    }
                     $done++
                 }
                 if ($packages.Count -eq 0) { 'winget: nothing to update' }
