@@ -698,6 +698,8 @@
     "Security findings on :device: :findings.": "Sicherheitsbefunde auf :device: :findings.",
     "Security inventory": "Sicherheitsinventar",
     "Security logs": "Sicherheitslogs",
+    "File scan": "Dateiscan",
+    "Looks for programs that are not installed (portable ones) on the drives and reports them with their versions in the software.": "Sucht auf den Laufwerken nach nicht installierten (portablen) Programmen und meldet sie mit ihren Versionen in der Software.",
     "Security settings": "Sicherheitseinstellungen",
     "Select all": "Alle auswählen",
     "Select at least one component to restore": "Wählen Sie mindestens eine Komponente zur Wiederherstellung",

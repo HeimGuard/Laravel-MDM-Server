@@ -8,10 +8,31 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Fixed
+- A winget update that ended with exit code 0 (or "nothing to update") but left the update in the list (the program was running, a per-user
+  installer did not replace it) looked like a success and kept showing with no error. Agents 1.36.1+ ask winget again after each package
+  (`winget list --upgrade-available --id ...`, in the session of the user for a per-user package): a package that is still offered fails the
+  update with "still offered after the update (exit N), <end of the winget output>", which is in the Updates history and in the server log. When a
+  restart is pending (files in use are replaced at the next start) it is not an error: the update ends as "restart required" (agents 1.36.2+).
+- A package whose files were replaced after it was installed (a vendor `.deb` without a repository whose binary was updated in place, e.g. rclone
+  1.69.1 in dpkg, 1.76.0 running) was reported as vulnerable by the version dpkg recorded. Agents 1.36.0+ check running packages without a source of
+  updates with `dpkg --verify`; their CVE findings are now "files changed outside the package manager, version not verified", at most low.
+- Devices page: the device list had its own scrollbar next to the one of the page (sticky list with a maximum height); the page is the only
+  thing that scrolls now.
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
 ### Added
+- What fails on a device is also in the server log (`laravel.log`, the Logs page), to read and send for analysis in one place: every error the agent
+  logs (`Agent error on device 12 (name, agent 1.36.0): message (x3)`) and every command that fails (`Command doUpdates (87) failed on device 12 ...: reason`,
+  the command itself keeps the first 1000 bytes of the reason, the log up to 4000).
+- **File scan** (agents 1.34.0+ on Windows, 1.35.0+ on Linux; off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at
+  install): the agent also looks for programs that are not installed (portable ones) and lists them in the software as
+  `portable` (Linux crates: `cargo`) with their `Path`, so the vulnerability checks see them. **It never runs what it finds**: the
+  version comes from the resources and the name of a file or from text files next to it. Windows: executables of the fixed drives
+  in a folder that no entry of Programs and Features owns (the walk is limited and cached). Linux: AppImages, directories of
+  `/opt`, executables of `/usr/local/bin` and the users' bin directories, and cargo crates that no package owns. Script
+  **Allow file scan** (manual remediation) turns it on.
+  The vulnerability scanner judges them by their version like any other software and tells to replace the files (no package manager updates them).
 - Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
   and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
 

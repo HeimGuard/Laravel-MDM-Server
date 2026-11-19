@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Support\AgentScript;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
@@ -95,6 +96,20 @@ class DeviceCommandTest extends TestCase
         $this->device('1.8.0', [], 'other-token');
         $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'failed'], 'other-token')->assertNotFound();
         $this->assertSame('succeeded', $command->fresh()->status);
+    }
+
+    public function test_a_failed_command_is_written_to_the_server_log_with_its_reason(): void
+    {
+        Log::spy();
+        $device = $this->device();
+        $command = $device->issueCommand('doUpdates');
+        $this->signedJson('POST', '/api/device/commands/take', [], 'secret-token')->assertOk();
+
+        $this->signedJson('POST', "/api/device/commands/{$command->id}", ['status' => 'failed', 'message' => 'pip install --upgrade foo: exit 1, ERROR: No matching distribution found for foo'], 'secret-token')->assertOk();
+
+        Log::shouldHaveReceived('warning')->withArgs(fn ($message) => str_contains($message, 'doUpdates')
+            && str_contains($message, "failed on device {$device->id}")
+            && str_contains($message, 'No matching distribution found for foo'))->once();
     }
 
     public function test_older_agents_get_names_and_their_commands_end_as_delivered(): void

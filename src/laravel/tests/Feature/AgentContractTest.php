@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
 
@@ -92,6 +93,7 @@ class AgentContractTest extends TestCase
 
     public function test_the_errors_of_the_agent_are_stored_with_their_count(): void
     {
+        Log::spy();
         $device = $this->device();
         $this->registerDeviceKey($device);
         $now = time();
@@ -100,6 +102,7 @@ class AgentContractTest extends TestCase
         $this->signedJson('POST', '/api/device/errors', ['errors' => [['message' => 'Report failed: boom', 'count' => 3, 'first' => $now - 60, 'last' => $now]]], 'secret-token')
             ->assertOk()->assertJson(['taken' => 1]);
 
+        Log::shouldHaveReceived('warning')->withArgs(fn ($line) => str_contains($line, "Agent error on device {$device->id}") && str_contains($line, 'Report failed: boom') && str_contains($line, '(x3)'))->once();
         $errors = Device::find($device->id)->recent_agent_errors;
         $this->assertSame('Report failed: boom', $errors[0]['message']);
         $this->assertSame(3, $errors[0]['count']);

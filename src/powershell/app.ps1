@@ -44,6 +44,16 @@
     security_logs, the server cannot change it): off (default) or on. The security inventory
     (software, ports, settings) is sent either way.
 
+.PARAMETER FileScan
+    With -Install: whether the agent looks for programs that are not installed (portable ones: an
+    executable in a folder with no entry in Programs and Features) and reports them with their
+    versions in the software of the security inventory (stored in config.json as file_scan, the
+    server cannot change it): off (default) or on. It never runs a file it finds: versions come from the
+    resources, names and text files of the files. Windows: walks the fixed drives at low priority (the
+    folders of installed programs, Windows and the caches are skipped) and reads the version of an
+    executable again only when the file changed. Linux (1.35.0+): AppImages, /opt, the bin directories
+    and the crates of cargo that no package owns.
+
 .PARAMETER PortScan
     With -Install: whether the agent scans the open ports of an address in its network when asked
     in the portal (stored in config.json as port_scan, the server cannot change it): off (default)
@@ -90,7 +100,10 @@ param (
     $SecurityLogs,
     [ValidateSet('off', 'on')]
     [string]
-    $PortScan
+    $PortScan,
+    [ValidateSet('off', 'on')]
+    [string]
+    $FileScan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.33.1'
+$AgentVersion = '1.36.2'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1443,7 +1456,9 @@ function Get-SecuritySoftware {
     param (
         [bool]$OnLinux,
         # A file that remembers the CVEs of the changelog of a package version, so only new and updated packages are read.
-        [string]$CachePath = ''
+        [string]$CachePath = '',
+        # Portable programs too (file_scan in config.json).
+        [bool]$FileScan = $false
     )
 
     if ($OnLinux) {
@@ -1523,6 +1538,7 @@ function Get-SecuritySoftware {
                 }
             }
         }
+        if ($FileScan) { try { Get-PortableSoftwareLinux } catch { } }
         return
     }
 
@@ -1543,7 +1559,288 @@ function Get-SecuritySoftware {
         })
     try { $software += @(Get-OfflineUserSoftware) } catch { }
     try { $software += @(Get-AppxSoftware) } catch { }
+    if ($FileScan) {
+        try {
+            $cache = if ($CachePath) { Join-Path (Split-Path -Parent $CachePath) 'portable-software.json' } else { '' }
+            # What is installed already (by name) is not portable.
+            $names = @($software | ForEach-Object { "$($_.Name)".ToLowerInvariant() })
+            foreach ($item in @(Get-PortableSoftware -CachePath $cache)) {
+                $product = "$($item.Name)".ToLowerInvariant() -replace '\s*\[.*\]$', ''
+                if ($product.Length -ge 4 -and @($names | Where-Object { $_.Contains($product) }).Count -gt 0) { continue }
+                $software += $item
+            }
+        } catch { }
+    }
     $software | Sort-Object -Property Name, Version, Source -Unique
+}
+
+function Get-PortableUnique {
+    # One detection of one file: the same path reported twice (a cargo crate is also a binary of ~/.cargo/bin) is one item, the
+    # one that says more (a version, a source other than "portable"). Nothing else is merged: several copies and several
+    # versions of a program on one device are real, also with the same version in other folders, and each is an item.
+    param ($Items)
+
+    $byPath = @{}
+    foreach ($item in @($Items)) {
+        $key = "$($item.Path)".ToLowerInvariant()
+        $known = $byPath[$key]
+        if (-not $known -or (-not $known.Version -and $item.Version) -or ($known.Source -eq 'portable' -and $item.Source -ne 'portable' -and $item.Version)) { $byPath[$key] = $item }
+    }
+    return @($byPath.Values)
+}
+
+function Get-PortableSoftware {
+    # Programs that run without being installed (agents 1.34.0+, file_scan "on" in config.json, Windows): executables of the
+    # fixed drives in a folder that no entry of Programs and Features owns (its InstallLocation, or the folder of its
+    # DisplayIcon / UninstallString). The version comes from the file itself (name, version, company of its resources).
+    # The walk is limited (depth, time, Windows and the caches are skipped) and the version of a file is read again only when
+    # its size or time changed (CachePath). An item is one product in one folder, Source "portable", Path the first file.
+    param (
+        [string]$CachePath = '',
+        [int]$MaxDepth = 8,
+        [int]$MaxMinutes = 20,
+        [int]$MaxItems = 500
+    )
+
+    $deadline = (Get-Date).AddMinutes($MaxMinutes)
+
+    # The folders of the installed programs: not portable, not walked.
+    $paths = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+    $paths += @(Get-ChildItem -Path Registry::HKEY_USERS -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^S-1-5-21-[\d-]+$' } |
+            ForEach-Object { "Registry::HKEY_USERS\$($_.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" })
+    $known = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($entry in @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue)) {
+        $dirs = @("$($entry.InstallLocation)".Trim('"', ' '))
+        foreach ($field in 'DisplayIcon', 'UninstallString') {
+            if ("$($entry.$field)" -match '^\s*"?([A-Za-z]:\\[^"]*?)\\[^\\"]+\.(?:exe|ico|dll)') { $dirs += $Matches[1] }
+        }
+        foreach ($dir in $dirs) {
+            # Two levels at least (C:\Program Files\Name): a drive or a shared folder owns nothing.
+            if ($dir -match '^[A-Za-z]:\\[^\\]+\\[^\\]+') { [void]$known.Add($dir.TrimEnd('\').ToLowerInvariant() + '\') }
+        }
+    }
+
+    $skipNames = @('$recycle.bin', 'system volume information', 'windowsapps', 'winsxs', 'windows.old', 'node_modules', '.git', 'temp', 'tmp', 'cache', 'caches')
+    $skipPrefixes = @("$($env:SystemRoot)\".ToLowerInvariant(), "$($env:ProgramData)\Microsoft\".ToLowerInvariant(), "$($env:ProgramData)\Package Cache\".ToLowerInvariant())
+
+    $cache = @{}
+    if ($CachePath) {
+        try { foreach ($property in (Get-Content -Path $CachePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties) { $cache[$property.Name] = $property.Value } } catch { }
+    }
+    $seen = @{}
+    $found = @{}
+
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    foreach ($drive in @([System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
+        $stack.Push([Tuple[string, int]]::new($drive.RootDirectory.FullName, 0))
+    }
+    while ($stack.Count -gt 0 -and $found.Count -lt $MaxItems) {
+        if ((Get-Date) -gt $deadline) { break }
+        $current = $stack.Pop()
+        $dir = $current.Item1
+        $probe = $dir.TrimEnd('\').ToLowerInvariant() + '\'
+        if ($known.Contains($probe)) { continue }
+        $skip = $false
+        foreach ($prefix in $skipPrefixes) { if ($probe.StartsWith($prefix)) { $skip = $true; break } }
+        if ($skip -or $probe -match '\\appdata\\local\\(microsoft|packages|temp)\\$') { continue }
+
+        try {
+            foreach ($file in [System.IO.Directory]::EnumerateFiles($dir, '*.exe')) {
+                $info = [System.IO.FileInfo]::new($file)
+                $stamp = "$($info.Length)|$($info.LastWriteTimeUtc.Ticks)"
+                $entry = $cache[$file]
+                if (-not $entry -or $entry.k -ne $stamp) {
+                    $version = $null
+                    try { $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($file) } catch { }
+                    $name = if ($version) { if ($version.ProductName) { $version.ProductName } else { $version.FileDescription } } else { $null }
+                    $number = if ($version) { if ($version.ProductVersion) { $version.ProductVersion } else { $version.FileVersion } } else { $null }
+                    # Old resources write "1, 2, 3, 4": the scanner compares dotted numbers.
+                    if ($number -match '^\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*(\d+))?(?:\s*,\s*(\d+))?\s*$') { $number = (@($Matches[1], $Matches[2], $Matches[3], $Matches[4]) | Where-Object { $_ -ne $null -and $_ -ne '' }) -join '.' }
+                    $entry = [PSCustomObject]@{ k = $stamp; n = "$name".Trim(); v = "$number".Trim(); c = if ($version) { "$($version.CompanyName)".Trim() } else { '' } }
+                }
+                $seen[$file] = $entry
+                # A file without a name and a version tells nothing.
+                if (-not $entry.n -and -not $entry.v) { continue }
+                $name = if ($entry.n) { $entry.n } else { $info.BaseName }
+                $id = "$dir|$name|$($entry.v)".ToLowerInvariant()
+                if (-not $found.ContainsKey($id)) {
+                    $found[$id] = [PSCustomObject]@{
+                        Name      = ConvertTo-SecurityText $name 300
+                        Version   = ConvertTo-SecurityText $entry.v 100
+                        Publisher = ConvertTo-SecurityText $entry.c 200
+                        Source    = 'portable'
+                        Path      = ConvertTo-SecurityText $file 500
+                    }
+                }
+            }
+        }
+        catch { }
+
+        if ($current.Item2 -ge $MaxDepth) { continue }
+        try {
+            foreach ($sub in [System.IO.Directory]::EnumerateDirectories($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($sub).ToLowerInvariant()
+                if ($skipNames -contains $leaf) { continue }
+                # Junctions and links are not followed (a loop, or another drive's folder).
+                if ([System.IO.File]::GetAttributes($sub) -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $stack.Push([Tuple[string, int]]::new($sub, $current.Item2 + 1))
+            }
+        }
+        catch { }
+    }
+
+    # Only the files seen this time stay in the cache; a walk cut short by the time limit keeps the old entries.
+    if ($CachePath -and $stack.Count -eq 0) { try { $seen | ConvertTo-Json -Compress -Depth 3 | Set-Content -Path $CachePath -Encoding UTF8 } catch { } }
+
+    # The same product twice (two copies in two folders) are two items: the key of an item is its name and source.
+    # The same file twice is one detection; two copies, or two versions, are two items.
+    $items = @(Get-PortableUnique -Items @($found.Values))
+    $twice = @($items | Group-Object -Property Name | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+    foreach ($item in $items) {
+        if ($twice -contains $item.Name) { $item.Name = ConvertTo-SecurityText "$($item.Name) [$(Split-Path -Parent $item.Path)]" 300 }
+    }
+    $items | Sort-Object -Property Name, Path
+}
+
+function Get-PortableSoftwareLinux {
+    # Programs that are not installed by a package manager (agents 1.35.0+, file_scan "on" in config.json, Linux): AppImages,
+    # directories of /opt, executables of /usr/local/bin and of the users' bin directories, and the crates of cargo.
+    # HARD RULE: nothing found is ever run (no --version, no AppImage --appimage-*, no ldd): a file may be malicious, and
+    # this is what the scan looks for. A name and a version come from the file name, from text files next to it (VERSION,
+    # package.json) and from the registry of cargo; the first bytes of a file are read to tell an ELF from other files.
+    # Whatever a package owns (dpkg file lists, rpm -qf, which only asks the database) is not portable.
+    param (
+        [int]$MaxItems = 500,
+        [int]$MaxMinutes = 10
+    )
+
+    $deadline = (Get-Date).AddMinutes($MaxMinutes)
+    $items = [System.Collections.Generic.List[object]]::new()
+    $add = {
+        param ($Name, $Version, $Path, $Source)
+        $items.Add([PSCustomObject]@{
+                Name      = ConvertTo-SecurityText $Name 300
+                Version   = ConvertTo-SecurityText $Version 100
+                Publisher = $null
+                Source    = $Source
+                Path      = ConvertTo-SecurityText $Path 500
+            })
+    }
+
+    # What dpkg owns: every file path, and the first two parts of what is in /opt.
+    $owned = [System.Collections.Generic.HashSet[string]]::new()
+    $ownedOpt = [System.Collections.Generic.HashSet[string]]::new()
+    $hasDpkg = Test-Path -LiteralPath /var/lib/dpkg/info
+    if ($hasDpkg) {
+        foreach ($list in @(Get-ChildItem -LiteralPath /var/lib/dpkg/info -Filter '*.list' -ErrorAction SilentlyContinue)) {
+            try {
+                foreach ($line in [System.IO.File]::ReadLines($list.FullName)) {
+                    if ($line.StartsWith('/usr/local/') -or $line.StartsWith('/opt/')) {
+                        [void]$owned.Add($line)
+                        if ($line.StartsWith('/opt/')) { [void]$ownedOpt.Add(($line -split '/', 4)[0..2] -join '/') }
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+    $hasRpm = -not $hasDpkg -and [bool](Get-Command -Name rpm -CommandType Application -ErrorAction SilentlyContinue)
+    $isOwned = {
+        param ($Path)
+        if ($owned.Contains($Path)) { return $true }
+        if ($hasRpm) {
+            & rpm -qf -- $Path *> $null
+            return $LASTEXITCODE -eq 0
+        }
+        return $false
+    }
+
+    $homes = @(Get-ChildItem -Path /home -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if (Test-Path -LiteralPath /root) { $homes += '/root' }
+
+    # AppImages (a file name is all that is read) and the executables of the bin directories.
+    $bins = @('/usr/local/bin', '/usr/local/sbin') + @($homes | ForEach-Object { "$_/.local/bin"; "$_/bin"; "$_/.cargo/bin"; "$_/go/bin" })
+    $roots = @('/opt', '/usr/local', '/srv') + $homes
+    $skipNames = @('node_modules', '.git', '.cache', 'snap', '.var', '.npm', '.rustup', 'proc', 'sys')
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    foreach ($root in $roots) { if (Test-Path -LiteralPath $root) { $stack.Push([Tuple[string, int]]::new($root, 0)) } }
+    while ($stack.Count -gt 0 -and $items.Count -lt $MaxItems) {
+        if ((Get-Date) -gt $deadline) { break }
+        $current = $stack.Pop()
+        $dir = $current.Item1
+        $isBin = $bins -contains $dir
+        try {
+            foreach ($file in [System.IO.Directory]::EnumerateFiles($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($file)
+                if ($leaf -like '*.AppImage' -or $leaf -like '*.appimage') {
+                    $base = $leaf -replace '(?i)\.appimage$', ''
+                    if ($base -match '^(.+?)[-_ ]v?(\d+(?:\.\d+)+)') { & $add $Matches[1] $Matches[2] $file 'portable' } else { & $add $base $null $file 'portable' }
+                } elseif ($isBin) {
+                    $info = [System.IO.FileInfo]::new($file)
+                    # A link points somewhere that is judged on its own (a package, /opt).
+                    if ($info.LinkTarget -or $info.Length -lt 1024) { continue }
+                    $head = [byte[]]::new(4)
+                    $stream = [System.IO.File]::OpenRead($file)
+                    try { [void]$stream.Read($head, 0, 4) } finally { $stream.Dispose() }
+                    if ($head[0] -ne 0x7F -or $head[1] -ne 0x45 -or $head[2] -ne 0x4C -or $head[3] -ne 0x46) { continue }
+                    if (& $isOwned $file) { continue }
+                    & $add $leaf $null $file 'portable'
+                }
+            }
+        }
+        catch { }
+        if ($current.Item2 -ge 4) { continue }
+        try {
+            foreach ($sub in [System.IO.Directory]::EnumerateDirectories($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($sub)
+                if ($skipNames -contains $leaf -or ($leaf.StartsWith('.') -and $leaf -ne '.local' -and $leaf -ne '.cargo')) { continue }
+                if ([System.IO.File]::GetAttributes($sub) -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $stack.Push([Tuple[string, int]]::new($sub, $current.Item2 + 1))
+            }
+        }
+        catch { }
+    }
+
+    # The crates cargo installed (its registry is a JSON file).
+    foreach ($userHome in $homes) {
+        $registry = "$userHome/.cargo/.crates2.json"
+        if (-not (Test-Path -LiteralPath $registry -PathType Leaf) -or (Get-Item -LiteralPath $registry).Length -gt 5MB) { continue }
+        try {
+            foreach ($property in (Get-Content -LiteralPath $registry -Raw | ConvertFrom-Json).installs.PSObject.Properties) {
+                if ($property.Name -match '^(\S+) (\S+) ') { & $add $Matches[1] $Matches[2] "$userHome/.cargo/bin/$($Matches[1])" 'cargo' }
+            }
+        }
+        catch { }
+    }
+
+    # Directories of /opt that no package owns: the version from VERSION or package.json. A directory that holds an AppImage, a
+    # binary or a crate already found is not reported again (the same program twice in the same path).
+    foreach ($dir in @(Get-ChildItem -LiteralPath /opt -Directory -ErrorAction SilentlyContinue)) {
+        if ($items.Count -ge $MaxItems) { break }
+        if ($ownedOpt.Contains($dir.FullName) -or $dir.LinkTarget) { continue }
+        $prefix = $dir.FullName.TrimEnd('/') + '/'
+        if (@($items | Where-Object { "$($_.Path)".StartsWith($prefix) }).Count -gt 0) { continue }
+        if ($hasRpm -and (& $isOwned $dir.FullName)) { continue }
+        $version = $null
+        $name = $dir.Name
+        foreach ($candidate in 'VERSION', 'version', '.version', 'resources/app/package.json', 'package.json') {
+            $file = Join-Path $dir.FullName $candidate
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -gt 1MB) { continue }
+            try {
+                $text = [System.IO.File]::ReadAllText($file)
+                if ($candidate -like '*.json') {
+                    $json = $text | ConvertFrom-Json
+                    if ($json.version) { $version = "$($json.version)" }
+                    if ($json.productName) { $name = "$($json.productName)" }
+                } elseif ($text.Trim() -match '^v?(\d+(?:\.\d+)+\S*)') { $version = $Matches[1] }
+            }
+            catch { }
+            if ($version) { break }
+        }
+        & $add $name $version $dir.FullName 'portable'
+    }
+
+    Get-PortableUnique -Items @($items | Sort-Object -Property Path -Unique | Sort-Object -Property Name, Path)
 }
 
 function Get-OfflineUserSoftware {
@@ -1590,6 +1887,24 @@ function Get-AppxSoftware {
             Source    = 'appx'
         }
     } | Sort-Object -Property Name, Version -Unique
+}
+
+function Add-SecurityModifiedPackages {
+    # A running package without a source of updates whose files were replaced after it was installed (agents 1.36.0+): a vendor
+    # .deb whose binary was updated in place (rclone selfupdate, a copied binary) still says the version dpkg recorded. dpkg
+    # --verify only compares the files with the checksums of the package (nothing of it is run); the item gets Modified, so the
+    # server does not judge its recorded version. Only where it matters: dpkg packages with no update source that are running.
+    param ($Software)
+
+    foreach ($item in @($Software)) {
+        if ("$($item.Source)" -ne 'dpkg' -or -not $item.NoUpdateSource -or -not $item.Running) { continue }
+        $changed = $false
+        foreach ($line in @(& dpkg --verify -- $item.Name 2>$null)) {
+            # "??5??????  /usr/bin/rclone": the checksum differs; a "c" before the path is a configuration file (changed on purpose).
+            if ("$line" -match '^\S{2}5\S{6}\s+(?<kind>c\s+)?(?<path>/\S.*)$' -and -not $Matches['kind'] -and $Matches['path'] -match '^/(usr/(s?bin|lib|libexec|local)|s?bin|lib|opt)/') { $changed = $true; break }
+        }
+        if ($changed) { $item | Add-Member -NotePropertyName Modified -NotePropertyValue $true -Force }
+    }
 }
 
 function Get-SecurityProcesses {
@@ -2294,11 +2609,13 @@ function Get-SecurityInventory {
         # The collection policy of the server and the positions of the logs (JSON), see Get-SecurityLogs.
         [string]$PolicyJson = '',
         [string]$CursorsJson = '',
-        [string]$AptStatePath = ''
+        [string]$AptStatePath = '',
+        # file_scan is on in config.json: portable programs are added to the software (Windows).
+        [bool]$FileScan = $false
     )
 
     $inventory = @{}
-    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath | Select-Object -First 5000) } catch { }
+    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath -FileScan $FileScan | Select-Object -First 5000) } catch { }
     # As many as the server takes of each list (more and it refuses the whole collection).
     try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
@@ -2307,6 +2624,7 @@ function Get-SecurityInventory {
     try { $inventory['os'] = @(Get-SecurityOs -OnLinux $OnLinux | Select-Object -First 1) } catch { }
     try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer -AptStatePath $AptStatePath } catch { }
     try { Add-SecuritySoftwareContext -Software $inventory['software'] -Processes $inventory['processes'] -Listening $inventory['listening'] } catch { }
+    if ($OnLinux) { try { Add-SecurityModifiedPackages -Software $inventory['software'] } catch { } }
     $records = @()
     $moved = @{}
     if ($SendLogs -and $PolicyJson) {
@@ -4551,13 +4869,16 @@ function Start-SecurityCollection {
         [string]
         $PolicyJson = '',
         [string]
-        $CursorsJson = ''
+        $CursorsJson = '',
+        # file_scan is on in config.json: the portable programs of the fixed drives are looked for.
+        [bool]
+        $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
-        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Add-SecurityModifiedPackages', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
-        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
+        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan
     }
 }
 
@@ -4608,7 +4929,7 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path', 'Modified')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
@@ -4647,10 +4968,11 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Modified', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
-        if ($field -in $optional -and $value -eq '') { continue }
+        # Path is optional for the software only (a portable program's file); processes and ports always have it.
+        if (($field -in $optional -or ($Source -eq 'software' -and $field -eq 'Path')) -and $value -eq '') { continue }
         $value
     }
     return Get-SecurityShortHash ($parts -join [string][char]0x1f)
@@ -4848,6 +5170,7 @@ function Get-Report {
             network_discovery = $discovery
             port_scan         = $portScan
             security_logs     = (Get-SecurityLogsLevel -Config $config)
+            file_scan         = (Get-FileScanLevel -Config $config)
         }) -Force
     try { Add-PublicAddresses -Networks $data.machine.Networks } catch { Write-AgentLog "Public addresses failed: $($_.Exception.Message)" }
     if ($discovery -ne 'off') {
@@ -5354,6 +5677,15 @@ function Get-SecurityLogsLevel {
     param ($Config = (Get-AgentConfig))
 
     return $(if ("$($Config['security_logs'])" -eq 'on') { 'on' } else { 'off' })
+}
+
+function Get-FileScanLevel {
+    # file_scan in config.json: on looks for portable programs (executables outside the installed ones) on the fixed
+    # drives of a Windows device, anything else (the default) is off. Only changed on the device (-FileScan with
+    # -Install, or editing config.json).
+    param ($Config = (Get-AgentConfig))
+
+    return $(if ("$($Config['file_scan'])" -eq 'on') { 'on' } else { 'off' })
 }
 
 function Get-PortScan {
@@ -6012,7 +6344,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PendingReboot', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6117,6 +6449,22 @@ function Start-UpdateJob {
             return $false
         }
         $wingetOk = @(0, -1978335189) # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE: nothing to update
+        function Test-WingetStillOffered ([string]$Winget, [string]$Id, [string]$Scope) {
+            # Whether winget still offers an update of the package after it was run (agents 1.36.1+): $true it does, $false it is
+            # gone, $null not known. An exit code of 0 (or "nothing to update") proves nothing: an installer that did not
+            # replace the program (it was running, a per-user install) leaves the row in the list, and that is an error.
+            try {
+                $lines = if ($Scope -eq 'user') {
+                    $session = Invoke-WingetInUserSession -Arguments "list --upgrade-available --id `"$Id`" --exact --accept-source-agreements --disable-interactivity" -Title "checking $Id" -TimeoutSeconds 120
+                    if ($null -eq $session) { return $null }
+                    @($session.Lines)
+                } else {
+                    @(& $Winget list --upgrade-available --id $Id --exact --accept-source-agreements --disable-interactivity 2>$null)
+                }
+                return [bool](@($lines | Where-Object { $_ -match ('(^|\s)' + [regex]::Escape($Id) + '(\s|$)') }).Count)
+            }
+            catch { return $null }
+        }
         # One package, killed with its installer after the timeout: an installer that waits for a
         # window nobody sees (SYSTEM has no desktop) or for an application to close would
         # otherwise hang the whole update forever. Returns the output; $LASTEXITCODE is set.
@@ -6247,7 +6595,17 @@ function Start-UpdateJob {
                         $output = Invoke-WingetUpgrade -Winget $winget -Id $id -Source $Params.source
                     }
                     "winget upgrade ${id}: exit $LASTEXITCODE"
-                    Add-Result "winget upgrade $id" $LASTEXITCODE $output $wingetOk
+                    $wingetCode = $LASTEXITCODE
+                    Add-Result "winget upgrade $id" $wingetCode $output $wingetOk
+                    if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $id -Scope $Params.scope)) {
+                        if ($state.Restart -or (Test-PendingReboot)) {
+                            # Files in use are replaced at the next start: not an error, the portal shows "restart required".
+                            $state.Restart = $true
+                            "winget upgrade ${id}: still offered, a restart is pending: it is applied after the restart"
+                        } else {
+                            [void]$state.Failures.Add("winget upgrade ${id}: still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        }
+                    }
                 }
                 'apt' {
                     Enter-Step 0 10 'apt-get update'
@@ -6409,7 +6767,16 @@ function Start-UpdateJob {
                     $output = if ($package.Scope -eq 'user') { Invoke-WingetUpgradeAsUser -Id $package.Id -Source $package.Source } else { Invoke-WingetUpgrade -Winget $winget -Id $package.Id -Source $package.Source }
                     if ($null -eq $output) { $output = @('Installed only for a user, who is not logged on now'); $global:LASTEXITCODE = -1 }
                     "winget upgrade $($package.Id): exit $LASTEXITCODE$(if ($LASTEXITCODE) { ': ' + (Get-Tail $output) })"
-                    Add-Result "winget upgrade $($package.Id)" $LASTEXITCODE $output $wingetOk
+                    $wingetCode = $LASTEXITCODE
+                    Add-Result "winget upgrade $($package.Id)" $wingetCode $output $wingetOk
+                    if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $package.Id -Scope $package.Scope)) {
+                        if ($state.Restart -or (Test-PendingReboot)) {
+                            $state.Restart = $true
+                            "winget upgrade $($package.Id): still offered, a restart is pending: it is applied after the restart"
+                        } else {
+                            [void]$state.Failures.Add("winget upgrade $($package.Id): still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        }
+                    }
                     $done++
                 }
                 if ($packages.Count -eq 0) { 'winget: nothing to update' }
@@ -7510,7 +7877,7 @@ function Start-Agent {
                 $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
                 $sendLogs = (Get-SecurityLogsLevel) -eq 'on'
                 $policy = if ($sendLogs) { Get-SecurityPolicy -Token $Token } else { $null }
-                $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
+                $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -FileScan ((Get-FileScanLevel) -eq 'on') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
             }
 
             if ($script:SyncRequest -and $script:SyncRequest.Phase -eq 'collecting' -and $script:SyncRequest.InventoryDone -and -not $healthJob) {
@@ -7654,6 +8021,10 @@ if ($Install) {
         $config['security_logs'] = $SecurityLogs
         Save-AgentConfig -Config $config
     }
+    if ($FileScan) {
+        $config['file_scan'] = $FileScan
+        Save-AgentConfig -Config $config
+    }
     if ($PortScan) {
         $config['port_scan'] = $PortScan
         Save-AgentConfig -Config $config
@@ -7664,6 +8035,7 @@ if ($Install) {
     Write-Host "Network discovery: $(Get-NetworkDiscovery -Config $config) (config.json)" -ForegroundColor Yellow
     Write-Host "Port scanning: $(Get-PortScan -Config $config) (config.json)" -ForegroundColor Yellow
     Write-Host "Security logs: $(Get-SecurityLogsLevel -Config $config) (config.json)" -ForegroundColor Yellow
+    Write-Host "File scan: $(Get-FileScanLevel -Config $config) (config.json)" -ForegroundColor Yellow
 
     if ($OnLinux) {
         # The service runs as root like this installer: enrol right away.

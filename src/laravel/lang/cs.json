@@ -698,6 +698,8 @@
     "Security findings on :device: :findings.": "Bezpečnostní nálezy na :device: :findings.",
     "Security inventory": "Bezpečnostní inventář",
     "Security logs": "Bezpečnostní logy",
+    "File scan": "Prohledávání souborů",
+    "Looks for programs that are not installed (portable ones) on the drives and reports them with their versions in the software.": "Hledá na discích programy, které nejsou nainstalované (přenosné), a hlásí je i s verzemi v softwaru.",
     "Security settings": "Nastavení zabezpečení",
     "Select all": "Vybrat vše",
     "Select at least one component to restore": "Vyberte alespoň jednu součást k obnovení",

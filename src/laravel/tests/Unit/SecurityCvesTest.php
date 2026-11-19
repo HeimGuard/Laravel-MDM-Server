@@ -140,6 +140,45 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('Update: sudo apt update && sudo apt full-upgrade', SecurityCves::remediation([$deb], $update));
     }
 
+    public function test_a_package_whose_files_were_replaced_is_not_judged_by_its_recorded_version(): void
+    {
+        // rclone 1.69.1 of a vendor .deb (no repository), its binary updated in place to 1.76.0: dpkg still says 1.69.1.
+        $cves = [$this->cve('CVE-2026-41179', [[null, '1.73.5', null]], [], 'critical')];
+        $item = ['Name' => 'rclone', 'Version' => '1.69.1', 'Source' => 'dpkg', 'Origin' => 'dpkg/status', 'NoUpdateSource' => true, 'Running' => true];
+
+        $this->assertSame('no_source', SecurityCves::affecting($cves, $item, 'resolute')['CVE-2026-41179']['status']);
+
+        $affecting = SecurityCves::affecting($cves, $item + ['Modified' => true], 'resolute');
+        $this->assertSame('modified', $affecting['CVE-2026-41179']['status']);
+        $this->assertSame('modified', SecurityCves::status($affecting));
+        $this->assertSame('medium', SecurityCves::severity($affecting));
+        $this->assertSame('critical', SecurityCves::worst($affecting));
+        $text = SecurityCves::remediation([$item + ['Modified' => true]], $affecting);
+        $this->assertStringContainsString('dpkg --verify', $text);
+        $this->assertStringNotContainsString('apt never updates', $text);
+        // Not affected at the recorded version: still nothing.
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => '1.76.0', 'Modified' => true] + $item, 'resolute'));
+    }
+
+    public function test_a_portable_program_of_the_file_scan_is_judged_by_its_version(): void
+    {
+        $cves = [$this->cve('CVE-2026-1', [[null, '23.01', null]])];
+        $portable = ['Name' => '7-Zip', 'Version' => '22.1.0.0', 'Source' => 'portable', 'Path' => 'D:\\Tools\\7z\\7z.exe'];
+        $affecting = SecurityCves::affecting($cves, $portable, null);
+
+        $this->assertSame('update_available', $affecting['CVE-2026-1']['status']);
+        $text = SecurityCves::remediation([$portable], $affecting);
+        $this->assertStringContainsString('Portable program', $text);
+        $this->assertStringContainsString('D:\\Tools\\7z\\7z.exe', $text);
+        $this->assertStringNotContainsString('apt', $text);
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => '23.01.0.0'] + $portable, null));
+        // No version (an AppImage without one in its name): nothing to compare, no finding.
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => null] + $portable, null));
+
+        $crate = ['Name' => 'ripgrep', 'Version' => '13.0.0', 'Source' => 'cargo'];
+        $this->assertSame('Update: cargo install --locked --force ripgrep', SecurityCves::remediation([$crate], SecurityCves::affecting([$this->cve('CVE-2026-2', [[null, '14.0.0', null]])], $crate, null)));
+    }
+
     public function test_a_snap_whose_channel_has_no_fix_is_told_to_change_the_track(): void
     {
         // LXD 5.0.10 from 5.0/stable: the advisory fixes 5.21.4 and 6.5, the 5.0 track is not patched, so a refresh brings nothing.

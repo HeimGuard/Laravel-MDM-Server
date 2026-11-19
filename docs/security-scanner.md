@@ -80,6 +80,38 @@ the repository calls itself (`o=` of its release line: Ubuntu, Debian, Docker, G
 has the `Codename` of the release (`resolute`). Remote access tools and packages without a source of updates also get
 `Running`, `RunUser` and `Listening` (a process and a port on a non-loopback address that carry the first word of the name).
 
+**File scan** (agents 1.34.0+ Windows, 1.35.0+ Linux, off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at install, or the
+**Allow file scan** script) adds the programs that are not installed: `Get-PortableSoftware` walks the fixed drives (depth 8, 20
+minutes at most, at idle priority; Windows, the caches, `WindowsApps`, links and the folders of installed programs are skipped) and
+reads the name, version and company of every `*.exe` that no entry of Programs and Features owns (`InstallLocation`, or the folder
+of `DisplayIcon` / `UninstallString`; a product whose name is in an installed program's name is left out). They are software items
+with `Source` `portable` and the `Path` of the file (the field is optional, so older hashes stay); two copies of a product get
+their folder in the name. The versions are cached in `portable-software.json` by path, size and time. The registry is read as
+before; `wmic` / `Win32_Product` is not used (WMIC is removed from Windows 11 24H2, and `Win32_Product` runs an MSI consistency
+check of every package).
+
+**Duplicates:** one file is one detection (the path is the identity: a cargo crate is also a file of `~/.cargo/bin`, an AppImage in a directory of `/opt` is
+not reported again as the directory). Nothing else is merged: several copies and versions of a program on one device are real, also the same
+version in two folders, and each is an item (a name that is there twice gets its folder in brackets).
+
+**A package whose files were replaced** (agents 1.36.0+, Linux): a vendor `.deb` without a repository (`Origin` `dpkg/status`) whose binary was
+updated in place (`rclone selfupdate`, a copied binary) still has the version dpkg recorded (rclone 1.69.1 while 1.76.0 runs). For a dpkg package that has no source of
+updates and is running, the agent runs `dpkg --verify` (it compares the files with the checksums of the package, nothing of it is run) and sets `Modified` when a
+file of a program directory (`/usr/bin`, `/usr/sbin`, `/usr/lib`, `/opt`, ...; not a configuration file) differs. The CVEs of such an item get the status `modified`
+(files changed outside the package manager, version not verified): the finding is listed, at most low, and its remediation says to check the real version and to
+acknowledge it, or to install the program as a package of its vendor. Without `Modified` nothing changes.
+
+**Nothing found is ever run** (a hard rule: the file may be malicious): no `--version`, no `--appimage-*`, no `ldd`. Windows reads
+the version resource (`FileVersionInfo`, which only reads the file). Linux (agents 1.35.0+, `Get-PortableSoftwareLinux`) reads names
+and text: the name of an `*.AppImage` (`Name-1.2.3-x86_64.AppImage`), `VERSION` / `package.json` in a directory of `/opt` that no
+package owns (dpkg file lists, `rpm -qf` asks the database only), the first four bytes of a file in `/usr/local/bin`, `~/.local/bin`,
+`~/bin`, `~/.cargo/bin`, `~/go/bin` (an ELF it has no version for is listed without one) and `~/.cargo/.crates2.json`
+(`Source` `cargo`). Links, `node_modules`, caches and hidden directories are skipped.
+
+The CVE rules see these items like any software (`Name`, `Version`): a version is compared with the ranges of the CVE (`SecurityCves::upstream`), a
+item without a version (an AppImage whose name has none) cannot be judged and is only listed. The remediation of a `portable` finding says to replace
+the files at its `Path`, that of a `cargo` one `cargo install --locked --force`. The agent writes an old `1, 2, 3, 4` resource version as `1.2.3.4` (1.35.1).
+
 **CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, ranges, ubuntu}]`)
 and names the packages it is about in `select`; the `when` next to it is what a server that does not know `cves` evaluates.
 For every package each CVE is judged on its own and the finding names only the CVEs that apply:
