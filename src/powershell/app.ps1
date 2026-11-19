@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.36.1'
+$AgentVersion = '1.36.2'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -6344,7 +6344,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PendingReboot', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6598,7 +6598,13 @@ function Start-UpdateJob {
                     $wingetCode = $LASTEXITCODE
                     Add-Result "winget upgrade $id" $wingetCode $output $wingetOk
                     if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $id -Scope $Params.scope)) {
-                        [void]$state.Failures.Add("winget upgrade ${id}: still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        if ($state.Restart -or (Test-PendingReboot)) {
+                            # Files in use are replaced at the next start: not an error, the portal shows "restart required".
+                            $state.Restart = $true
+                            "winget upgrade ${id}: still offered, a restart is pending: it is applied after the restart"
+                        } else {
+                            [void]$state.Failures.Add("winget upgrade ${id}: still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        }
                     }
                 }
                 'apt' {
@@ -6764,7 +6770,12 @@ function Start-UpdateJob {
                     $wingetCode = $LASTEXITCODE
                     Add-Result "winget upgrade $($package.Id)" $wingetCode $output $wingetOk
                     if ($wingetOk -contains $wingetCode -and (Test-WingetStillOffered -Winget $winget -Id $package.Id -Scope $package.Scope)) {
-                        [void]$state.Failures.Add("winget upgrade $($package.Id): still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        if ($state.Restart -or (Test-PendingReboot)) {
+                            $state.Restart = $true
+                            "winget upgrade $($package.Id): still offered, a restart is pending: it is applied after the restart"
+                        } else {
+                            [void]$state.Failures.Add("winget upgrade $($package.Id): still offered after the update (exit $wingetCode)$(if ($output) { ', ' + (Get-Tail $output) })")
+                        }
                     }
                     $done++
                 }
