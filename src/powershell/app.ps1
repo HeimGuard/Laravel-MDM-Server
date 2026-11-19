@@ -48,9 +48,11 @@
     With -Install: whether the agent looks for programs that are not installed (portable ones: an
     executable in a folder with no entry in Programs and Features) and reports them with their
     versions in the software of the security inventory (stored in config.json as file_scan, the
-    server cannot change it): off (default) or on. Windows only. It walks the fixed drives at low
-    priority (the folders of installed programs, Windows and the caches are skipped) and reads the
-    version of an executable again only when the file changed.
+    server cannot change it): off (default) or on. It never runs a file it finds: versions come from the
+    resources, names and text files of the files. Windows: walks the fixed drives at low priority (the
+    folders of installed programs, Windows and the caches are skipped) and reads the version of an
+    executable again only when the file changed. Linux (1.35.0+): AppImages, /opt, the bin directories
+    and the crates of cargo that no package owns.
 
 .PARAMETER PortScan
     With -Install: whether the agent scans the open ports of an address in its network when asked
@@ -145,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.34.0'
+$AgentVersion = '1.35.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1455,7 +1457,7 @@ function Get-SecuritySoftware {
         [bool]$OnLinux,
         # A file that remembers the CVEs of the changelog of a package version, so only new and updated packages are read.
         [string]$CachePath = '',
-        # Portable programs too (file_scan in config.json, Windows only).
+        # Portable programs too (file_scan in config.json).
         [bool]$FileScan = $false
     )
 
@@ -1536,6 +1538,7 @@ function Get-SecuritySoftware {
                 }
             }
         }
+        if ($FileScan) { try { Get-PortableSoftwareLinux } catch { } }
         return
     }
 
@@ -1679,6 +1682,144 @@ function Get-PortableSoftware {
         if ($twice -contains $item.Name) { $item.Name = ConvertTo-SecurityText "$($item.Name) [$(Split-Path -Parent $item.Path)]" 300 }
     }
     $items | Sort-Object -Property Name, Path
+}
+
+function Get-PortableSoftwareLinux {
+    # Programs that are not installed by a package manager (agents 1.35.0+, file_scan "on" in config.json, Linux): AppImages,
+    # directories of /opt, executables of /usr/local/bin and of the users' bin directories, and the crates of cargo.
+    # HARD RULE: nothing found is ever run (no --version, no AppImage --appimage-*, no ldd): a file may be malicious, and
+    # this is what the scan looks for. A name and a version come from the file name, from text files next to it (VERSION,
+    # package.json) and from the registry of cargo; the first bytes of a file are read to tell an ELF from other files.
+    # Whatever a package owns (dpkg file lists, rpm -qf, which only asks the database) is not portable.
+    param (
+        [int]$MaxItems = 500,
+        [int]$MaxMinutes = 10
+    )
+
+    $deadline = (Get-Date).AddMinutes($MaxMinutes)
+    $items = [System.Collections.Generic.List[object]]::new()
+    $add = {
+        param ($Name, $Version, $Path, $Source)
+        $items.Add([PSCustomObject]@{
+                Name      = ConvertTo-SecurityText $Name 300
+                Version   = ConvertTo-SecurityText $Version 100
+                Publisher = $null
+                Source    = $Source
+                Path      = ConvertTo-SecurityText $Path 500
+            })
+    }
+
+    # What dpkg owns: every file path, and the first two parts of what is in /opt.
+    $owned = [System.Collections.Generic.HashSet[string]]::new()
+    $ownedOpt = [System.Collections.Generic.HashSet[string]]::new()
+    $hasDpkg = Test-Path -LiteralPath /var/lib/dpkg/info
+    if ($hasDpkg) {
+        foreach ($list in @(Get-ChildItem -LiteralPath /var/lib/dpkg/info -Filter '*.list' -ErrorAction SilentlyContinue)) {
+            try {
+                foreach ($line in [System.IO.File]::ReadLines($list.FullName)) {
+                    if ($line.StartsWith('/usr/local/') -or $line.StartsWith('/opt/')) {
+                        [void]$owned.Add($line)
+                        if ($line.StartsWith('/opt/')) { [void]$ownedOpt.Add(($line -split '/', 4)[0..2] -join '/') }
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+    $hasRpm = -not $hasDpkg -and [bool](Get-Command -Name rpm -CommandType Application -ErrorAction SilentlyContinue)
+    $isOwned = {
+        param ($Path)
+        if ($owned.Contains($Path)) { return $true }
+        if ($hasRpm) {
+            & rpm -qf -- $Path *> $null
+            return $LASTEXITCODE -eq 0
+        }
+        return $false
+    }
+
+    $homes = @(Get-ChildItem -Path /home -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if (Test-Path -LiteralPath /root) { $homes += '/root' }
+
+    # Directories of /opt that no package owns: the version from VERSION or package.json.
+    foreach ($dir in @(Get-ChildItem -LiteralPath /opt -Directory -ErrorAction SilentlyContinue)) {
+        if ($items.Count -ge $MaxItems) { break }
+        if ($ownedOpt.Contains($dir.FullName) -or $dir.LinkTarget) { continue }
+        if ($hasRpm -and (& $isOwned $dir.FullName)) { continue }
+        $version = $null
+        $name = $dir.Name
+        foreach ($candidate in 'VERSION', 'version', '.version', 'resources/app/package.json', 'package.json') {
+            $file = Join-Path $dir.FullName $candidate
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -gt 1MB) { continue }
+            try {
+                $text = [System.IO.File]::ReadAllText($file)
+                if ($candidate -like '*.json') {
+                    $json = $text | ConvertFrom-Json
+                    if ($json.version) { $version = "$($json.version)" }
+                    if ($json.productName) { $name = "$($json.productName)" }
+                } elseif ($text.Trim() -match '^v?(\d+(?:\.\d+)+\S*)') { $version = $Matches[1] }
+            }
+            catch { }
+            if ($version) { break }
+        }
+        & $add $name $version $dir.FullName 'portable'
+    }
+
+    # AppImages (a file name is all that is read) and the executables of the bin directories.
+    $bins = @('/usr/local/bin', '/usr/local/sbin') + @($homes | ForEach-Object { "$_/.local/bin"; "$_/bin"; "$_/.cargo/bin"; "$_/go/bin" })
+    $roots = @('/opt', '/usr/local', '/srv') + $homes
+    $skipNames = @('node_modules', '.git', '.cache', 'snap', '.var', '.npm', '.rustup', 'proc', 'sys')
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    foreach ($root in $roots) { if (Test-Path -LiteralPath $root) { $stack.Push([Tuple[string, int]]::new($root, 0)) } }
+    while ($stack.Count -gt 0 -and $items.Count -lt $MaxItems) {
+        if ((Get-Date) -gt $deadline) { break }
+        $current = $stack.Pop()
+        $dir = $current.Item1
+        $isBin = $bins -contains $dir
+        try {
+            foreach ($file in [System.IO.Directory]::EnumerateFiles($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($file)
+                if ($leaf -like '*.AppImage' -or $leaf -like '*.appimage') {
+                    $base = $leaf -replace '(?i)\.appimage$', ''
+                    if ($base -match '^(.+?)[-_ ]v?(\d+(?:\.\d+)+)') { & $add $Matches[1] $Matches[2] $file 'portable' } else { & $add $base $null $file 'portable' }
+                } elseif ($isBin) {
+                    $info = [System.IO.FileInfo]::new($file)
+                    # A link points somewhere that is judged on its own (a package, /opt).
+                    if ($info.LinkTarget -or $info.Length -lt 1024) { continue }
+                    $head = [byte[]]::new(4)
+                    $stream = [System.IO.File]::OpenRead($file)
+                    try { [void]$stream.Read($head, 0, 4) } finally { $stream.Dispose() }
+                    if ($head[0] -ne 0x7F -or $head[1] -ne 0x45 -or $head[2] -ne 0x4C -or $head[3] -ne 0x46) { continue }
+                    if (& $isOwned $file) { continue }
+                    & $add $leaf $null $file 'portable'
+                }
+            }
+        }
+        catch { }
+        if ($current.Item2 -ge 4) { continue }
+        try {
+            foreach ($sub in [System.IO.Directory]::EnumerateDirectories($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($sub)
+                if ($skipNames -contains $leaf -or ($leaf.StartsWith('.') -and $leaf -ne '.local' -and $leaf -ne '.cargo')) { continue }
+                if ([System.IO.File]::GetAttributes($sub) -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $stack.Push([Tuple[string, int]]::new($sub, $current.Item2 + 1))
+            }
+        }
+        catch { }
+    }
+
+    # The crates cargo installed (its registry is a JSON file).
+    foreach ($userHome in $homes) {
+        $registry = "$userHome/.cargo/.crates2.json"
+        if (-not (Test-Path -LiteralPath $registry -PathType Leaf) -or (Get-Item -LiteralPath $registry).Length -gt 5MB) { continue }
+        try {
+            foreach ($property in (Get-Content -LiteralPath $registry -Raw | ConvertFrom-Json).installs.PSObject.Properties) {
+                if ($property.Name -match '^(\S+) (\S+) ') { & $add $Matches[1] $Matches[2] "$userHome/.cargo/bin/$($Matches[1])" 'cargo' }
+            }
+        }
+        catch { }
+    }
+
+    $items | Sort-Object -Property Name, Path -Unique
 }
 
 function Get-OfflineUserSoftware {
@@ -4694,7 +4835,7 @@ function Start-SecurityCollection {
         $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan

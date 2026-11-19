@@ -442,8 +442,8 @@ class SecurityScannerTest extends TestCase
         $script = Script::query()->where('name', 'Allow file scan')->firstOrFail();
 
         $this->assertTrue($script->manual_remediation);
-        $this->assertSame('windows', $script->platform);
-        $this->assertSame($script->fingerprint, Script::fingerprintOf('windows', 60, $script->detection, $script->remediation));
+        $this->assertSame('all', $script->platform);
+        $this->assertSame($script->fingerprint, Script::fingerprintOf('all', 60, $script->detection, $script->remediation));
         $this->assertSame([], PowerShellCheck::errors($script->detection));
         $this->assertSame([], PowerShellCheck::errors($script->remediation));
         $this->assertTrue(PowerShellCheck::exits($script->detection, 0));

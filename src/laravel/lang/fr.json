@@ -699,7 +699,6 @@
     "Security inventory": "Inventaire de sécurité",
     "Security logs": "Journaux de sécurité",
     "File scan": "Analyse des fichiers",
-    "Windows only": "Windows uniquement",
     "Looks for programs that are not installed (portable ones) on the drives and reports them with their versions in the software.": "Recherche sur les disques les programmes non installés (portables) et les signale avec leur version dans les logiciels.",
     "Security settings": "Paramètres de sécurité",
     "Select all": "Tout sélectionner",

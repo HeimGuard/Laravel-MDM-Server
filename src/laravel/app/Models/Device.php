@@ -62,8 +62,10 @@ class Device extends Model
     /** Agents from this version report and install pip --user and pipx package updates. */
     public const PYTHON_UPDATE_VERSION = '1.19.0';
 
-    /** Agents from this version look for portable programs on a Windows device when file_scan is on in their config.json. */
+    /** Agents from this version look for portable programs on a Windows device when file_scan is on in their config.json (Linux: 1.35.0). */
     public const FILE_SCAN_VERSION = '1.34.0';
+
+    public const FILE_SCAN_LINUX_VERSION = '1.35.0';
 
     /** At most this many ping-only devices per agent. */
     public const MAX_PING_TARGETS = 32;
@@ -656,7 +658,7 @@ class Device extends Model
                 ($collected = $this->securityInventory()->value('collected_at')) ? __('last :time', ['time' => Carbon::parse($collected)->diffForHumans()]) : null, $has(self::SECURITY_VERSION) ? null : self::SECURITY_VERSION),
             $feature('security_logs', __('Security logs'), __('Sends sign-in and system log records, so the sign-in checks (password guessing, new administrators) work.'), 'security_logs', $this->securityLogs, null, $has(self::SECURITY_VERSION) ? null : self::SECURITY_VERSION),
             $feature('file_scan', __('File scan'), __('Looks for programs that are not installed (portable ones) on the drives and reports them with their versions in the software.'), 'file_scan', $this->fileScan,
-                $this->platform === 'linux' ? __('Windows only') : ($has(self::FILE_SCAN_VERSION) ? ($this->fileScan ? null : __('off')) : null), $has(self::FILE_SCAN_VERSION) ? null : self::FILE_SCAN_VERSION),
+                $this->fileScan ? null : __('off'), $has($this->platform === 'linux' ? self::FILE_SCAN_LINUX_VERSION : self::FILE_SCAN_VERSION) ? null : ($this->platform === 'linux' ? self::FILE_SCAN_LINUX_VERSION : self::FILE_SCAN_VERSION)),
             $feature('disk_health', __('Disk health'), __('S.M.A.R.T. values of the disks, every hour.'), null, $disk !== null && $this->virtualization === null,
                 match (true) {
                     $this->virtualization !== null => __('not on virtual machines'),

@@ -12,11 +12,13 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
 ### Added
-- **File scan** (agents 1.34.0+, Windows, off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at install): the agent
-  also looks for programs that are not installed (portable ones): executables of the fixed drives in a folder that no entry of
-  Programs and Features owns. Their name, version and publisher come from the file and they are listed in the software as
-  `portable` with their `Path`, so the vulnerability checks see them. The walk is limited and cached (a version is read again
-  only when the file changed). Script **Allow file scan** (manual remediation) turns it on. Linux: Windows only for now.
+- **File scan** (agents 1.34.0+ on Windows, 1.35.0+ on Linux; off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at
+  install): the agent also looks for programs that are not installed (portable ones) and lists them in the software as
+  `portable` (Linux crates: `cargo`) with their `Path`, so the vulnerability checks see them. **It never runs what it finds**: the
+  version comes from the resources and the name of a file or from text files next to it. Windows: executables of the fixed drives
+  in a folder that no entry of Programs and Features owns (the walk is limited and cached). Linux: AppImages, directories of
+  `/opt`, executables of `/usr/local/bin` and the users' bin directories, and cargo crates that no package owns. Script
+  **Allow file scan** (manual remediation) turns it on.
 - Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
   and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
 

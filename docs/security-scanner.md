@@ -80,7 +80,7 @@ the repository calls itself (`o=` of its release line: Ubuntu, Debian, Docker, G
 has the `Codename` of the release (`resolute`). Remote access tools and packages without a source of updates also get
 `Running`, `RunUser` and `Listening` (a process and a port on a non-loopback address that carry the first word of the name).
 
-**File scan** (agents 1.34.0+, Windows, off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at install, or the
+**File scan** (agents 1.34.0+ Windows, 1.35.0+ Linux, off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at install, or the
 **Allow file scan** script) adds the programs that are not installed: `Get-PortableSoftware` walks the fixed drives (depth 8, 20
 minutes at most, at idle priority; Windows, the caches, `WindowsApps`, links and the folders of installed programs are skipped) and
 reads the name, version and company of every `*.exe` that no entry of Programs and Features owns (`InstallLocation`, or the folder
@@ -89,6 +89,13 @@ with `Source` `portable` and the `Path` of the file (the field is optional, so o
 their folder in the name. The versions are cached in `portable-software.json` by path, size and time. The registry is read as
 before; `wmic` / `Win32_Product` is not used (WMIC is removed from Windows 11 24H2, and `Win32_Product` runs an MSI consistency
 check of every package).
+
+**Nothing found is ever run** (a hard rule: the file may be malicious): no `--version`, no `--appimage-*`, no `ldd`. Windows reads
+the version resource (`FileVersionInfo`, which only reads the file). Linux (agents 1.35.0+, `Get-PortableSoftwareLinux`) reads names
+and text: the name of an `*.AppImage` (`Name-1.2.3-x86_64.AppImage`), `VERSION` / `package.json` in a directory of `/opt` that no
+package owns (dpkg file lists, `rpm -qf` asks the database only), the first four bytes of a file in `/usr/local/bin`, `~/.local/bin`,
+`~/bin`, `~/.cargo/bin`, `~/go/bin` (an ELF it has no version for is listed without one) and `~/.cargo/.crates2.json`
+(`Source` `cargo`). Links, `node_modules`, caches and hidden directories are skipped.
 
 **CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, ranges, ubuntu}]`)
 and names the packages it is about in `select`; the `when` next to it is what a server that does not know `cves` evaluates.
