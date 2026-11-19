@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.35.0'
+$AgentVersion = '1.35.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1639,6 +1639,8 @@ function Get-PortableSoftware {
                     try { $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($file) } catch { }
                     $name = if ($version) { if ($version.ProductName) { $version.ProductName } else { $version.FileDescription } } else { $null }
                     $number = if ($version) { if ($version.ProductVersion) { $version.ProductVersion } else { $version.FileVersion } } else { $null }
+                    # Old resources write "1, 2, 3, 4": the scanner compares dotted numbers.
+                    if ($number -match '^\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*(\d+))?(?:\s*,\s*(\d+))?\s*$') { $number = (@($Matches[1], $Matches[2], $Matches[3], $Matches[4]) | Where-Object { $_ -ne $null -and $_ -ne '' }) -join '.' }
                     $entry = [PSCustomObject]@{ k = $stamp; n = "$name".Trim(); v = "$number".Trim(); c = if ($version) { "$($version.CompanyName)".Trim() } else { '' } }
                 }
                 $seen[$file] = $entry

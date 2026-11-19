@@ -390,6 +390,10 @@ class SecurityCves
                 'dpkg' => 'Update: sudo apt update && sudo apt full-upgrade',
                 'snap' => 'Update: sudo snap refresh '.($first['Name'] ?? ''),
                 'flatpak' => 'Update: flatpak update',
+                // Found by the file scan (agents 1.34.0+): nothing installed it and nothing updates it.
+                'portable' => 'Portable program (not installed, no package manager updates it): replace it with a fixed version from the vendor'
+                    .(($first['Path'] ?? '') !== '' ? ' (found at '.$first['Path'].')' : '').', or delete it if it is not needed.',
+                'cargo' => 'Update: cargo install --locked --force '.($first['Name'] ?? ''),
                 default => 'Update the software to a fixed version, see the vendor advisory.',
             };
         }

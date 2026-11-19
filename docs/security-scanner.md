@@ -97,6 +97,10 @@ package owns (dpkg file lists, `rpm -qf` asks the database only), the first four
 `~/bin`, `~/.cargo/bin`, `~/go/bin` (an ELF it has no version for is listed without one) and `~/.cargo/.crates2.json`
 (`Source` `cargo`). Links, `node_modules`, caches and hidden directories are skipped.
 
+The CVE rules see these items like any software (`Name`, `Version`): a version is compared with the ranges of the CVE (`SecurityCves::upstream`), a
+item without a version (an AppImage whose name has none) cannot be judged and is only listed. The remediation of a `portable` finding says to replace
+the files at its `Path`, that of a `cargo` one `cargo install --locked --force`. The agent writes an old `1, 2, 3, 4` resource version as `1.2.3.4` (1.35.1).
+
 **CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, ranges, ubuntu}]`)
 and names the packages it is about in `select`; the `when` next to it is what a server that does not know `cves` evaluates.
 For every package each CVE is judged on its own and the finding names only the CVEs that apply:

@@ -19,6 +19,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   in a folder that no entry of Programs and Features owns (the walk is limited and cached). Linux: AppImages, directories of
   `/opt`, executables of `/usr/local/bin` and the users' bin directories, and cargo crates that no package owns. Script
   **Allow file scan** (manual remediation) turns it on.
+  The vulnerability scanner judges them by their version like any other software and tells to replace the files (no package manager updates them).
 - Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
   and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
 

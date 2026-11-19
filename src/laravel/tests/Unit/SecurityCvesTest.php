@@ -140,6 +140,25 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('Update: sudo apt update && sudo apt full-upgrade', SecurityCves::remediation([$deb], $update));
     }
 
+    public function test_a_portable_program_of_the_file_scan_is_judged_by_its_version(): void
+    {
+        $cves = [$this->cve('CVE-2026-1', [[null, '23.01', null]])];
+        $portable = ['Name' => '7-Zip', 'Version' => '22.1.0.0', 'Source' => 'portable', 'Path' => 'D:\\Tools\\7z\\7z.exe'];
+        $affecting = SecurityCves::affecting($cves, $portable, null);
+
+        $this->assertSame('update_available', $affecting['CVE-2026-1']['status']);
+        $text = SecurityCves::remediation([$portable], $affecting);
+        $this->assertStringContainsString('Portable program', $text);
+        $this->assertStringContainsString('D:\\Tools\\7z\\7z.exe', $text);
+        $this->assertStringNotContainsString('apt', $text);
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => '23.01.0.0'] + $portable, null));
+        // No version (an AppImage without one in its name): nothing to compare, no finding.
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => null] + $portable, null));
+
+        $crate = ['Name' => 'ripgrep', 'Version' => '13.0.0', 'Source' => 'cargo'];
+        $this->assertSame('Update: cargo install --locked --force ripgrep', SecurityCves::remediation([$crate], SecurityCves::affecting([$this->cve('CVE-2026-2', [[null, '14.0.0', null]])], $crate, null)));
+    }
+
     public function test_a_snap_whose_channel_has_no_fix_is_told_to_change_the_track(): void
     {
         // LXD 5.0.10 from 5.0/stable: the advisory fixes 5.21.4 and 6.5, the 5.0 track is not patched, so a refresh brings nothing.
