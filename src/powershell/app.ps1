@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.35.2'
+$AgentVersion = '1.35.3'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1815,6 +1815,7 @@ function Get-PortableSoftwareLinux {
 
     # Directories of /opt that no package owns: the version from VERSION or package.json. A directory that holds an AppImage, a
     # binary or a crate already found is not reported again (the same program twice in the same path).
+    foreach ($dir in @(Get-ChildItem -LiteralPath /opt -Directory -ErrorAction SilentlyContinue)) {
         if ($items.Count -ge $MaxItems) { break }
         if ($ownedOpt.Contains($dir.FullName) -or $dir.LinkTarget) { continue }
         $prefix = $dir.FullName.TrimEnd('/') + '/'
@@ -1838,7 +1839,6 @@ function Get-PortableSoftwareLinux {
         }
         & $add $name $version $dir.FullName 'portable'
     }
-
 
     Get-PortableUnique -Items @($items | Sort-Object -Property Path -Unique | Sort-Object -Property Name, Path)
 }
@@ -4949,10 +4949,11 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
-        if ($field -in $optional -and $value -eq '') { continue }
+        # Path is optional for the software only (a portable program's file); processes and ports always have it.
+        if (($field -in $optional -or ($Source -eq 'software' -and $field -eq 'Path')) -and $value -eq '') { continue }
         $value
     }
     return Get-SecurityShortHash ($parts -join [string][char]0x1f)

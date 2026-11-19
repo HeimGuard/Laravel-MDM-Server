@@ -112,7 +112,8 @@ class SecurityInventory extends Model
         $parts = [];
         foreach (SecurityRules::SOURCES[$source]['fields'] as $field) {
             $value = self::canon($item[$field] ?? null);
-            if (in_array($field, SecurityRules::OPTIONAL_FIELDS, true) && $value === '') {
+            // Path is optional for the software only (a portable program's file), a process and a port always have one.
+            if ((in_array($field, SecurityRules::OPTIONAL_FIELDS, true) || ($source === 'software' && $field === 'Path')) && $value === '') {
                 continue;
             }
             $parts[] = $value;

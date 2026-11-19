@@ -41,7 +41,8 @@ class SecurityRules
      * the items without them stay the ones those agents compute (Get-SecurityItemHash in app.ps1 does the same).
      */
     public const OPTIONAL_FIELDS = [
-        'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path',
+        // Path counts only for the software (see SecurityInventory::itemHash): processes and ports always have one.
+        'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening',
         'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
     ];
 
