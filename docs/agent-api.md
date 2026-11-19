@@ -1,6 +1,6 @@
 # Agent API: what the agent sends, what the server keeps, where the web shows it
 
-The contract between `src/powershell/app.ps1` and `src/laravel/routes/api.php`. Read this before changing a field on either
+The contract between `src/powershell/app.ps1` and `src/laravel/routes/api.php` (the handlers are in `app/Http/Controllers/Api/`). Read this before changing a field on either
 side; the rules for changes are in [`CLAUDE.md`](../CLAUDE.md), the storage in [data-model.md](data-model.md), the agent itself in
 [agent.md](agent.md). Contract tests: `tests/Feature/AgentContractTest.php` (the shapes below), `DeviceCommandTest`,
 `DeviceLiveStateTest`, `ReportInventoryTest`, `SecurityScannerTest`, `ScriptTest`, `PingValuesTest`.
