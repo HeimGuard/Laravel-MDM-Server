@@ -1009,6 +1009,8 @@
     "The check for OS updates failed, the list may be out of date: :error": "Kontrola aktualizací OS selhala, seznam může být neaktuální: :error",
     "The remediation script \":name\" was written, a system admin reviews and runs it.": "Remediační skript „:name“ byl vytvořen, zkontroluje a spustí ho system admin.",
     "Export Markdown": "Export do Markdownu",
+    "Detection feedback": "Zpětná vazba detekce",
+    "What the detection did here, as JSON without device names and addresses, for improving the rules": "Co detekce udělala, jako JSON bez názvů zařízení a adres, pro zlepšování pravidel",
     "Export inventory (JSON)": "Export inventáře (JSON)",
     "The open findings as a Markdown report": "Otevřené nálezy jako Markdown report",
     "The security inventory and the findings of this device as JSON, for an AI to analyse": "Bezpečnostní inventář a nálezy tohoto zařízení v JSONu pro analýzu pomocí AI",

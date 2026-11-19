@@ -1009,6 +1009,8 @@
     "The check for OS updates failed, the list may be out of date: :error": "La comprobación de actualizaciones del SO falló, la lista puede estar desactualizada: :error",
     "The remediation script \":name\" was written, a system admin reviews and runs it.": "Se creó el script de remediación «:name», un administrador del sistema lo revisa y ejecuta.",
     "Export Markdown": "Exportar a Markdown",
+    "Detection feedback": "Comentarios de la detección",
+    "What the detection did here, as JSON without device names and addresses, for improving the rules": "Lo que hizo la detección aquí, como JSON sin nombres de dispositivos ni direcciones, para mejorar las reglas",
     "Export inventory (JSON)": "Exportar inventario (JSON)",
     "The open findings as a Markdown report": "Los hallazgos abiertos como informe Markdown",
     "The security inventory and the findings of this device as JSON, for an AI to analyse": "El inventario de seguridad y los hallazgos de este dispositivo en JSON, para analizar con una IA",

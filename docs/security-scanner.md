@@ -258,3 +258,19 @@ matches: use the host network or a setup that keeps the address. The agents are 
 
 Point the sender at the server, e.g. in `/etc/rsyslog.d/mdm.conf` of a Linux server: `*.* @@mdm.example.com:514` (`@@` TCP,
 `@` UDP). `SYSLOG_ENABLED=false` switches the receiver off (it is on by default). There is no TLS: keep port 514 inside your network.
+
+## Detection feedback
+
+**Detection feedback** on the Security page (and `php artisan mdm:detection-feedback [path] [--raw]`) writes one JSON document of what the
+detection did on this installation, for the people (or the AI) who improve the rules and the engine. It measures, it does not judge
+(`App\Services\DetectionFeedbackService`):
+
+- `devices`: how many devices and of which `platform/distribution/architecture`.
+- `rules[]`: per detection rule its origin and feed version, `findings` (`open`, `acknowledged`, `resolved`, `stale`), `devices`,
+  `acknowledged_share`, `contexts` (the findings per `platform/os/arch`, split into acknowledged and other: a rule that fires on one
+  architecture only, or is acknowledged on one), and up to 5 `samples`.
+- `mismatches[]`: findings whose text names another CPU architecture than their device (an Arm kernel on an x86 machine). Needs the
+  `Arch` of the `os` inventory (agents 1.30.0+); a device without it is never in the list.
+- Devices are numbered `d1`, `d2` ... per export. Device names, IPv4/IPv6 addresses, MACs, e-mails and home directories in messages are
+  replaced; `--raw` keeps them. Check the file before it leaves your network.
+- Not collected yet: the log records no parser matched (raw logs are not stored), the flapping of findings.

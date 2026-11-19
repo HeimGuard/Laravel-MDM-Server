@@ -256,6 +256,7 @@
                 @if ($findings->isNotEmpty())
                     <x-button icon="fas fa-file-alt" class="ms-auto" :href="route('security.export', array_filter(['status' => $status, 'severity' => $severity, 'search' => $search], fn ($value) => $value !== ''))" download title="{{ __('The findings of the filters as a Markdown report') }}">{{ __('Export Markdown') }}</x-button>
                 @endif
+                <x-button icon="fas fa-comment-dots" :class="$findings->isNotEmpty() ? '' : 'ms-auto'" :href="route('security.feedback')" download title="{{ __('What the detection did here, as JSON without device names and addresses, for improving the rules') }}">{{ __('Detection feedback') }}</x-button>
                 @if ($status === 'open' && $findings->isNotEmpty())
                     <x-button icon="fas fa-check-double" wire:click="acknowledgeAll" wire:confirm="{{ __('Acknowledge the :count findings shown?', ['count' => $findings->count()]) }}">{{ __('Acknowledge shown') }}</x-button>
                 @endif

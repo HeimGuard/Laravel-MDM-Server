@@ -12,6 +12,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
 ### Added
+- **Detection feedback** (Security page, `php artisan mdm:detection-feedback`): a JSON file of what the detection did here, per rule
+  (findings open / acknowledged / resolved / stale, devices, which platform and architecture they are on, examples) and the findings
+  that name another CPU architecture than their device. Device names, addresses, e-mails and users are replaced; it is meant
+  for improving the rules and the engine.
 - Script **Docker apt repository** (Linux, manual remediation): adds the Docker apt source and signing key when Docker is installed
   and no source names the release (lost in a distribution upgrade), so that apt updates docker-ce / containerd.io again.
 

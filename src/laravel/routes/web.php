@@ -100,6 +100,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/notifications', App\Livewire\Notifications\Page::class)->name('notifications');
     Route::get('/security', App\Livewire\SecurityScan\Page::class)->name('security');
     Route::get('/security/export', [App\Http\Controllers\SecurityExportController::class, 'findings'])->name('security.export');
+    Route::get('/security/feedback', App\Http\Controllers\DetectionFeedbackController::class)->name('security.feedback');
 });
 
 // Remediation scripts: system admins only (they run as SYSTEM / root on the devices).

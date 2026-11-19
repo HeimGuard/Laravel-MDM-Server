@@ -128,3 +128,10 @@ Artisan::command('mdm:user {email} {--name= : Name of a new user} {--password= :
 
     return 0;
 })->purpose('Create a user or set a new password');
+
+// What the detection did here as JSON without names and addresses, for improving the rules (App\Services\DetectionFeedbackService).
+Artisan::command('mdm:detection-feedback {path? : Where to write it (default: standard output)} {--raw : Keep device names and addresses in the messages}', function () {
+    $json = json_encode(App\Services\DetectionFeedbackService::build(! $this->option('raw')), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $path = $this->argument('path');
+    $path ? file_put_contents($path, $json) : $this->line($json);
+})->purpose('Export what the detection did, without names and addresses');
