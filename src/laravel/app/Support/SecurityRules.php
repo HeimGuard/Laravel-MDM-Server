@@ -42,7 +42,7 @@ class SecurityRules
      */
     public const OPTIONAL_FIELDS = [
         // Path counts only for the software (see SecurityInventory::itemHash): processes and ports always have one.
-        'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening',
+        'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Modified',
         'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors',
     ];
 
@@ -60,8 +60,10 @@ class SecurityRules
             // Candidate (the version apt would install), Origin (the repository: Ubuntu, Debian, ... or dpkg/status for none), Channel (snap),
             // UpdateAvailable / NoUpdateSource (what these say), Running / RunUser / Listening (the program is a running process, its
             // user, it listens on the network; agents 1.29.0+, remote access tools and packages without a source only).
+            // Modified (agents 1.36.0+, dpkg): a running package without a source of updates whose files differ from the package
+            // (dpkg --verify): its recorded version may be out of date, so the CVE findings of it are "modified", not judged.
             // Path (agents 1.34.0+, Windows, file_scan on): the file of a portable program (Source "portable": found, not installed).
-            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path'],
+            'fields' => ['Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path', 'Modified'],
             'key' => ['Name', 'Source'],
         ],
         'processes' => [

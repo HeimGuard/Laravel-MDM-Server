@@ -8,6 +8,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Fixed
+- A package whose files were replaced after it was installed (a vendor `.deb` without a repository whose binary was updated in place, e.g. rclone
+  1.69.1 in dpkg, 1.76.0 running) was reported as vulnerable by the version dpkg recorded. Agents 1.36.0+ check running packages without a source of
+  updates with `dpkg --verify`; their CVE findings are now "files changed outside the package manager, version not verified", at most low.
 - Devices page: the device list had its own scrollbar next to the one of the page (sticky list with a maximum height); the page is the only
   thing that scrolls now.
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a

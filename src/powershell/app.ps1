@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.35.3'
+$AgentVersion = '1.36.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1889,6 +1889,24 @@ function Get-AppxSoftware {
     } | Sort-Object -Property Name, Version -Unique
 }
 
+function Add-SecurityModifiedPackages {
+    # A running package without a source of updates whose files were replaced after it was installed (agents 1.36.0+): a vendor
+    # .deb whose binary was updated in place (rclone selfupdate, a copied binary) still says the version dpkg recorded. dpkg
+    # --verify only compares the files with the checksums of the package (nothing of it is run); the item gets Modified, so the
+    # server does not judge its recorded version. Only where it matters: dpkg packages with no update source that are running.
+    param ($Software)
+
+    foreach ($item in @($Software)) {
+        if ("$($item.Source)" -ne 'dpkg' -or -not $item.NoUpdateSource -or -not $item.Running) { continue }
+        $changed = $false
+        foreach ($line in @(& dpkg --verify -- $item.Name 2>$null)) {
+            # "??5??????  /usr/bin/rclone": the checksum differs; a "c" before the path is a configuration file (changed on purpose).
+            if ("$line" -match '^\S{2}5\S{6}\s+(?<kind>c\s+)?(?<path>/\S.*)$' -and -not $Matches['kind'] -and $Matches['path'] -match '^/(usr/(s?bin|lib|libexec|local)|s?bin|lib|opt)/') { $changed = $true; break }
+        }
+        if ($changed) { $item | Add-Member -NotePropertyName Modified -NotePropertyValue $true -Force }
+    }
+}
+
 function Get-SecurityProcesses {
     param (
         [bool]$OnLinux,
@@ -2606,6 +2624,7 @@ function Get-SecurityInventory {
     try { $inventory['os'] = @(Get-SecurityOs -OnLinux $OnLinux | Select-Object -First 1) } catch { }
     try { $inventory['posture'] = Get-SecurityPosture -OnLinux $OnLinux -InContainer $InContainer -AptStatePath $AptStatePath } catch { }
     try { Add-SecuritySoftwareContext -Software $inventory['software'] -Processes $inventory['processes'] -Listening $inventory['listening'] } catch { }
+    if ($OnLinux) { try { Add-SecurityModifiedPackages -Software $inventory['software'] } catch { } }
     $records = @()
     $moved = @{}
     if ($SendLogs -and $PolicyJson) {
@@ -4856,7 +4875,7 @@ function Start-SecurityCollection {
         $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Add-SecurityModifiedPackages', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan
@@ -4910,7 +4929,7 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path', 'Modified')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
@@ -4949,7 +4968,7 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Modified', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
         # Path is optional for the software only (a portable program's file); processes and ports always have it.

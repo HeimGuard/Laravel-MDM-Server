@@ -94,6 +94,13 @@ check of every package).
 not reported again as the directory). Nothing else is merged: several copies and versions of a program on one device are real, also the same
 version in two folders, and each is an item (a name that is there twice gets its folder in brackets).
 
+**A package whose files were replaced** (agents 1.36.0+, Linux): a vendor `.deb` without a repository (`Origin` `dpkg/status`) whose binary was
+updated in place (`rclone selfupdate`, a copied binary) still has the version dpkg recorded (rclone 1.69.1 while 1.76.0 runs). For a dpkg package that has no source of
+updates and is running, the agent runs `dpkg --verify` (it compares the files with the checksums of the package, nothing of it is run) and sets `Modified` when a
+file of a program directory (`/usr/bin`, `/usr/sbin`, `/usr/lib`, `/opt`, ...; not a configuration file) differs. The CVEs of such an item get the status `modified`
+(files changed outside the package manager, version not verified): the finding is listed, at most low, and its remediation says to check the real version and to
+acknowledge it, or to install the program as a package of its vendor. Without `Modified` nothing changes.
+
 **Nothing found is ever run** (a hard rule: the file may be malicious): no `--version`, no `--appimage-*`, no `ldd`. Windows reads
 the version resource (`FileVersionInfo`, which only reads the file). Linux (agents 1.35.0+, `Get-PortableSoftwareLinux`) reads names
 and text: the name of an `*.AppImage` (`Name-1.2.3-x86_64.AppImage`), `VERSION` / `package.json` in a directory of `/opt` that no

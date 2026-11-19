@@ -25,6 +25,7 @@ class SecurityCves
         'fix_via_pro' => 'fix available via Ubuntu Pro / ESM',
         'update_available' => 'update available',
         'not_triaged' => 'not yet assessed by Ubuntu',
+        'modified' => 'files changed outside the package manager, version not verified',
     ];
 
     /** The codename of an Ubuntu release by its VERSION_ID, for agents that do not send the codename. */
@@ -188,6 +189,11 @@ class SecurityCves
                 continue;
             }
             $result = $dpkg ? self::dpkg($cve, $item, $release, $osId) : self::upstream($cve, $item);
+            // The files of the package were replaced after it was installed (agents 1.36.0+): the version dpkg recorded is not the
+            // one that runs, so the CVE is not judged by it - it is listed to be checked, at the lowest urgency.
+            if ($result !== null && $dpkg && ! empty($item['Modified'])) {
+                $result = ['status' => 'modified', 'fixed' => $result['fixed']];
+            }
             if ($result !== null) {
                 $found[$cve['id']] = ['id' => $cve['id'], 'severity' => $cve['severity'] ?? 'medium'] + $result;
             }
@@ -348,7 +354,7 @@ class SecurityCves
             if (! isset(SecurityRules::SEVERITIES[$level])) {
                 continue;
             }
-            if (in_array($cve['status'] ?? null, ['no_fix', 'not_triaged'], true) && SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES['medium']) {
+            if (in_array($cve['status'] ?? null, ['no_fix', 'not_triaged', 'modified'], true) && SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES['medium']) {
                 $level = 'medium';
             }
             if ($best === null || SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES[$best]) {
@@ -400,7 +406,12 @@ class SecurityCves
         if (in_array('fix_via_pro', $statuses, true)) {
             $lines[] = 'The fix is only in Ubuntu Pro (ESM): attach the machine (sudo pro attach) and run sudo apt update && sudo apt full-upgrade.';
         }
-        if (in_array('no_source', $statuses, true)) {
+        if (in_array('modified', $statuses, true)) {
+            $lines[] = 'The files of the package were replaced after it was installed (dpkg --verify), so the version dpkg recorded ('
+                .(($first['Version'] ?? '') !== '' ? $first['Version'] : '?').') may not be the one that runs: check the real version of the program (e.g. its --version). '
+                .'If it is a fixed one, acknowledge this finding; to make it go away for good install the program as a package of its vendor, so that dpkg records its version.';
+        }
+        if (in_array('no_source', $statuses, true) && ! in_array('modified', $statuses, true)) {
             $fixed = array_values(array_unique(array_filter(array_column(array_filter($affecting, fn ($cve) => ($cve['status'] ?? '') === 'no_source'), 'fixed'))));
             $lines[] = 'The package is not from any repository, so apt never updates it'
                 .($fixed !== [] ? ' (fixed in '.implode(', ', $fixed).')' : '').': '

@@ -140,6 +140,26 @@ class SecurityCvesTest extends TestCase
         $this->assertSame('Update: sudo apt update && sudo apt full-upgrade', SecurityCves::remediation([$deb], $update));
     }
 
+    public function test_a_package_whose_files_were_replaced_is_not_judged_by_its_recorded_version(): void
+    {
+        // rclone 1.69.1 of a vendor .deb (no repository), its binary updated in place to 1.76.0: dpkg still says 1.69.1.
+        $cves = [$this->cve('CVE-2026-41179', [[null, '1.73.5', null]], [], 'critical')];
+        $item = ['Name' => 'rclone', 'Version' => '1.69.1', 'Source' => 'dpkg', 'Origin' => 'dpkg/status', 'NoUpdateSource' => true, 'Running' => true];
+
+        $this->assertSame('no_source', SecurityCves::affecting($cves, $item, 'resolute')['CVE-2026-41179']['status']);
+
+        $affecting = SecurityCves::affecting($cves, $item + ['Modified' => true], 'resolute');
+        $this->assertSame('modified', $affecting['CVE-2026-41179']['status']);
+        $this->assertSame('modified', SecurityCves::status($affecting));
+        $this->assertSame('medium', SecurityCves::severity($affecting));
+        $this->assertSame('critical', SecurityCves::worst($affecting));
+        $text = SecurityCves::remediation([$item + ['Modified' => true]], $affecting);
+        $this->assertStringContainsString('dpkg --verify', $text);
+        $this->assertStringNotContainsString('apt never updates', $text);
+        // Not affected at the recorded version: still nothing.
+        $this->assertSame([], SecurityCves::affecting($cves, ['Version' => '1.76.0', 'Modified' => true] + $item, 'resolute'));
+    }
+
     public function test_a_portable_program_of_the_file_scan_is_judged_by_its_version(): void
     {
         $cves = [$this->cve('CVE-2026-1', [[null, '23.01', null]])];
