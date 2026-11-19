@@ -10,6 +10,7 @@ use App\Support\SecurityScanner;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -315,6 +316,10 @@ Route::middleware(['device.signature', 'auth:api'])->group(function () {
 
         if ($updated === 1) {
             DeviceCommand::announce($device->id, $deviceCommand->target);
+            // What failed on a device is also in the server log (the command keeps the first 1000 bytes of it, the log more).
+            if ($status === 'failed') {
+                Log::warning("Command {$deviceCommand->command} ({$deviceCommand->id}) failed on device {$device->id} ({$device->displayName}, agent {$device->agent_version}): ".(is_string($message) && $message !== '' ? mb_strcut($message, 0, 4000) : 'no reason given'));
+            }
         }
 
         return $updated === 1

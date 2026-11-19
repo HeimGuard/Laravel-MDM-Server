@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 
 class Device extends Model
@@ -1805,6 +1806,8 @@ class Device extends Model
                 'first' => min($before['first'] ?? $first, $first),
                 'last' => max($before['last'] ?? $last, $last),
             ]);
+            // Also in the server log: what the agent logged as an error, to read (and send for analysis) in one place.
+            Log::warning("Agent error on device {$this->id} ({$this->displayName}, agent {$this->agent_version}): {$message}".($count > 1 ? " (x{$count})" : ''));
             $taken++;
         }
         $this->agent_errors = $kept->filter(fn ($error) => $error['last'] >= $oldest)

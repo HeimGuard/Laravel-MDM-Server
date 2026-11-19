@@ -17,6 +17,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   phone shows the current icon instead of the old `storage/images/logo.png`.
 
 ### Added
+- What fails on a device is also in the server log (`laravel.log`, the Logs page), to read and send for analysis in one place: every error the agent
+  logs (`Agent error on device 12 (name, agent 1.36.0): message (x3)`) and every command that fails (`Command doUpdates (87) failed on device 12 ...: reason`,
+  the command itself keeps the first 1000 bytes of the reason, the log up to 4000).
 - **File scan** (agents 1.34.0+ on Windows, 1.35.0+ on Linux; off by default: `file_scan` is `on` in `config.json`, `-FileScan on` at
   install): the agent also looks for programs that are not installed (portable ones) and lists them in the software as
   `portable` (Linux crates: `cargo`) with their `Path`, so the vulnerability checks see them. **It never runs what it finds**: the
