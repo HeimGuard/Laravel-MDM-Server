@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.35.1'
+$AgentVersion = '1.35.2'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1574,6 +1574,21 @@ function Get-SecuritySoftware {
     $software | Sort-Object -Property Name, Version, Source -Unique
 }
 
+function Get-PortableUnique {
+    # One detection of one file: the same path reported twice (a cargo crate is also a binary of ~/.cargo/bin) is one item, the
+    # one that says more (a version, a source other than "portable"). Nothing else is merged: several copies and several
+    # versions of a program on one device are real, also with the same version in other folders, and each is an item.
+    param ($Items)
+
+    $byPath = @{}
+    foreach ($item in @($Items)) {
+        $key = "$($item.Path)".ToLowerInvariant()
+        $known = $byPath[$key]
+        if (-not $known -or (-not $known.Version -and $item.Version) -or ($known.Source -eq 'portable' -and $item.Source -ne 'portable' -and $item.Version)) { $byPath[$key] = $item }
+    }
+    return @($byPath.Values)
+}
+
 function Get-PortableSoftware {
     # Programs that run without being installed (agents 1.34.0+, file_scan "on" in config.json, Windows): executables of the
     # fixed drives in a folder that no entry of Programs and Features owns (its InstallLocation, or the folder of its
@@ -1678,7 +1693,8 @@ function Get-PortableSoftware {
     if ($CachePath -and $stack.Count -eq 0) { try { $seen | ConvertTo-Json -Compress -Depth 3 | Set-Content -Path $CachePath -Encoding UTF8 } catch { } }
 
     # The same product twice (two copies in two folders) are two items: the key of an item is its name and source.
-    $items = @($found.Values)
+    # The same file twice is one detection; two copies, or two versions, are two items.
+    $items = @(Get-PortableUnique -Items @($found.Values))
     $twice = @($items | Group-Object -Property Name | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
     foreach ($item in $items) {
         if ($twice -contains $item.Name) { $item.Name = ConvertTo-SecurityText "$($item.Name) [$(Split-Path -Parent $item.Path)]" 300 }
@@ -1742,30 +1758,6 @@ function Get-PortableSoftwareLinux {
     $homes = @(Get-ChildItem -Path /home -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
     if (Test-Path -LiteralPath /root) { $homes += '/root' }
 
-    # Directories of /opt that no package owns: the version from VERSION or package.json.
-    foreach ($dir in @(Get-ChildItem -LiteralPath /opt -Directory -ErrorAction SilentlyContinue)) {
-        if ($items.Count -ge $MaxItems) { break }
-        if ($ownedOpt.Contains($dir.FullName) -or $dir.LinkTarget) { continue }
-        if ($hasRpm -and (& $isOwned $dir.FullName)) { continue }
-        $version = $null
-        $name = $dir.Name
-        foreach ($candidate in 'VERSION', 'version', '.version', 'resources/app/package.json', 'package.json') {
-            $file = Join-Path $dir.FullName $candidate
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -gt 1MB) { continue }
-            try {
-                $text = [System.IO.File]::ReadAllText($file)
-                if ($candidate -like '*.json') {
-                    $json = $text | ConvertFrom-Json
-                    if ($json.version) { $version = "$($json.version)" }
-                    if ($json.productName) { $name = "$($json.productName)" }
-                } elseif ($text.Trim() -match '^v?(\d+(?:\.\d+)+\S*)') { $version = $Matches[1] }
-            }
-            catch { }
-            if ($version) { break }
-        }
-        & $add $name $version $dir.FullName 'portable'
-    }
-
     # AppImages (a file name is all that is read) and the executables of the bin directories.
     $bins = @('/usr/local/bin', '/usr/local/sbin') + @($homes | ForEach-Object { "$_/.local/bin"; "$_/bin"; "$_/.cargo/bin"; "$_/go/bin" })
     $roots = @('/opt', '/usr/local', '/srv') + $homes
@@ -1821,7 +1813,34 @@ function Get-PortableSoftwareLinux {
         catch { }
     }
 
-    $items | Sort-Object -Property Name, Path -Unique
+    # Directories of /opt that no package owns: the version from VERSION or package.json. A directory that holds an AppImage, a
+    # binary or a crate already found is not reported again (the same program twice in the same path).
+        if ($items.Count -ge $MaxItems) { break }
+        if ($ownedOpt.Contains($dir.FullName) -or $dir.LinkTarget) { continue }
+        $prefix = $dir.FullName.TrimEnd('/') + '/'
+        if (@($items | Where-Object { "$($_.Path)".StartsWith($prefix) }).Count -gt 0) { continue }
+        if ($hasRpm -and (& $isOwned $dir.FullName)) { continue }
+        $version = $null
+        $name = $dir.Name
+        foreach ($candidate in 'VERSION', 'version', '.version', 'resources/app/package.json', 'package.json') {
+            $file = Join-Path $dir.FullName $candidate
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -gt 1MB) { continue }
+            try {
+                $text = [System.IO.File]::ReadAllText($file)
+                if ($candidate -like '*.json') {
+                    $json = $text | ConvertFrom-Json
+                    if ($json.version) { $version = "$($json.version)" }
+                    if ($json.productName) { $name = "$($json.productName)" }
+                } elseif ($text.Trim() -match '^v?(\d+(?:\.\d+)+\S*)') { $version = $Matches[1] }
+            }
+            catch { }
+            if ($version) { break }
+        }
+        & $add $name $version $dir.FullName 'portable'
+    }
+
+
+    Get-PortableUnique -Items @($items | Sort-Object -Property Path -Unique | Sort-Object -Property Name, Path)
 }
 
 function Get-OfflineUserSoftware {
@@ -4837,7 +4856,7 @@ function Start-SecurityCollection {
         $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan

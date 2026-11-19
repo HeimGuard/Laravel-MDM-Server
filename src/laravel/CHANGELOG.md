@@ -8,6 +8,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Fixed
+- Devices page: the device list had its own scrollbar next to the one of the page (sticky list with a maximum height); the page is the only
+  thing that scrolls now.
 - The old icon stayed in the installed app (PWA): the manifest icons have a version in the URL, and the login page on a
   phone shows the current icon instead of the old `storage/images/logo.png`.
 

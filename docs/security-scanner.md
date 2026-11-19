@@ -90,6 +90,10 @@ their folder in the name. The versions are cached in `portable-software.json` by
 before; `wmic` / `Win32_Product` is not used (WMIC is removed from Windows 11 24H2, and `Win32_Product` runs an MSI consistency
 check of every package).
 
+**Duplicates:** one file is one detection (the path is the identity: a cargo crate is also a file of `~/.cargo/bin`, an AppImage in a directory of `/opt` is
+not reported again as the directory). Nothing else is merged: several copies and versions of a program on one device are real, also the same
+version in two folders, and each is an item (a name that is there twice gets its folder in brackets).
+
 **Nothing found is ever run** (a hard rule: the file may be malicious): no `--version`, no `--appimage-*`, no `ldd`. Windows reads
 the version resource (`FileVersionInfo`, which only reads the file). Linux (agents 1.35.0+, `Get-PortableSoftwareLinux`) reads names
 and text: the name of an `*.AppImage` (`Name-1.2.3-x86_64.AppImage`), `VERSION` / `package.json` in a directory of `/opt` that no
