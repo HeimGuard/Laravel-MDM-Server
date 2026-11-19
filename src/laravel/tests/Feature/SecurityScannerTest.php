@@ -437,6 +437,20 @@ class SecurityScannerTest extends TestCase
         $this->assertStringContainsString("security_logs -NotePropertyValue 'on'", $script->remediation);
     }
 
+    public function test_installations_start_with_a_script_that_turns_the_file_scan_on(): void
+    {
+        $script = Script::query()->where('name', 'Allow file scan')->firstOrFail();
+
+        $this->assertTrue($script->manual_remediation);
+        $this->assertSame('windows', $script->platform);
+        $this->assertSame($script->fingerprint, Script::fingerprintOf('windows', 60, $script->detection, $script->remediation));
+        $this->assertSame([], PowerShellCheck::errors($script->detection));
+        $this->assertSame([], PowerShellCheck::errors($script->remediation));
+        $this->assertTrue(PowerShellCheck::exits($script->detection, 0));
+        $this->assertTrue(PowerShellCheck::exits($script->detection, 1));
+        $this->assertStringContainsString("file_scan -NotePropertyValue 'on'", $script->remediation);
+    }
+
     public function test_the_agent_tab_lists_the_features_read_only(): void
     {
         $this->withoutVite();

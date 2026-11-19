@@ -62,6 +62,9 @@ class Device extends Model
     /** Agents from this version report and install pip --user and pipx package updates. */
     public const PYTHON_UPDATE_VERSION = '1.19.0';
 
+    /** Agents from this version look for portable programs on a Windows device when file_scan is on in their config.json. */
+    public const FILE_SCAN_VERSION = '1.34.0';
+
     /** At most this many ping-only devices per agent. */
     public const MAX_PING_TARGETS = 32;
 
@@ -606,6 +609,14 @@ class Device extends Model
     }
 
     /**
+     * Whether the agent looks for portable programs (file_scan in its config.json, agents 1.34.0+, Windows only).
+     */
+    public function getFileScanAttribute(): bool
+    {
+        return ($this->data->machine->Features->file_scan ?? null) === 'on';
+    }
+
+    /**
      * Whether the agent scans the open ports of an address in its network on request (port_scan in
      * its config.json, agents 1.18.0+): off (default) or on; null for older agents and ping-only devices.
      */
@@ -644,6 +655,8 @@ class Device extends Model
             $feature('security_inventory', __('Security inventory'), __('Software, programs, open ports and settings for the security checks, every hour.'), null, $this->securityInventory()->exists(),
                 ($collected = $this->securityInventory()->value('collected_at')) ? __('last :time', ['time' => Carbon::parse($collected)->diffForHumans()]) : null, $has(self::SECURITY_VERSION) ? null : self::SECURITY_VERSION),
             $feature('security_logs', __('Security logs'), __('Sends sign-in and system log records, so the sign-in checks (password guessing, new administrators) work.'), 'security_logs', $this->securityLogs, null, $has(self::SECURITY_VERSION) ? null : self::SECURITY_VERSION),
+            $feature('file_scan', __('File scan'), __('Looks for programs that are not installed (portable ones) on the drives and reports them with their versions in the software.'), 'file_scan', $this->fileScan,
+                $this->platform === 'linux' ? __('Windows only') : ($has(self::FILE_SCAN_VERSION) ? ($this->fileScan ? null : __('off')) : null), $has(self::FILE_SCAN_VERSION) ? null : self::FILE_SCAN_VERSION),
             $feature('disk_health', __('Disk health'), __('S.M.A.R.T. values of the disks, every hour.'), null, $disk !== null && $this->virtualization === null,
                 match (true) {
                     $this->virtualization !== null => __('not on virtual machines'),

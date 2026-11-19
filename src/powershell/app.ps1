@@ -44,6 +44,14 @@
     security_logs, the server cannot change it): off (default) or on. The security inventory
     (software, ports, settings) is sent either way.
 
+.PARAMETER FileScan
+    With -Install: whether the agent looks for programs that are not installed (portable ones: an
+    executable in a folder with no entry in Programs and Features) and reports them with their
+    versions in the software of the security inventory (stored in config.json as file_scan, the
+    server cannot change it): off (default) or on. Windows only. It walks the fixed drives at low
+    priority (the folders of installed programs, Windows and the caches are skipped) and reads the
+    version of an executable again only when the file changed.
+
 .PARAMETER PortScan
     With -Install: whether the agent scans the open ports of an address in its network when asked
     in the portal (stored in config.json as port_scan, the server cannot change it): off (default)
@@ -90,7 +98,10 @@ param (
     $SecurityLogs,
     [ValidateSet('off', 'on')]
     [string]
-    $PortScan
+    $PortScan,
+    [ValidateSet('off', 'on')]
+    [string]
+    $FileScan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,7 +145,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.33.1'
+$AgentVersion = '1.34.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1443,7 +1454,9 @@ function Get-SecuritySoftware {
     param (
         [bool]$OnLinux,
         # A file that remembers the CVEs of the changelog of a package version, so only new and updated packages are read.
-        [string]$CachePath = ''
+        [string]$CachePath = '',
+        # Portable programs too (file_scan in config.json, Windows only).
+        [bool]$FileScan = $false
     )
 
     if ($OnLinux) {
@@ -1543,7 +1556,129 @@ function Get-SecuritySoftware {
         })
     try { $software += @(Get-OfflineUserSoftware) } catch { }
     try { $software += @(Get-AppxSoftware) } catch { }
+    if ($FileScan) {
+        try {
+            $cache = if ($CachePath) { Join-Path (Split-Path -Parent $CachePath) 'portable-software.json' } else { '' }
+            # What is installed already (by name) is not portable.
+            $names = @($software | ForEach-Object { "$($_.Name)".ToLowerInvariant() })
+            foreach ($item in @(Get-PortableSoftware -CachePath $cache)) {
+                $product = "$($item.Name)".ToLowerInvariant() -replace '\s*\[.*\]$', ''
+                if ($product.Length -ge 4 -and @($names | Where-Object { $_.Contains($product) }).Count -gt 0) { continue }
+                $software += $item
+            }
+        } catch { }
+    }
     $software | Sort-Object -Property Name, Version, Source -Unique
+}
+
+function Get-PortableSoftware {
+    # Programs that run without being installed (agents 1.34.0+, file_scan "on" in config.json, Windows): executables of the
+    # fixed drives in a folder that no entry of Programs and Features owns (its InstallLocation, or the folder of its
+    # DisplayIcon / UninstallString). The version comes from the file itself (name, version, company of its resources).
+    # The walk is limited (depth, time, Windows and the caches are skipped) and the version of a file is read again only when
+    # its size or time changed (CachePath). An item is one product in one folder, Source "portable", Path the first file.
+    param (
+        [string]$CachePath = '',
+        [int]$MaxDepth = 8,
+        [int]$MaxMinutes = 20,
+        [int]$MaxItems = 500
+    )
+
+    $deadline = (Get-Date).AddMinutes($MaxMinutes)
+
+    # The folders of the installed programs: not portable, not walked.
+    $paths = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+    $paths += @(Get-ChildItem -Path Registry::HKEY_USERS -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^S-1-5-21-[\d-]+$' } |
+            ForEach-Object { "Registry::HKEY_USERS\$($_.PSChildName)\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" })
+    $known = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($entry in @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue)) {
+        $dirs = @("$($entry.InstallLocation)".Trim('"', ' '))
+        foreach ($field in 'DisplayIcon', 'UninstallString') {
+            if ("$($entry.$field)" -match '^\s*"?([A-Za-z]:\\[^"]*?)\\[^\\"]+\.(?:exe|ico|dll)') { $dirs += $Matches[1] }
+        }
+        foreach ($dir in $dirs) {
+            # Two levels at least (C:\Program Files\Name): a drive or a shared folder owns nothing.
+            if ($dir -match '^[A-Za-z]:\\[^\\]+\\[^\\]+') { [void]$known.Add($dir.TrimEnd('\').ToLowerInvariant() + '\') }
+        }
+    }
+
+    $skipNames = @('$recycle.bin', 'system volume information', 'windowsapps', 'winsxs', 'windows.old', 'node_modules', '.git', 'temp', 'tmp', 'cache', 'caches')
+    $skipPrefixes = @("$($env:SystemRoot)\".ToLowerInvariant(), "$($env:ProgramData)\Microsoft\".ToLowerInvariant(), "$($env:ProgramData)\Package Cache\".ToLowerInvariant())
+
+    $cache = @{}
+    if ($CachePath) {
+        try { foreach ($property in (Get-Content -Path $CachePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json).PSObject.Properties) { $cache[$property.Name] = $property.Value } } catch { }
+    }
+    $seen = @{}
+    $found = @{}
+
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    foreach ($drive in @([System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
+        $stack.Push([Tuple[string, int]]::new($drive.RootDirectory.FullName, 0))
+    }
+    while ($stack.Count -gt 0 -and $found.Count -lt $MaxItems) {
+        if ((Get-Date) -gt $deadline) { break }
+        $current = $stack.Pop()
+        $dir = $current.Item1
+        $probe = $dir.TrimEnd('\').ToLowerInvariant() + '\'
+        if ($known.Contains($probe)) { continue }
+        $skip = $false
+        foreach ($prefix in $skipPrefixes) { if ($probe.StartsWith($prefix)) { $skip = $true; break } }
+        if ($skip -or $probe -match '\\appdata\\local\\(microsoft|packages|temp)\\$') { continue }
+
+        try {
+            foreach ($file in [System.IO.Directory]::EnumerateFiles($dir, '*.exe')) {
+                $info = [System.IO.FileInfo]::new($file)
+                $stamp = "$($info.Length)|$($info.LastWriteTimeUtc.Ticks)"
+                $entry = $cache[$file]
+                if (-not $entry -or $entry.k -ne $stamp) {
+                    $version = $null
+                    try { $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($file) } catch { }
+                    $name = if ($version) { if ($version.ProductName) { $version.ProductName } else { $version.FileDescription } } else { $null }
+                    $number = if ($version) { if ($version.ProductVersion) { $version.ProductVersion } else { $version.FileVersion } } else { $null }
+                    $entry = [PSCustomObject]@{ k = $stamp; n = "$name".Trim(); v = "$number".Trim(); c = if ($version) { "$($version.CompanyName)".Trim() } else { '' } }
+                }
+                $seen[$file] = $entry
+                # A file without a name and a version tells nothing.
+                if (-not $entry.n -and -not $entry.v) { continue }
+                $name = if ($entry.n) { $entry.n } else { $info.BaseName }
+                $id = "$dir|$name|$($entry.v)".ToLowerInvariant()
+                if (-not $found.ContainsKey($id)) {
+                    $found[$id] = [PSCustomObject]@{
+                        Name      = ConvertTo-SecurityText $name 300
+                        Version   = ConvertTo-SecurityText $entry.v 100
+                        Publisher = ConvertTo-SecurityText $entry.c 200
+                        Source    = 'portable'
+                        Path      = ConvertTo-SecurityText $file 500
+                    }
+                }
+            }
+        }
+        catch { }
+
+        if ($current.Item2 -ge $MaxDepth) { continue }
+        try {
+            foreach ($sub in [System.IO.Directory]::EnumerateDirectories($dir)) {
+                $leaf = [System.IO.Path]::GetFileName($sub).ToLowerInvariant()
+                if ($skipNames -contains $leaf) { continue }
+                # Junctions and links are not followed (a loop, or another drive's folder).
+                if ([System.IO.File]::GetAttributes($sub) -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $stack.Push([Tuple[string, int]]::new($sub, $current.Item2 + 1))
+            }
+        }
+        catch { }
+    }
+
+    # Only the files seen this time stay in the cache; a walk cut short by the time limit keeps the old entries.
+    if ($CachePath -and $stack.Count -eq 0) { try { $seen | ConvertTo-Json -Compress -Depth 3 | Set-Content -Path $CachePath -Encoding UTF8 } catch { } }
+
+    # The same product twice (two copies in two folders) are two items: the key of an item is its name and source.
+    $items = @($found.Values)
+    $twice = @($items | Group-Object -Property Name | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+    foreach ($item in $items) {
+        if ($twice -contains $item.Name) { $item.Name = ConvertTo-SecurityText "$($item.Name) [$(Split-Path -Parent $item.Path)]" 300 }
+    }
+    $items | Sort-Object -Property Name, Path
 }
 
 function Get-OfflineUserSoftware {
@@ -2294,11 +2429,13 @@ function Get-SecurityInventory {
         # The collection policy of the server and the positions of the logs (JSON), see Get-SecurityLogs.
         [string]$PolicyJson = '',
         [string]$CursorsJson = '',
-        [string]$AptStatePath = ''
+        [string]$AptStatePath = '',
+        # file_scan is on in config.json: portable programs are added to the software (Windows).
+        [bool]$FileScan = $false
     )
 
     $inventory = @{}
-    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath | Select-Object -First 5000) } catch { }
+    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath -FileScan $FileScan | Select-Object -First 5000) } catch { }
     # As many as the server takes of each list (more and it refuses the whole collection).
     try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
@@ -4551,13 +4688,16 @@ function Start-SecurityCollection {
         [string]
         $PolicyJson = '',
         [string]
-        $CursorsJson = ''
+        $CursorsJson = '',
+        # file_scan is on in config.json: the portable programs of the fixed drives are looked for.
+        [bool]
+        $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json" -ScriptBlock {
-        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath)
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+        param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
-        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath
+        return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan
     }
 }
 
@@ -4608,7 +4748,7 @@ function Get-SecurityState {
 # The fields of every source of the security inventory and the ones that tell its items apart
 # (App\Support\SecurityRules::SOURCES on the server): an item's key and hash come from them.
 $SecurityFields = @{
-    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening')
+    software  = @('Name', 'Version', 'Publisher', 'Source', 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path')
     processes = @('Name', 'Path', 'CommandLine', 'User', 'Count')
     listening = @('Protocol', 'Address', 'Port', 'Process', 'Path')
     startup   = @('Name', 'Command', 'Location', 'User')
@@ -4647,7 +4787,7 @@ function Get-SecurityItemHash ([string]$Source, $Item) {
     # The content of an item: all its fields in the order of its source.
     # The fields older agents did not send (SecurityRules::OPTIONAL_FIELDS on the server) count only when they are set, so the
     # hashes of the items without them stay what they were.
-    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
+    $optional = 'FixedCves', 'SourcePackage', 'Candidate', 'Origin', 'Channel', 'UpdateAvailable', 'NoUpdateSource', 'Running', 'RunUser', 'Listening', 'Path', 'Codename', 'Arch', 'FirewallDetail', 'UnencryptedMounts', 'AptUpdateOk', 'AptUpdateErrors'
     $parts = foreach ($field in $SecurityFields[$Source]) {
         $value = ConvertTo-SecurityCanon $Item.$field
         if ($field -in $optional -and $value -eq '') { continue }
@@ -4848,6 +4988,7 @@ function Get-Report {
             network_discovery = $discovery
             port_scan         = $portScan
             security_logs     = (Get-SecurityLogsLevel -Config $config)
+            file_scan         = (Get-FileScanLevel -Config $config)
         }) -Force
     try { Add-PublicAddresses -Networks $data.machine.Networks } catch { Write-AgentLog "Public addresses failed: $($_.Exception.Message)" }
     if ($discovery -ne 'off') {
@@ -5354,6 +5495,15 @@ function Get-SecurityLogsLevel {
     param ($Config = (Get-AgentConfig))
 
     return $(if ("$($Config['security_logs'])" -eq 'on') { 'on' } else { 'off' })
+}
+
+function Get-FileScanLevel {
+    # file_scan in config.json: on looks for portable programs (executables outside the installed ones) on the fixed
+    # drives of a Windows device, anything else (the default) is off. Only changed on the device (-FileScan with
+    # -Install, or editing config.json).
+    param ($Config = (Get-AgentConfig))
+
+    return $(if ("$($Config['file_scan'])" -eq 'on') { 'on' } else { 'off' })
 }
 
 function Get-PortScan {
@@ -7510,7 +7660,7 @@ function Start-Agent {
                 $nextSecurity = (Get-Date).AddSeconds($SecurityInterval)
                 $sendLogs = (Get-SecurityLogsLevel) -eq 'on'
                 $policy = if ($sendLogs) { Get-SecurityPolicy -Token $Token } else { $null }
-                $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
+                $securityJob = Start-SecurityCollection -Since $since -InContainer ($virtualization -and $virtualization.Type -eq 'container') -FileScan ((Get-FileScanLevel) -eq 'on') -SendLogs ($sendLogs -and $null -ne $policy) -PolicyJson $(if ($policy) { $policy | ConvertTo-Json -Depth 6 -Compress } else { '' }) -CursorsJson ((Get-SecurityCursors) | ConvertTo-Json -Compress)
             }
 
             if ($script:SyncRequest -and $script:SyncRequest.Phase -eq 'collecting' -and $script:SyncRequest.InventoryDone -and -not $healthJob) {
@@ -7654,6 +7804,10 @@ if ($Install) {
         $config['security_logs'] = $SecurityLogs
         Save-AgentConfig -Config $config
     }
+    if ($FileScan) {
+        $config['file_scan'] = $FileScan
+        Save-AgentConfig -Config $config
+    }
     if ($PortScan) {
         $config['port_scan'] = $PortScan
         Save-AgentConfig -Config $config
@@ -7664,6 +7818,7 @@ if ($Install) {
     Write-Host "Network discovery: $(Get-NetworkDiscovery -Config $config) (config.json)" -ForegroundColor Yellow
     Write-Host "Port scanning: $(Get-PortScan -Config $config) (config.json)" -ForegroundColor Yellow
     Write-Host "Security logs: $(Get-SecurityLogsLevel -Config $config) (config.json)" -ForegroundColor Yellow
+    Write-Host "File scan: $(Get-FileScanLevel -Config $config) (config.json)" -ForegroundColor Yellow
 
     if ($OnLinux) {
         # The service runs as root like this installer: enrol right away.
