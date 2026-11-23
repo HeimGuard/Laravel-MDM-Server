@@ -165,4 +165,5 @@ execution of a command is `device_commands`, of a script `script_runs`. No new t
 
 ## Open
 
-- Raw logs: they are not stored today (only the events). A table for them would be separate, with its own retention.
+- Raw logs: they are not stored today (only the events). The exception is syslog: a message no parser reads is an event of the type
+  `syslog` (`user` = the program, `source` = the host name, the same message is one event with a `count`). A table for them would be separate, with its own retention.

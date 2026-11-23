@@ -124,12 +124,39 @@ class SyslogTest extends TestCase
         $result = Syslog::ingest($messages);
 
         $this->assertSame(['192.168.1.77' => 2], $result['unknown']);
-        $this->assertSame(2, $result['events']);
-        $events = SecurityEvent::query()->forDevice($router->id)->get()->sortBy('user')->values();
+        // Two parsed ones and the message no parser reads (a "syslog" event, see the next test).
+        $this->assertSame(3, $result['events']);
+        $events = SecurityEvent::query()->forDevice($router->id)->where('type', 'failed_logon')->get()->sortBy('user')->values();
         $this->assertSame(['bob', 'root'], $events->pluck('user')->all());
         $this->assertSame(['1.2.3.4', '1.2.3.4'], $events->pluck('source')->all());
         $this->assertSame('ssh from web01', $events[0]->message);
         $this->assertSame(0, SecurityEvent::query()->where('eventable_id', '!=', $router->id)->count());
+    }
+
+    public function test_a_message_no_parser_reads_is_stored_as_a_syslog_event(): void
+    {
+        $this->enableParser();
+        $nas = $this->pingDevice('192.168.1.20');
+        $line = fn (string $text) => $this->message('192.168.1.20', 'synology', $text, ['host' => 'nas']);
+
+        $result = Syslog::ingest([$line('Test message'), $line('Test message'), $line('Another one'), $this->message('192.168.1.20', 'sshd', 'Failed password for root from 1.2.3.4 port 22 ssh2')]);
+
+        $this->assertSame(3, $result['events']);
+        $events = SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->get()->sortBy('message')->values();
+        $this->assertSame(['Another one', 'Test message'], $events->pluck('message')->all());
+        $this->assertSame([1, 2], $events->pluck('count')->all());
+        $this->assertSame(['synology', 'synology'], $events->pluck('user')->all());
+        $this->assertSame(['nas', 'nas'], $events->pluck('source')->all());
+    }
+
+    public function test_the_messages_are_stored_without_any_parser(): void
+    {
+        $nas = $this->pingDevice('192.168.1.20');
+
+        $result = Syslog::ingest([$this->message('192.168.1.20', 'synology', 'Test message')]);
+
+        $this->assertSame(1, $result['events']);
+        $this->assertSame(1, SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->count());
     }
 
     public function test_the_events_of_a_ping_only_device_are_shown_without_an_inventory(): void

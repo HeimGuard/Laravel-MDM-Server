@@ -12,7 +12,8 @@ use Throwable;
  * Syslog from other servers and devices (RFC 3164 and 5424, UDP and TCP on port 5514, published as 514). rsyslog in the
  * container receives it and hands every message as a line of JSON to `php artisan mdm:syslog-ingest`, which uses this class:
  * the sender is the device whose IP address it is (an interface of an agent, the address of a ping device), the
- * messages are records of the log source "syslog" and go through the same parsers and rules as the logs of the agents.
+ * messages are records of the log source "syslog" and go through the same parsers and rules as the logs of the agents; what no parser reads is stored as events of the type
+ * "syslog" (see unparsed()).
  * Messages from an address that belongs to no device (or to more than one) are dropped.
  */
 class Syslog
@@ -133,6 +134,40 @@ class Syslog
     }
 
     /**
+     * The messages no parser reads, as events of the type "syslog" (the same message of the same program is one event with
+     * a count), so that it is visible what arrives and a parser can be written for it. User is the program, Source the host name.
+     *
+     * @param  array<int, array<string, string>>  $records
+     * @param  iterable<int, array>  $parsers  definitions of the enabled parsers of the source syslog
+     * @return array<int, array>
+     */
+    public static function unparsed(array $records, iterable $parsers): array
+    {
+        $groups = [];
+        foreach ($records as $record) {
+            foreach ($parsers as $parser) {
+                if (SecurityParsers::apply($parser, $record) !== null) {
+                    continue 2;
+                }
+            }
+            $app = $record['App'] !== '' ? $record['App'] : null;
+            $key = mb_strtolower((string) $app)."\0".$record['Host']."\0".$record['Message'];
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'Type' => 'syslog', 'Count' => 0, 'User' => $app, 'Source' => $record['Host'] !== '' ? $record['Host'] : null,
+                    'Message' => $record['Message'], 'Last' => $record['Time'] !== '' ? $record['Time'] : null, 'SourceType' => 'syslog',
+                ];
+            }
+            $groups[$key]['Count']++;
+            if ((string) $record['Time'] >= (string) $groups[$key]['Last']) {
+                $groups[$key]['Last'] = $record['Time'];
+            }
+        }
+
+        return array_values($groups);
+    }
+
+    /**
      * Parses the messages of the devices they come from and stores the events.
      *
      * @param  array<int, array>  $messages  decoded lines of rsyslog
@@ -168,16 +203,16 @@ class Syslog
         }
         SecurityRule::syncBuiltIn();
         $parsers = SecurityRule::query()->enabled()->parsers()->where('source', 'syslog')->get()->pluck('definition');
-        if ($parsers->isEmpty()) {
-            return $result;
-        }
         foreach ($byDevice as $id => $records) {
             $device = Device::find($id);
             if ($device === null) {
                 continue;
             }
             try {
-                $events = SecurityInventory::sanitizeEvents(SecurityParsers::run([['source' => 'syslog', 'records' => $records]], $parsers));
+                $events = SecurityInventory::sanitizeEvents(array_merge(
+                    SecurityParsers::run([['source' => 'syslog', 'records' => $records]], $parsers),
+                    self::unparsed($records, $parsers),
+                ));
                 if ($events !== []) {
                     SecurityScanner::ingest($device, [], $events);
                     $result['events'] += count($events);

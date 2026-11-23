@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Syslog: a message that no parser reads is now stored as an event of the type "syslog" (Security → Events and the Security tab of the
+  device), so you can see what a device sends and write a parser for it. Until now such messages were dropped.
+
 ## [1.36.2] - 2026-11-23
 
 ### Fixed
