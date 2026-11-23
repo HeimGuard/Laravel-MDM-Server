@@ -18,7 +18,9 @@
             ->latest('id')->get();
         $failedScripts = $scriptRuns->whereIn('status', ['failed', 'error', 'rejected'])->count();
         // Security inventory (agents 1.17.0+) and the scanner's findings that need attention.
-        $hasSecurity = $selectedDevice->securityInventory()->exists();
+        // A ping-only device has no inventory, but the events of its syslog.
+        $hasSecurity = $selectedDevice->securityInventory()->exists()
+            || ($selectedDevice->isPingOnly && \App\Models\SecurityEvent::query()->forDevice($selectedDevice->id)->exists());
         $securityFindings = $selectedDevice->securityFindings()->active()->get();
         $securitySevere = $securityFindings->whereIn('severity', ['critical', 'high'])->count();
         // The tab from the URL (?tab=), or the first one this device has.

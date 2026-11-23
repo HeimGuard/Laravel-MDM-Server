@@ -132,6 +132,18 @@ class SyslogTest extends TestCase
         $this->assertSame(0, SecurityEvent::query()->where('eventable_id', '!=', $router->id)->count());
     }
 
+    public function test_the_events_of_a_ping_only_device_are_shown_without_an_inventory(): void
+    {
+        $this->enableParser();
+        $router = $this->pingDevice('192.168.1.1');
+        $user = \App\Models\User::factory()->create();
+        Syslog::ingest([$this->message('192.168.1.1', 'sshd', 'Failed password for root from 1.2.3.4 port 22 ssh2')]);
+
+        \Livewire\Livewire::actingAs($user)->test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $router->id])
+            ->assertSee('ssh from web01')
+            ->assertSee('1.2.3.4');
+    }
+
     public function test_a_device_that_sends_syslog_is_marked(): void
     {
         $router = $this->pingDevice('192.168.1.1');

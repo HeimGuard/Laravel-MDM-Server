@@ -66,7 +66,13 @@
     @endif
 
     @if ($inventory === null && $device->isPingOnly)
-        {{-- No agent: only the findings of the server's own checks (port scans). --}}
+        {{-- No agent: the findings of the server's own checks (port scans) and the events of its syslog. --}}
+        @if ($events->isNotEmpty())
+            <div class="fw-medium mb-2">{{ __('Events') }}</div>
+            <div class="card card-body py-2">
+                @include('partials.device.security-events', ['events' => $events])
+            </div>
+        @endif
     @elseif ($inventory === null)
         <div class="small text-body-secondary">{{ __('No security inventory yet: it needs agent :version or newer.', ['version' => Device::SECURITY_VERSION]) }}</div>
     @else
@@ -97,25 +103,7 @@
                                 </div>
                             @endif
                         @elseif ($key === 'events')
-                            <div class="table-responsive">
-                                <table class="table table-sm align-middle mb-0 small">
-                                    <tbody>
-                                        @forelse ($events as $event)
-                                            <tr x-show="!search || @js(mb_strtolower($event->label.' '.$event->user.' '.$event->source.' '.$event->message)).includes(search.toLowerCase())">
-                                                <td class="text-nowrap text-body-secondary" title="{{ $event->occurred_at }}">{{ $event->occurred_at->diffForHumans() }}</td>
-                                                <td class="fw-medium text-nowrap">{{ $event->label }}</td>
-                                                <td class="text-end">{{ $event->count }}×</td>
-                                                <td class="text-break">{{ $event->user }}</td>
-                                                <td class="d-none d-md-table-cell text-break text-body-secondary">{{ $event->source }}</td>
-                                                <td class="d-none d-lg-table-cell text-break text-body-secondary">{{ $event->message }}</td>
-                                            </tr>
-                                        @empty
-                                            <x-empty-state colspan="6">{{ __('No events.') }}</x-empty-state>
-                                        @endforelse
-                                    </tbody>
-                                </table>
-                            </div>
-                            <a class="small d-inline-block mt-2" href="{{ route('security', ['tab' => 'events']) }}">{{ __('All events') }}</a>
+                            @include('partials.device.security-events', ['events' => $events])
                         @else
                             <div class="table-responsive" style="max-height: 32rem">
                                 <table class="table table-sm align-middle mb-0 small">
