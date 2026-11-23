@@ -170,6 +170,67 @@ export function createNetworkMap(root, data) {
         const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO);
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
+        // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
+        // the port), not in the grid of the network.
+        const plugged = new Map();
+        const pluggedIds = new Set();
+        for (const node of map.nodes) {
+            if (node.plug && nodes.get(node.plug.switch)?.switch && main.has(node.id) && main.get(node.id) === main.get(node.plug.switch)) {
+                plugged.set(node.plug.switch, [...(plugged.get(node.plug.switch) || []), { id: node.id, port: Number(node.plug.port) }]);
+                pluggedIds.add(node.id);
+            }
+        }
+        // The cell of a switch in the grid: its card and the row of its devices under it (room for the links between).
+        const LEVEL = 8;
+        const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 3 ? 'is-fast' : link === 2 ? 'is-slow' : 'is-linkdown');
+        // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
+        // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
+        const portLinks = (id, el, elLeft, elTop, rowLeft) => {
+            const kids = routesOf(id).slice().sort((p, q) => p.port - q.port);
+            const card = nodes.get(id).switch;
+            const top = elTop + el.offsetHeight + gapBelow(id);
+            let left = rowLeft;
+            const routes = kids.map((kid) => {
+                const kidEl = elements.get(kid.id);
+                kidEl.style.left = `${left}px`;
+                kidEl.style.top = `${top}px`;
+                box.set(kid.id, { x: left + kidEl.offsetWidth / 2, top, bottom: top + kidEl.offsetHeight, left, right: left + kidEl.offsetWidth });
+                left += kidEl.offsetWidth + 14;
+                const button = el.querySelector(`.nm-port[data-port="${kid.port}"]`);
+                const port = card.ports.find((p) => p.port === kid.port);
+                const start = button
+                    ? { x: elLeft + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: elTop + el.clientTop + button.offsetTop + button.offsetHeight }
+                    : { x: elLeft + el.offsetWidth / 2, y: elTop + el.offsetHeight };
+
+                return { kid, start, x: box.get(kid.id).x, port, up: nodes.get(kid.id).state === 'up' };
+            });
+            const right = routes.filter((route) => route.x - route.start.x >= 0.5).sort((p, q) => p.start.x - q.start.x || p.kid.port - q.kid.port);
+            const leftGoing = routes.filter((route) => route.start.x - route.x >= 0.5).sort((p, q) => q.start.x - p.start.x || q.kid.port - p.kid.port);
+            const levels = new Map();
+            right.forEach((route, i) => levels.set(route, right.length - 1 - i));
+            leftGoing.forEach((route, i) => levels.set(route, leftGoing.length - 1 - i));
+            const base = elTop + el.offsetHeight + 12;
+            for (const route of routes) {
+                const to = box.get(route.kid.id);
+                const points = levels.has(route)
+                    ? [[route.start.x, route.start.y], [route.start.x, base + LEVEL * levels.get(route)], [route.x, base + LEVEL * levels.get(route)], [route.x, to.top]]
+                    : [[route.start.x, route.start.y], [route.x, to.top]];
+                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" d="${curve(points)}"></path>`);
+            }
+        };
+        const routesOf = (id) => (plugged.get(id) || []);
+        const gapBelow = (id) => 26 + LEVEL * routesOf(id).length;
+        const cellSize = (id) => {
+            const el = elements.get(id);
+            const kids = routesOf(id).map((kid) => elements.get(kid.id));
+            if (kids.length === 0) {
+                return { width: el.offsetWidth, height: el.offsetHeight, rowWidth: 0 };
+            }
+            const rowWidth = kids.reduce((sum, kid) => sum + kid.offsetWidth, 0) + 14 * (kids.length - 1);
+
+            return { width: Math.max(el.offsetWidth, rowWidth), height: el.offsetHeight + gapBelow(id) + Math.max(...kids.map((kid) => kid.offsetHeight)), rowWidth };
+        };
+
         for (const [id, el] of elements) {
             const node = nodes.get(id);
             if (node.kind === 'network' && (members.get(id) || []).length > 0) {
@@ -189,17 +250,22 @@ export function createNetworkMap(root, data) {
         const inGrid = new Set();
         const hidden = new Set();
         const GAP = { x: 14, y: 12 };
-        for (const [network, all] of members) {
+        for (const [network, every] of members) {
             if (!isOpen(network)) {
-                all.forEach((id) => hidden.add(id));
+                every.forEach((id) => hidden.add(id));
                 continue;
             }
-            const first = all.filter((id) => shared.has(id));
-            const rest = all.filter((id) => !shared.has(id));
-            const cols = Math.min(all.length, 6, Math.max(3, Math.round(Math.sqrt(all.length * 1.8))));
+            const all = every.filter((id) => !pluggedIds.has(id));
+            every.filter((id) => pluggedIds.has(id)).forEach((id) => inGrid.add(id));
+            // A switch with devices under it is a row of its own under the grid (on the link of its column); the others fill the grid.
+            const composites = all.filter((id) => routesOf(id).length > 0);
+            const plain = all.filter((id) => !composites.includes(id));
+            const first = plain.filter((id) => shared.has(id));
+            const rest = plain.filter((id) => !shared.has(id));
+            const cols = Math.max(1, Math.min(plain.length || 1, 6, Math.max(3, Math.round(Math.sqrt(plain.length * 1.8)))));
             const lefts = first.filter((id) => sides.get(id) !== 'right');
             const rights = first.filter((id) => sides.get(id) === 'right');
-            const rows = Math.max(Math.ceil(all.length / cols), lefts.length, rights.length);
+            const rows = Math.max(Math.ceil(plain.length / cols), lefts.length, rights.length);
             // Devices of several networks down the outer column on the side of their other network
             // (so its link does not cross the others), the rest row by row.
             const cell = new Map([...lefts.map((id, row) => [id, { row, col: 0 }]), ...rights.map((id, row) => [id, { row, col: cols - 1 }])]);
@@ -212,13 +278,17 @@ export function createNetworkMap(root, data) {
                     }
                 }
             }
+            const plainRows = cell.size ? Math.max(...[...cell.values()].map((c) => c.row)) + 1 : 0;
+            composites.forEach((id, row) => cell.set(id, { row: plainRows + row, col: Math.floor((cols - 1) / 2) }));
             const ids = [...cell.keys()];
-            const usedRows = Math.max(...[...cell.values()].map((c) => c.row)) + 1;
+            const usedRows = plainRows + composites.length;
             const colWidth = Array.from({ length: cols }, (_, c) => Math.max(0, ...ids.filter((id) => cell.get(id).col === c).map((id) => elements.get(id).offsetWidth)));
-            const rowHeight = Array.from({ length: usedRows }, (_, r) => Math.max(0, ...ids.filter((id) => cell.get(id).row === r).map((id) => elements.get(id).offsetHeight)));
-            const width = colWidth.reduce((a, b) => a + b, 0) + GAP.x * (cols - 1);
+            const rowHeight = Array.from({ length: usedRows }, (_, r) => Math.max(0, ...ids.filter((id) => cell.get(id).row === r).map((id) => cellSize(id).height)));
+            const columns = colWidth.reduce((a, b) => a + b, 0) + GAP.x * (cols - 1);
+            // The row of devices under a switch may be wider than the columns: the grid is as wide, its columns in the middle.
+            const width = Math.max(columns, ...composites.map((id) => cellSize(id).rowWidth));
             const height = rowHeight.reduce((a, b) => a + b, 0) + GAP.y * (usedRows - 1);
-            grids.set(network, { id: `grid:${network}`, ids, cell, cols, rows: usedRows, colWidth, rowHeight, width, height });
+            grids.set(network, { id: `grid:${network}`, ids, cell, cols, rows: usedRows, colWidth, rowHeight, width, height, inset: (width - columns) / 2 });
             ids.forEach((id) => inGrid.add(id));
         }
         // The other networks of the devices that are shown in a grid.
@@ -331,15 +401,22 @@ export function createNetworkMap(root, data) {
             const left = x - grid.width / 2;
             const top = y - grid.height / 2;
             gridBox.set(network, { left, top, right: left + grid.width, x });
-            const colLeft = grid.colWidth.map((_, c) => left + grid.colWidth.slice(0, c).reduce((a, b) => a + b + GAP.x, 0));
+            const colLeft = grid.colWidth.map((_, c) => left + grid.inset + grid.colWidth.slice(0, c).reduce((a, b) => a + b + GAP.x, 0));
             const rowTop = grid.rowHeight.map((_, r) => top + grid.rowHeight.slice(0, r).reduce((a, b) => a + b + GAP.y, 0));
             for (const id of grid.ids) {
                 const el = elements.get(id);
                 const { row, col } = grid.cell.get(id);
-                const elTop = rowTop[row] + (grid.rowHeight[row] - el.offsetHeight) / 2;
-                el.style.left = `${colLeft[col]}px`;
+                const size = cellSize(id);
+                // A switch with devices under it: the card in the middle of its column, at the top of its row.
+                const elTop = size.rowWidth ? rowTop[row] : rowTop[row] + (grid.rowHeight[row] - el.offsetHeight) / 2;
+                const elLeft = size.rowWidth ? colLeft[col] + (grid.colWidth[col] - el.offsetWidth) / 2 : colLeft[col];
+                el.style.left = `${elLeft}px`;
                 el.style.top = `${elTop}px`;
-                box.set(id, { x: colLeft[col] + el.offsetWidth / 2, top: elTop, bottom: elTop + el.offsetHeight, left: colLeft[col], right: colLeft[col] + el.offsetWidth });
+                box.set(id, { x: elLeft + el.offsetWidth / 2, top: elTop, bottom: elTop + el.offsetHeight, left: elLeft, right: elLeft + el.offsetWidth });
+                if (size.rowWidth) {
+                    // The row of its devices centered under the card, inside the grid.
+                    portLinks(id, el, elLeft, elTop, Math.min(Math.max(elLeft + el.offsetWidth / 2 - size.rowWidth / 2, left), left + grid.width - size.rowWidth));
+                }
             }
             // One link from the network to the top device of every column, the column goes on behind its cards.
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';

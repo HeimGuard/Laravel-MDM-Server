@@ -181,4 +181,42 @@ class SwitchPortsTest extends TestCase
 
         $this->assertSame([$switch->id, 2], [$printer->fresh()->switch_id, $printer->fresh()->switch_port]);
     }
+
+    public function test_a_device_plugged_into_a_port_without_a_link_gets_an_alert(): void
+    {
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $relay = $this->relay();
+        // The ports 2, 4 and 5 have no link (PAGE).
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        $switch->forceFill(['last_seen_at' => now()])->saveQuietly();
+        SwitchService::assign($switch, 2, [$printer->id]);
+
+        // It still answers: the cable is somewhere else, the port can be removed.
+        $printer->forceFill(['last_seen_at' => now()])->saveQuietly();
+        $alert = collect(\App\Support\SmartAlerts::for($printer->fresh()))->firstWhere('key', 'switch_port');
+        $this->assertSame('unplugPort', $alert['action']['command']);
+        $this->assertStringContainsString('still answers', $alert['message']);
+
+        // It does not: the port is the reason, nothing to do.
+        $printer->forceFill(['last_seen_at' => now()->subHour()])->saveQuietly();
+        $alert = collect(\App\Support\SmartAlerts::for($printer->fresh()))->firstWhere('key', 'switch_port');
+        $this->assertNull($alert['action']);
+        $this->assertStringContainsString('check the cable', $alert['message']);
+
+        // A port with a link: no alert. A switch that does not answer says nothing about its ports.
+        SwitchService::assign($switch, 2, []);
+        SwitchService::assign($switch, 1, [$printer->id]);
+        $this->assertNull(collect(\App\Support\SmartAlerts::for($printer->fresh()))->firstWhere('key', 'switch_port'));
+        SwitchService::assign($switch, 1, []);
+        SwitchService::assign($switch, 2, [$printer->id]);
+        $switch->forceFill(['last_seen_at' => now()->subHour()])->saveQuietly();
+        $this->assertNull(collect(\App\Support\SmartAlerts::for($printer->fresh()))->firstWhere('key', 'switch_port'));
+        $switch->forceFill(['last_seen_at' => now()])->saveQuietly();
+
+        // Remove the port (the action of the alert).
+        $printer->forceFill(['last_seen_at' => now()])->saveQuietly();
+        $this->assertNull(\App\Support\SmartAlerts::run($printer->fresh(), 'switch_port'));
+        $this->assertNull($printer->fresh()->switch_id);
+    }
 }

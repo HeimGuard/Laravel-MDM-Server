@@ -39,10 +39,16 @@
 **A switch** whose ports are read (a ping-only device with a switch set in its Ping settings, see
 [Devices](devices.md#switch-without-snmp-ports-agents-1370)) is a card of its own among the devices of its network: its ports are buttons,
 coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link) with a ring for bad packets, and
-their tooltip names the link and the devices plugged into them. A click on a port opens the devices of the network that have no port yet
+a dropdown on hover shows the link, the bad packets, the packets sent and received and the devices plugged into them. The devices plugged into
+a port hang under the card of the switch in a row of their own (the card in the middle of its column, on the link of the column), each with a
+right-angled link with rounded corners from its port, in the colour of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed
+without a link). A click on a port opens the devices of the network that have no port yet
 (a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand (a switch like the TP-Link
 Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
 `lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.
+The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10
+minutes): *The port it is plugged into has no link* when the device is offline (check the cable and the power) and, when it still answers
+pings, with *Did you move the cable?* and the action **Remove the port** (`unplugPort`).
 
 **This server** is placed in the network the agents reach it from over private addresses. Its
 public address is `MDM_PUBLIC_ADDRESS` when set, else the address another device of that network

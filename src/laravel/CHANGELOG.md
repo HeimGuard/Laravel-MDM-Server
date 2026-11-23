@@ -12,6 +12,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   of the link, with a ring for bad packets. A click on a port opens a multiselect of the devices of the network that have no port yet, to tick the
   ones plugged into it by a cable; their cards get a tag *port N*.
   A port shows a dropdown on hover (link, bad packets, packets sent and received, the devices plugged into it), and the ports are in the legend of the map.
+  The devices plugged into a port hang under the card of the switch, each with a link from its port in the colour of the link.
+- Smart alert *The port it is plugged into has no link* for a device plugged into a port of a switch: when it is offline (check the cable) and
+  when it still answers pings (the cable is probably in another port, with the action *Remove the port*).
 
 ## [1.37.0] - 2026-11-23
 

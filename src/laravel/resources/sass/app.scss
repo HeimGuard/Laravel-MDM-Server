@@ -373,6 +373,8 @@ label.mdm-tag {
     &.is-tunnel.is-down { opacity: .5; }
     // The column of a grid behind its cards; the link of a device to its other network.
     &.is-spine { opacity: .35; }
+    // From a port of a switch to the device plugged into it (the colour is the speed of the link).
+    &.is-port { stroke-width: 2.2; &.is-gig { stroke: var(--hg-ok); } &.is-fast { stroke: var(--hg-info); } &.is-slow { stroke: var(--hg-high); } &.is-linkdown { stroke: var(--hg-offline); stroke-dasharray: 4 4; } }
     &.is-side { stroke-width: 1.6; opacity: .4; &.is-active { stroke-width: 2.6; opacity: 1; } }
 }
 

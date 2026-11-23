@@ -301,4 +301,31 @@ class SwitchService
             ],
         ];
     }
+
+    /** A port reading older than this does not say anything (the switch or its agent is not answering). */
+    private const FRESH_SECONDS = 600;
+
+    /**
+     * The port a device is plugged into (by hand) and its link now, null when it is plugged into none, the switch is gone or not
+     * answering, or the ports were not read lately.
+     *
+     * @return array{switch: Device, port: int, link: int, name: string}|null
+     */
+    public static function plugState(Device $device): ?array
+    {
+        if ($device->switch_id === null || $device->switch_port === null) {
+            return null;
+        }
+        $switch = Device::query()->where('kind', 'ping')->find($device->switch_id);
+        if ($switch === null || $switch->offline || ! self::enabled($switch)) {
+            return null;
+        }
+        $link = ValueDefinition::query()->where('valuable_type', $switch->getMorphClass())->where('valuable_id', $switch->id)
+            ->where('key', 'switch.port.link')->where('name', (string) $device->switch_port)->first();
+        if ($link === null || $link->last_value === null || $link->last_at === null || $link->last_at->lt(now()->subSeconds(self::FRESH_SECONDS))) {
+            return null;
+        }
+
+        return ['switch' => $switch, 'port' => $device->switch_port, 'link' => (int) $link->last_value, 'name' => $switch->displayName];
+    }
 }

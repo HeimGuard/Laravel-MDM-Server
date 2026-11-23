@@ -112,6 +112,30 @@ class SmartAlerts
             ];
         }
 
+        // Plugged into a port of a switch by hand (the network map): a port with no link says the cable is somewhere else (the device
+        // still answers) or is the reason it does not (it does not).
+        $plug = \App\Services\SwitchService::plugState($device);
+        if ($plug !== null && $plug['link'] === 0) {
+            $alerts[] = $device->offline ? [
+                'key' => 'switch_port',
+                'severity' => 'warning',
+                'icon' => 'fas fa-network-wired',
+                'title' => __('The port it is plugged into has no link'),
+                'message' => __(':switch, port :port has no link: check the cable and the power of the device.', ['switch' => $plug['name'], 'port' => $plug['port']]),
+            ] : [
+                'key' => 'switch_port',
+                'severity' => 'info',
+                'icon' => 'fas fa-network-wired',
+                'title' => __('The port it is plugged into has no link'),
+                'message' => __(':switch, port :port has no link, but the device still answers. Did you move the cable?', ['switch' => $plug['name'], 'port' => $plug['port']])
+                    .' '.__('Click the port in the network map to choose the right one.'),
+                'action' => ['command' => 'unplugPort', 'label' => __('Remove the port'), 'icon' => 'fas fa-unlink',
+                    'confirm' => __('Remove the port :device is plugged into?', ['device' => $device->displayName])],
+                // A dismissal is for this port: another one asks again.
+                'revision' => $plug['switch']->id.':'.$plug['port'],
+            ];
+        }
+
         if (empty($device->data)) {
             return self::finish($device, $alerts, $active, $preloaded);
         }
@@ -318,7 +342,7 @@ class SmartAlerts
         foreach ($alerts as &$alert) {
             $alert += ['message' => null, 'details' => [], 'action' => null, 'tab' => null, 'copy' => null, 'failure' => null, 'refusal' => null];
             $alert['active'] = null;
-            if (in_array($alert['action']['command'] ?? null, ['clearAgentErrors', 'adoptMac', 'moveAddress'], true)) {
+            if (in_array($alert['action']['command'] ?? null, ['clearAgentErrors', 'adoptMac', 'moveAddress', 'unplugPort'], true)) {
                 // Not a command for the device: done on the server right away.
                 $alert['action'] += ['params' => [], 'confirm' => null];
             } elseif (($alert['action']['command'] ?? null) === 'remediate') {
@@ -458,6 +482,12 @@ class SmartAlerts
         if ($alert['action']['command'] === 'moveAddress') {
             $device->forceFill(['ping_address' => $alert['action']['params']['ip']])->save();
             LiveUpdates::device($device->id, 'ping');
+
+            return null;
+        }
+        if ($alert['action']['command'] === 'unplugPort') {
+            $device->forceFill(['switch_id' => null, 'switch_port' => null])->save();
+            LiveUpdates::device($device->id, 'settings');
 
             return null;
         }
