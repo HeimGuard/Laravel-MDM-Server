@@ -6,12 +6,15 @@ use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
+use App\Services\AiService;
+use App\Services\ParserGeneratorService;
 use App\Services\SyslogUnparsedService;
 use App\Support\SecurityParsers;
 use App\Support\SecurityScanner;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Livewire\Component;
+use RuntimeException;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
 /**
@@ -32,6 +35,16 @@ class RuleForm extends Component
 
     /** Parsers: a record to try it on, a log line or a record in JSON. */
     public string $sample = '';
+
+    /** A parser for a syslog message nothing reads: the message (a key of the cache or the id of a stored event) the AI writes it for. */
+    public ?string $aiKey = null;
+
+    public ?int $aiId = null;
+
+    /** Waiting for the AI (it is asked right after the form is shown), and what it said when it could not. */
+    public bool $aiPending = false;
+
+    public string $aiError = '';
 
     private const TEMPLATE = [
         'key' => 'custom.example',
@@ -71,6 +84,10 @@ class RuleForm extends Component
             $event = $eventKey !== null ? SyslogUnparsedService::find($eventKey) : SecurityEvent::query()->where('type', 'syslog')->find($eventId);
             abort_if($event === null, 404);
             [$definition, $record] = self::parserFor($event);
+            // The AI writes it (the form shows the pattern of the whole message until it has).
+            $this->aiKey = $eventKey;
+            $this->aiId = $eventKey === null ? $eventId : null;
+            $this->aiPending = AiService::available();
         } elseif ($ruleId) {
             $rule = SecurityRule::query()->findOrFail($ruleId);
             $this->ruleId = $rule->id;
@@ -117,6 +134,39 @@ class RuleForm extends Component
         $record = ['Time' => $event->occurred_at?->toIso8601String() ?? now()->toIso8601String(), 'Host' => (string) $event->source, 'App' => $app, 'Message' => $message];
 
         return [$definition, $record];
+    }
+
+    private function aiEvent(): ?SecurityEvent
+    {
+        return $this->aiKey !== null ? SyslogUnparsedService::find($this->aiKey)
+            : ($this->aiId ? SecurityEvent::query()->where('type', 'syslog')->find($this->aiId) : null);
+    }
+
+    /**
+     * Writes the parser of the message with the AI (it is asked when the form is shown, and again by the button): the pattern that reads
+     * what varies and the event it makes. Not valid or not reading the message: the form keeps what it had and says so.
+     */
+    public function generateParser(): void
+    {
+        Gate::authorize('is-system-admin');
+        $this->aiPending = false;
+        $this->aiError = '';
+        $event = $this->aiEvent();
+        if ($event === null) {
+            $this->aiError = __('The message is gone (it is kept for a day).');
+
+            return;
+        }
+        [$definition, $record] = self::parserFor($event);
+        try {
+            $generated = ParserGeneratorService::generate($record, $definition['key']);
+        } catch (RuntimeException $e) {
+            $this->aiError = $e->getMessage();
+
+            return;
+        }
+        $this->json = json_encode($generated, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $this->sample = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /** @return array{definition: ?array, errors: array<int, string>} */

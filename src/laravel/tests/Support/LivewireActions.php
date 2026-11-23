@@ -189,6 +189,7 @@ final class LivewireActions
                 'remediateWithAi' => $user,     // any signed-in user by design: no roles (writes a script; only a system admin runs it)
             ],
             L\SecurityScan\RuleForm::class => [
+                'generateParser' => $admin,       // the AI of the server writes the parser of a syslog message
                 'save' => $admin,
                 'delete' => $admin,
             ],

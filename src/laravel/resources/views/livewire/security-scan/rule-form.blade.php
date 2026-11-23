@@ -7,6 +7,24 @@
             @if ($readOnly)
                 <x-notice>{{ __('A built-in rule: switch it off in the list, or copy it to change it.') }}</x-notice>
             @endif
+            @if ($aiKey !== null || $aiId !== null)
+                {{-- The parser of a syslog message nothing reads: written by the AI when it is set up. --}}
+                @if ($aiPending)
+                    <div class="small text-body-secondary mb-2" wire:init="generateParser"><span aria-hidden="true" class="spinner-border spinner-border-sm me-1"></span>{{ __('Writing the parser with AI…') }}</div>
+                @endif
+                @if ($aiError !== '')
+                    <x-notice type="warning">{{ $aiError }}</x-notice>
+                @endif
+                @if (! $aiPending && \App\Services\AiService::available())
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <button class="btn btn-sm btn-outline-primary" type="button" wire:click="generateParser" wire:loading.attr="disabled" wire:target="generateParser">
+                            <span aria-hidden="true" class="spinner-border spinner-border-sm me-1" wire:loading wire:target="generateParser"></span>
+                            <i class="fas fa-magic me-1" wire:loading.remove wire:target="generateParser"></i>{{ __('Write the parser with AI') }}
+                        </button>
+                        <span class="small text-body-secondary">{{ __('The text of the message (not the host name) is sent to the AI.') }}</span>
+                    </div>
+                @endif
+            @endif
             {{-- Ace editor (steelants/form) like the remediation scripts; it grows with the text. --}}
             <div x-init="$nextTick(() => $el.querySelector('.ace-editor')?.env?.editor?.setOptions({ minLines: 14, maxLines: 28, showPrintMargin: false, readOnly: @js($readOnly) }))">
                 <x-form::ace id="rule-json" label="{{ $isParser ? __('Parser (JSON)') : __('Rule (JSON)') }}" language="json" theme="tomorrow_night" wire:model.live.debounce.500ms="json" />

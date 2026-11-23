@@ -286,7 +286,11 @@ Source, the same message of the same program is one entry with a count, at most 
 and shown in the same table as the events (Security → Events and the Security tab of the device) as an event of the type `syslog`, so the table shows
 what arrives and a parser can be written for it. It is gone a day after it was seen last. It needs the portal to take logs (Security page). System
 admins have an **Add parser** button on such an event: it opens the parser editor with a parser that matches that whole message
-(`RuleForm::parserFor`), to be changed to read the part that varies.
+(`RuleForm::parserFor`), to be changed to read the part that varies. With the **AI of the server** set up (`MDM_AI_*`, see [Remediation scripts](remediation-scripts.md))
+the editor asks it right after it is shown (`ParserGeneratorService`): it writes a parser that reads the part that varies with named groups and makes an event of
+a known type (`logon`, `failed_logon`, ...) or `syslog_<program>`, and the editor shows it with the result on the message. Only the text of the message, the
+program, the facility and the severity are sent, not the host name. The parser has to be valid and to read the message it was written for, otherwise the editor
+keeps the parser of the whole message and says so; **Write the parser with AI** asks again.
 
 The sender is found by its IP address: it has to be the address of a device (an interface an agent reports, the address of a
 ping device, or the public address of exactly one device). An address that is no device's, or that two devices have (a Docker
