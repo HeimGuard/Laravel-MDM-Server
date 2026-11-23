@@ -48,6 +48,12 @@ in the adapter's *Power Management* and *Advanced* settings), usually only over 
 will not wake, check the card's *Wake on Magic Packet* / *Shutdown Wake-On-Lan* setting, the BIOS
 (ErP / Deep Sleep off) and that it is on a cable. It does not cross VLANs or routers.
 
+A Windows update or a driver update often switches *Wake on Magic Packet* of the card off again: the wake is sent (the relay's command says so) but the PC does not
+come online. Every installation comes with the remediation script **Enable Wake-on-LAN (Windows)** (manual remediation, see
+[Remediation scripts](remediation-scripts.md)): a run detects wired cards whose *Wake on Magic Packet* is off, **Remediate** on the device sets it
+(`Set-NetAdapterPowerManagement`, the driver's `*WakeOnMagicPacket`, `powercfg -deviceenablewake`). Fast Startup is left alone (**Turn off** is a hybrid
+shutdown); the BIOS / UEFI setting is not seen from Windows. The script was not run on a device by the author (no PowerShell in the cloud session).
+
 ## Ping-only devices
 
 A printer, a NAS or a PC without the agent: **Add device** › **Ping only** with a name, the IPv4

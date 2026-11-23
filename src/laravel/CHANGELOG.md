@@ -7,6 +7,11 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Added
+- Remediation script **Enable Wake-on-LAN (Windows)** (every installation starts with it, manual remediation): detects wired network cards whose
+  *Wake on Magic Packet* is off (a Windows or driver update often resets it, the magic packet is sent but the PC does not wake) and **Remediate**
+  switches it on (card power management, the driver keyword, the card may wake the PC). Fast Startup and the BIOS are left alone.
+
 ### Changed
 - The card of the ports of a switch: after the number of a port the devices plugged into it are badges that link to them.
 - Network map: a network that has a switch whose ports are read is open at first, and the links from the ports to the devices are animated by the
