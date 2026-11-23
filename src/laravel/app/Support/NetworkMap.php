@@ -293,6 +293,8 @@ class NetworkMap
         $relays = $pings->whereNotNull('ping_relay_id')->countBy('ping_relay_id');
 
         // Networks and their gateways (one node per gateway MAC, or IP: a router of several networks).
+        // The gateway nodes that are a device of the portal: device id => node ids.
+        $gatewayNodes = [];
         foreach ($this->networks as $key => $network) {
             $members = collect($network['members']);
             $online = $members->filter(fn ($member, $id) => $member['connected'] && ! $byId[$id]->offline)->count();
@@ -332,6 +334,10 @@ class NetworkMap
             // A device of the portal with that address is the gateway (a router added as ping-only).
             $known = $byId->first(fn (Device $device) => isset($network['members'][$device->id]) && $network['members'][$device->id]['address'] === $gateway);
             $this->networks[$key]['gatewayName'] = $known?->displayName;
+            // The router is one device: the gateway node stands for it, it is not drawn a second time among the devices.
+            if ($known !== null) {
+                $gatewayNodes[$known->id][$id] = true;
+            }
             if (isset($this->nodes[$id])) {
                 $this->nodes[$id]['sub'] = $this->nodes[$id]['sub'].' · '.$gateway;
             } else {
@@ -347,6 +353,9 @@ class NetworkMap
         $plugged = $devices->filter(fn (Device $device) => $device->switch_id !== null)->groupBy('switch_id');
         // Devices, linked to each of their networks.
         foreach ($devices as $device) {
+            if (isset($gatewayNodes[$device->id])) {
+                continue;
+            }
             $memberOf = collect($this->networks)->filter(fn ($network) => isset($network['members'][$device->id]));
             if ($memberOf->isEmpty() && ! isset($siteOf[$device->id])) {
                 continue;
@@ -393,6 +402,20 @@ class NetworkMap
             }
             if ($memberOf->isEmpty()) {
                 $this->edge('site:'.$siteOf[$device->id], 'device:'.$device->id, 'uplink', ! $device->offline);
+            }
+        }
+
+        // A gateway that is a device of the portal: where it is plugged in (the tag and the tooltip of its card).
+        foreach ($gatewayNodes as $deviceId => $nodeIds) {
+            $device = $byId->get($deviceId);
+            $into = $device?->switch_id !== null ? $byId->get($device->switch_id) : null;
+            if ($into === null || $device->switch_port === null) {
+                continue;
+            }
+            foreach (array_keys($nodeIds) as $nodeId) {
+                $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
+                $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
+                $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
             }
         }
 

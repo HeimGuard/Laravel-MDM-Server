@@ -219,4 +219,29 @@ class SwitchPortsTest extends TestCase
         $this->assertNull(\App\Support\SmartAlerts::run($printer->fresh(), 'switch_port'));
         $this->assertNull($printer->fresh()->switch_id);
     }
+
+    public function test_a_router_that_is_the_gateway_is_one_node_with_its_port(): void
+    {
+        $switch = $this->switchDevice();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        // The router is added as a ping-only device at the address its LAN reports as the gateway (the agent's interface).
+        $data = json_decode(json_encode($relay->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $relay->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $router = new Device;
+        $router->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24])->save();
+        SwitchService::assign($switch, 3, [$router->id]);
+
+        $map = \App\Support\NetworkMap::build();
+        $nodes = collect($map['nodes'])->keyBy('id');
+
+        // One node for the router, the gateway, with its port: not a second one among the devices.
+        $this->assertFalse($nodes->has('device:'.$router->id));
+        $gateway = $nodes->first(fn (array $node) => $node['kind'] === 'gateway');
+        $this->assertSame('Turris', $gateway['label']);
+        $this->assertContains('port 3', $gateway['badges']);
+        $this->assertStringContainsString('Plugged into', (string) $gateway['title']);
+    }
 }

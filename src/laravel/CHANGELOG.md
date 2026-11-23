@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- Network map: a router that is the gateway of a network and also a device of the portal (a ping-only router) is one node, the gateway, not
+  also a card among the devices. Plugged into a port of a switch, it has the tag *port N* and the tooltip on the gateway.
+
 ### Added
 - Network map: the card of a switch whose ports are read (TP-Link Easy Smart, Ping settings) shows its ports as buttons coloured by the speed
   of the link, with a ring for bad packets. A click on a port opens a multiselect of the devices of the network that have no port yet, to tick the
