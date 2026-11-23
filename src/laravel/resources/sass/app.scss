@@ -319,6 +319,9 @@ label.mdm-tag {
     }
 }
 
+// The movement of the links of the ports (the dashes are 12 long with the gap).
+@keyframes nm-flow { to { stroke-dashoffset: -12; } }
+
 // The dropdown of a port (on hover).
 .nm-port-tip {
     position: absolute; z-index: 5; width: 15rem; padding: .6rem .75rem; cursor: default;
@@ -374,7 +377,18 @@ label.mdm-tag {
     // The column of a grid behind its cards; the link of a device to its other network.
     &.is-spine { opacity: .35; }
     // From a port of a switch to the device plugged into it (the colour is the speed of the link).
-    &.is-port { stroke-width: 2.2; &.is-gig { stroke: var(--hg-ok); } &.is-fast { stroke: var(--hg-info); } &.is-slow { stroke: var(--hg-high); } &.is-linkdown { stroke: var(--hg-offline); stroke-dasharray: 4 4; } }
+    // The dashes run from the port to the device, the faster the faster the link (1000 Mb/s, 100 Mb/s, 10 Mb/s); none without a link or
+    // for a device that is offline.
+    &.is-port {
+        stroke-width: 2.2; stroke-dasharray: 5 7; stroke-linecap: round;
+        animation: nm-flow var(--nm-flow, 1.4s) linear infinite;
+        &.is-gig { stroke: var(--hg-ok); --nm-flow: .6s; }
+        &.is-fast { stroke: var(--hg-info); --nm-flow: 1.8s; }
+        &.is-slow { stroke: var(--hg-high); --nm-flow: 5s; }
+        &.is-linkdown { stroke: var(--hg-offline); stroke-dasharray: 4 4; animation: none; }
+        &.is-down { animation: none; }
+        @media (prefers-reduced-motion: reduce) { animation: none; stroke-dasharray: none; }
+    }
     &.is-side { stroke-width: 1.6; opacity: .4; &.is-active { stroke-width: 2.6; opacity: 1; } }
 }
 

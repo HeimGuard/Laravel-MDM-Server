@@ -167,7 +167,9 @@ export function createNetworkMap(root, data) {
                 members.set(main.get(node.id), [...(members.get(main.get(node.id)) || []), node.id]);
             }
         }
-        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO);
+        // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
+        const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
+        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from

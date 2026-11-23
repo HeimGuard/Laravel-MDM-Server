@@ -42,7 +42,8 @@ coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/
 a dropdown on hover shows the link, the bad packets, the packets sent and received and the devices plugged into them. The devices plugged into
 a port hang under the card of the switch in a row of their own (the card in the middle of its column, on the link of the column), each with a
 right-angled link with rounded corners from its port, in the colour of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed
-without a link). A click on a port opens the devices of the network that have no port yet
+without a link); the dashes of the link run from the port to the device, the faster the faster the link (1000, 100, 10 Mb/s; none without a
+link, for an offline device or with reduced motion set). A network with such a switch is open at first. A click on a port opens the devices of the network that have no port yet
 (a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand (a switch like the TP-Link
 Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
 `lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.

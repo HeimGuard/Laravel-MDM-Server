@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Network map: a network that has a switch whose ports are read is open at first, and the links from the ports to the devices are animated by the
+  speed of the link (the dashes run from the port to the device: 1000 Mb/s fast, 100 Mb/s slower, 10 Mb/s slowest; none without a link).
+
 ### Fixed
 - Network map: the dropdown of a port of a switch stays while the pointer moves onto it (it vanished at once), the devices in it are links and
   it has a button for the devices on the port.
