@@ -104,6 +104,10 @@ final class LivewireActions
             L\Networks\Show::class => [
                 'ignoreAll' => $user,
             ],
+            L\Networks\SwitchPort::class => [
+                // The devices plugged into a port of a switch: like the ping settings, any signed-in user.
+                'save' => $user,
+            ],
             L\Notifications\Page::class => [
                 // The rules and channels of the signed-in user themselves.
                 'addUrl' => $ui,
