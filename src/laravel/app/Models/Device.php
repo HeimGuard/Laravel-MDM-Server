@@ -2,24 +2,29 @@
 
 namespace App\Models;
 
-use App\Support\AgentScript;
-use App\Support\DeviceUsage;
-use App\Support\PingUsage;
-use App\Services\ReportInventoryService;
-use App\Support\ValueRecorder;
-use Carbon\CarbonInterval;
+use App\Events\DeviceCommandIssued;
 use App\Models\Concerns\HasDeviceSettings;
 use App\Models\Concerns\HasInventory;
 use App\Models\Concerns\HasValue;
+use App\Services\ReportInventoryService;
+use App\Support\AgentScript;
+use App\Support\Audit;
+use App\Support\DeviceUsage;
+use App\Support\LiveUpdates;
+use App\Support\MacVendor;
+use App\Support\NetworkMap;
+use App\Support\PingUsage;
+use App\Support\ValueRecorder;
+use Carbon\CarbonInterval;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-
 
 class Device extends Model
 {
@@ -149,7 +154,7 @@ class Device extends Model
             DeviceUsage::record($id, $metrics);
         }
         if ($updated && is_array($state) && (isset($state['services']) || isset($state['containers']))) {
-            \App\Services\ReportInventoryService::applyLiveStates($id, $state);
+            ReportInventoryService::applyLiveStates($id, $state);
         }
         // The battery of a laptop (the state the agent sends with the heartbeat).
         if ($updated && is_array($state) && is_int($state['power']['battery'] ?? null)) {
@@ -157,7 +162,7 @@ class Device extends Model
         }
         // Inside Reverb the listener announces it itself (see LiveUpdates::fromReverb).
         if ($updated && $announce) {
-            \App\Support\LiveUpdates::device($id, 'heartbeat');
+            LiveUpdates::device($id, 'heartbeat');
         }
     }
 
@@ -169,7 +174,7 @@ class Device extends Model
     {
         $ids = static::query()->whereBetween('last_seen_at', [now()->subSeconds(self::HEARTBEAT_TIMEOUT + 60), now()->subSeconds(self::HEARTBEAT_TIMEOUT)])->pluck('id');
         foreach ($ids as $id) {
-            \App\Support\LiveUpdates::device($id, 'offline');
+            LiveUpdates::device($id, 'offline');
         }
 
         return $ids->count();
@@ -447,10 +452,10 @@ class Device extends Model
             return null;
         }
         // Every command is in the audit log, the History tab of the device is read from it.
-        \App\Support\Audit::command($issued, user: $user);
+        Audit::command($issued, user: $user);
 
         // Instant delivery over WebSocket; the command stays queued for the HTTP report as a fallback.
-        rescue(fn () => \App\Events\DeviceCommandIssued::dispatch($this, $command));
+        rescue(fn () => DeviceCommandIssued::dispatch($this, $command));
         DeviceCommand::announce($this->id, $target);
 
         return $issued;
@@ -689,7 +694,7 @@ class Device extends Model
                 continue;
             }
             foreach ($interface['Addresses'] as $address) {
-                $cidr = \App\Support\NetworkMap::cidr($address['Address'], $address['PrefixLength']);
+                $cidr = NetworkMap::cidr($address['Address'], $address['PrefixLength']);
                 if ($cidr !== null && $address['PrefixLength'] >= DeviceCommand::MIN_SCAN_PREFIX && $address['PrefixLength'] <= 30) {
                     $networks[] = $cidr;
                 }
@@ -713,7 +718,7 @@ class Device extends Model
             ->where('last_seen_at', '>=', now()->subHours(NetworkNeighbour::SHOWN_HOURS))
             ->orderByDesc('last_seen_at')->first();
 
-        return $neighbour === null ? null : ['mac' => $neighbour->mac, 'vendor' => \App\Support\MacVendor::lookup($neighbour->mac)];
+        return $neighbour === null ? null : ['mac' => $neighbour->mac, 'vendor' => MacVendor::lookup($neighbour->mac)];
     }
 
     /**
@@ -728,7 +733,7 @@ class Device extends Model
         }
         $neighbour = NetworkNeighbour::query()->where('mac', NetworkNeighbour::normalizeMac($this->ping_mac))->where('ip', '!=', $this->ping_address)
             ->where('last_seen_at', '>=', now()->subHours(NetworkNeighbour::SHOWN_HOURS))->orderByDesc('last_seen_at')->get()
-            ->first(fn (NetworkNeighbour $neighbour) => \App\Support\NetworkMap::contains($neighbour->network, $this->ping_address));
+            ->first(fn (NetworkNeighbour $neighbour) => NetworkMap::contains($neighbour->network, $this->ping_address));
 
         return $neighbour === null ? null : ['ip' => $neighbour->ip, 'seen' => $neighbour->last_seen_at];
     }
@@ -796,7 +801,7 @@ class Device extends Model
         foreach ($agents as $agent) {
             if ($agent->id !== $excludeId
                 && $agent->commandRefusal('scanPorts', ['ip' => $address]) === null
-                && collect($agent->scannableNetworks)->contains(fn ($cidr) => \App\Support\NetworkMap::contains($cidr, $address))) {
+                && collect($agent->scannableNetworks)->contains(fn ($cidr) => NetworkMap::contains($cidr, $address))) {
                 return $agent;
             }
         }
@@ -925,13 +930,13 @@ class Device extends Model
 
     public function getDrivesAttribute($value)
     {
-        if ([] === $this->data) {
+        if ($this->data === []) {
             return [];
         }
 
         $drives = self::listOf(json_decode(json_encode($this->data->machine ?? []), true)['Drives'] ?? []);
-        foreach ( $drives  as $key => $drive) {
-            $drive = (array)$drive;
+        foreach ($drives as $key => $drive) {
+            $drive = (array) $drive;
             if (($drive['Size'] ?? 0) <= 0) {
                 continue;
             }
@@ -965,6 +970,7 @@ class Device extends Model
             // The two largest units ("1 day 16 hours", "5 minutes 3 seconds"), the full one is the title.
             return CarbonInterval::seconds($this->data->machine->uptime)->cascade()->forHumans(['parts' => 2]);
         }
+
         return false;
     }
 
@@ -1001,6 +1007,7 @@ class Device extends Model
         if (isset($this->data->machine->last_logon_user)) {
             return $this->data->machine->last_logon_user;
         }
+
         return false;
     }
 
@@ -1009,6 +1016,7 @@ class Device extends Model
         if (isset($this->data->packages_updates)) {
             return (array) self::stdToArray($this->data->packages_updates);
         }
+
         return [];
     }
 
@@ -1538,7 +1546,7 @@ class Device extends Model
     }
 
     /** The values of the last ping (the relation is read with the device): ping.up, ping.rtt and ping.relay_id. */
-    public function pingValues(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    public function pingValues(): MorphMany
     {
         return $this->valueDefinitions()->whereIn('key', PingUsage::KEYS);
     }
@@ -1715,7 +1723,7 @@ class Device extends Model
             }
             // Answered or not, the response time and the agent that pinged are measured values of the device.
             PingUsage::record($id, $up, $rtt, null, $relay->id);
-            \App\Support\LiveUpdates::device($id, 'ping');
+            LiveUpdates::device($id, 'ping');
             $taken++;
         }
 
@@ -1770,7 +1778,7 @@ class Device extends Model
             }
         }
         foreach (array_keys($touched) as $id) {
-            \App\Support\LiveUpdates::device($id, 'ping');
+            LiveUpdates::device($id, 'ping');
         }
 
         return $taken;
@@ -2073,10 +2081,12 @@ class Device extends Model
         return array_is_list($value) ? array_values(array_filter($value, 'is_array')) : [$value];
     }
 
-    private static function  stdToArray($stdObject){
-        if (is_object($stdObject)){
+    private static function stdToArray($stdObject)
+    {
+        if (is_object($stdObject)) {
             return [json_decode(json_encode($stdObject), true)];
         }
+
         return json_decode(json_encode($stdObject), true);
     }
 }

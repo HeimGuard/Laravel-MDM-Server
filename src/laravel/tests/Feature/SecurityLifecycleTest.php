@@ -7,6 +7,7 @@ use App\Models\SecurityFinding;
 use App\Models\SecurityRule;
 use App\Support\SecurityScanner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
 use Tests\Concerns\SignsDeviceRequests;
@@ -77,7 +78,7 @@ class SecurityLifecycleTest extends TestCase
         return $this->rule(['key' => 'org.cve-libsoup', 'severity' => $severity, 'when' => $select, 'select' => $select, 'cves' => [...$cves, ...$extra], 'message' => 'x']);
     }
 
-    private function open(): \Illuminate\Support\Collection
+    private function open(): Collection
     {
         return SecurityFinding::query()->open()->get();
     }

@@ -18,7 +18,7 @@ return new class extends Migration
         $widgetId = DB::table('dashboard_widgets')->insertGetId([
             'dashboard_id' => $dashboard->id,
             'type' => class_basename(SmartAlerts::class),
-            'config' => json_encode((new SmartAlerts())->default()),
+            'config' => json_encode((new SmartAlerts)->default()),
             'created_at' => $now,
             'updated_at' => $now,
         ]);

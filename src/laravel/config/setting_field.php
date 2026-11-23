@@ -6,24 +6,24 @@ return [
     'main' => [ // Slug
         'general' => [ // Section 1
             'default' => [
-                'type'  => SettingDataType::INT,
+                'type' => SettingDataType::INT,
                 'rules' => 'required',
-                'help'  => 'Help',
+                'help' => 'Help',
             ],
             'security_ack_days' => [
-                'type'  => SettingDataType::INT,
+                'type' => SettingDataType::INT,
                 'rules' => 'nullable|integer|min:0|max:3650',
-                'help'  => 'Security: days after which an acknowledged finding is open again (0 or empty: never).',
+                'help' => 'Security: days after which an acknowledged finding is open again (0 or empty: never).',
             ],
             'security_stale_days' => [
-                'type'  => SettingDataType::INT,
+                'type' => SettingDataType::INT,
                 'rules' => 'nullable|integer|min:0|max:3650',
-                'help'  => 'Security: days without a report after which the findings of a device are stale (default 14, 0: never).',
+                'help' => 'Security: days without a report after which the findings of a device are stale (default 14, 0: never).',
             ],
             'history_days' => [
-                'type'  => SettingDataType::INT,
+                'type' => SettingDataType::INT,
                 'rules' => 'nullable|integer|min:1|max:3650',
-                'help'  => 'Days the history of measured values (CPU, memory, disks, ping) is kept (default 30).',
+                'help' => 'Days the history of measured values (CPU, memory, disks, ping) is kept (default 30).',
             ],
         ],
     ],

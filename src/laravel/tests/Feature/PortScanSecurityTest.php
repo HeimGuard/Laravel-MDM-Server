@@ -10,6 +10,7 @@ use App\Models\SecurityFinding;
 use App\Models\User;
 use App\Support\AlertEvaluator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
@@ -47,7 +48,7 @@ class PortScanSecurityTest extends TestCase
         return $device->fresh();
     }
 
-    private function sendResult(array $ports, string $ip = '192.168.1.50'): \Illuminate\Testing\TestResponse
+    private function sendResult(array $ports, string $ip = '192.168.1.50'): TestResponse
     {
         return $this->signedJson('POST', '/api/device/port-scan', ['ip' => $ip, 'ports' => $ports],
             'secret-token', ['server' => ['REMOTE_ADDR' => '31.30.4.122']]);

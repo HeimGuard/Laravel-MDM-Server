@@ -65,6 +65,7 @@ class DeviceUsage
     public static function definitions(int $deviceId, ?array $keys = null): array
     {
         $keys ??= array_keys(self::KEYS);
+
         return ValueDefinition::query()->where('valuable_type', (new Device)->getMorphClass())->where('valuable_id', $deviceId)
             ->where('name', '')->whereIn('key', $keys)->get()->keyBy('key')->all();
     }

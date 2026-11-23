@@ -9,12 +9,12 @@ use App\Livewire\SecurityScan\Page;
 use App\Livewire\SecurityScan\RuleForm;
 use App\Models\AlertRule;
 use App\Models\Device;
+use App\Models\InventoryDefinition;
 use App\Models\NotificationSetting;
 use App\Models\Script;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
-use App\Models\InventoryDefinition;
 use App\Models\SecurityRule;
 use App\Models\User;
 use App\Support\AlertEvaluator;
@@ -27,6 +27,7 @@ use App\Support\SecurityStateMismatch;
 use App\Support\SmartAlerts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -671,7 +672,7 @@ class SecurityScannerTest extends TestCase
             ->assertJsonPath('error', 'not a JSON object, or more than 16 MB unpacked');
         // Not gzip although it says so.
         $this->signedJson('POST', '/api/device/security', [], 'a', ['raw' => $body, 'server' => ['HTTP_CONTENT_ENCODING' => 'gzip']])->assertStatus(422);
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('jobs')->count());
+        $this->assertSame(0, DB::table('jobs')->count());
     }
 
     public function test_parsers_read_the_logs_of_docker_containers(): void

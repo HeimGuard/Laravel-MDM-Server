@@ -4,6 +4,8 @@ namespace App\Livewire;
 
 use App\Models\Device;
 use App\Models\DeviceCommand;
+use App\Support\Audit;
+use App\Support\LiveUpdates;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -67,7 +69,7 @@ class DeviceCommands extends Component
         }
     }
 
-        /** Wake-on-LAN: another agent in the same network sends the magic packet. */
+    /** Wake-on-LAN: another agent in the same network sends the magic packet. */
     public function wake()
     {
         $device = Device::find($this->selectedDeviceId);
@@ -102,17 +104,17 @@ class DeviceCommands extends Component
             'finished_at' => now(),
             'message' => $command->status === 'queued' ? __('Cancelled by :user', ['user' => $user]) : __('Given up by :user', ['user' => $user]),
         ]);
-        \App\Support\Audit::command($command, 'cancel', auth()->user());
+        Audit::command($command, 'cancel', auth()->user());
         DeviceCommand::announce($command->device_id, $command->target);
     }
 
     public function deleteDevice()
     {
         if ($device = Device::find($this->selectedDeviceId)) {
-            \App\Support\Audit::device($device, 'delete', __('Deleted device :device', ['device' => $device->displayName]));
+            Audit::device($device, 'delete', __('Deleted device :device', ['device' => $device->displayName]));
             $device->delete();
         }
-        \App\Support\LiveUpdates::device((int) $this->selectedDeviceId, 'deleted');
+        LiveUpdates::device((int) $this->selectedDeviceId, 'deleted');
 
         $this->dispatch('device-deleted');
     }

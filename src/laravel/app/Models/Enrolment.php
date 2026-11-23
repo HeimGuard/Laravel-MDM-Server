@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class Enrolment extends Model
 {
     public $timestamps = false;
+
     use HasFactory;
 
     /** Characters of a code: no 0/O, 1/I/L (read from a screen, typed into a command line). */

@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\NetworkSite;
 use App\Models\User;
 use App\Support\NetworkMap;
+use App\Support\PingUsage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -52,7 +53,7 @@ class NetworkMapTest extends TestCase
         $vps = $this->agent('VPS', '185.12.4.9', [$this->nic('eth0', 'lan', '185.12.4.9')], online: false);
         $printer = new Device;
         $printer->forceFill(['kind' => 'ping', 'name' => 'Printer', 'os' => '', 'token' => hash('sha256', 'p'), 'ping_address' => '192.168.1.30', 'ping_prefix' => 24, 'last_seen_at' => now()])->save();
-        \App\Support\PingUsage::record($printer->id, true, null, null, $nas->id);
+        PingUsage::record($printer->id, true, null, null, $nas->id);
 
         $map = NetworkMap::build();
         $nodes = collect($map['nodes'])->keyBy('id');
@@ -251,7 +252,7 @@ class NetworkMapTest extends TestCase
         $this->get('/networks')->assertOk()->assertSeeHtml('class="network-map"')->assertDontSee('192.168.1.0/24</a>', false);
         $this->get('/networks?view=list')->assertOk()->assertSee('192.168.1.0/24')->assertSee('192.168.1.1')->assertDontSeeHtml('class="network-map"');
         $this->get('/networks?view=internet')->assertOk()->assertSee('31.30.4.122');
-        $anchor = \App\Support\NetworkMap::build()['networks'][0]['anchor'];
+        $anchor = NetworkMap::build()['networks'][0]['anchor'];
         $this->get('/networks/'.$anchor)->assertOk()->assertSee('192.168.1.5')->assertSee('NAS');
         $this->get('/networks/network-nonsense')->assertNotFound();
         Livewire::test(Page::class)->set('view', 'nonsense')->assertSet('view', 'map');

@@ -40,6 +40,19 @@
         }
     },
     "scripts": {
+        "check-static": [
+            "phpstan analyse app --level=0 --memory-limit=2g",
+            "phpstan analyse modules --level=0 --memory-limit=2g",
+            "phpstan analyse routes --level=0 --memory-limit=2g"
+        ],
+        "format": [
+            "pint",
+            "@php scripts/blade-imports.php"
+        ],
+        "lint": [
+            "pint --test",
+            "@php scripts/blade-imports.php --test"
+        ],
         "test": [
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"

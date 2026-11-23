@@ -6,6 +6,7 @@ use App\Livewire\ShowDevices;
 use App\Models\User;
 use App\Support\Bytes;
 use App\Support\InstallCommands;
+use App\Support\Signing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -21,7 +22,7 @@ class AgentInstallTest extends TestCase
         $this->assertStringContainsString('text/plain', $response->headers->get('Content-Type'));
         $this->assertStringContainsString('function Start-Agent', $response->getContent());
         // The server key is filled in, so the agent pins it without another request.
-        $key = \App\Support\Signing::publicKey();
+        $key = Signing::publicKey();
         $this->assertStringContainsString("\$EmbeddedServerKey = '{$key['n']}:{$key['e']}'", $response->getContent());
     }
 
@@ -31,9 +32,9 @@ class AgentInstallTest extends TestCase
         $signature = $this->get('/agent/app.ps1.sig')->assertOk()->getContent();
         $key = $this->getJson('/agent/signing-key')->assertOk()->json();
 
-        $this->assertSame(\App\Support\Signing::fingerprint(['n' => $key['n'], 'e' => $key['e']]), $key['fingerprint']);
-        $this->assertTrue(\App\Support\Signing::verify($key, 'MDM1-AGENT', hash('sha256', $script), $signature));
-        $this->assertFalse(\App\Support\Signing::verify($key, 'MDM1-AGENT', hash('sha256', $script.' '), $signature));
+        $this->assertSame(Signing::fingerprint(['n' => $key['n'], 'e' => $key['e']]), $key['fingerprint']);
+        $this->assertTrue(Signing::verify($key, 'MDM1-AGENT', hash('sha256', $script), $signature));
+        $this->assertFalse(Signing::verify($key, 'MDM1-AGENT', hash('sha256', $script.' '), $signature));
     }
 
     public function test_install_commands_download_from_this_server(): void
@@ -43,7 +44,7 @@ class AgentInstallTest extends TestCase
         $this->assertSame(['windows', 'pwsh'], array_keys($commands));
         foreach ($commands as $command) {
             $this->assertStringContainsString("'".url('agent/app.ps1')."'", $command);
-            $this->assertStringContainsString("-ServerUrl '".url('/')."' -EnrolmentCode 1234 -Install -ServerKeyFingerprint '".\App\Support\Signing::fingerprint()."' }", $command);
+            $this->assertStringContainsString("-ServerUrl '".url('/')."' -EnrolmentCode 1234 -Install -ServerKeyFingerprint '".Signing::fingerprint()."' }", $command);
         }
         $this->assertStringStartsWith('iwr -useb ', $commands['windows']);
         $this->assertStringContainsString('"$env:TEMP\\heimguard-agent-$(Get-Random).ps1"', $commands['windows']);

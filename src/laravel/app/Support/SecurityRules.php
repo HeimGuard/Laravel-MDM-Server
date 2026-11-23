@@ -237,7 +237,7 @@ class SecurityRules
         if (isset($rule['enabled']) && ! is_bool($rule['enabled'])) {
             $errors[] = __('enabled: true or false.');
         }
-        if (isset($rule['threshold']) &&(! is_int($rule['threshold']) || $rule['threshold'] < 1 || $rule['threshold'] > 10000)) {
+        if (isset($rule['threshold']) && (! is_int($rule['threshold']) || $rule['threshold'] < 1 || $rule['threshold'] > 10000)) {
             $errors[] = __('threshold: a whole number from 1 to 10000.');
         }
         if (isset($rule['urls']) && self::urlList($rule['urls']) === null) {

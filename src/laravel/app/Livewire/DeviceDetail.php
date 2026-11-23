@@ -3,6 +3,9 @@
 namespace App\Livewire;
 
 use App\Models\Device;
+use App\Services\InventoryTimelineService;
+use App\Support\Audit;
+use App\Support\LiveUpdates;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
@@ -16,12 +19,12 @@ class DeviceDetail extends Component
     #[Url(except: 'overview')]
     public string $tab = 'overview';
 
-    /* Edit Mode*/
+    /* Edit Mode */
     public $editMode = false;
-    public $friendlyName = "";
+
+    public $friendlyName = '';
 
     public bool $editTags = false;
-
 
     public string $tagsText = '';
 
@@ -32,10 +35,10 @@ class DeviceDetail extends Component
         $device->friendly_name = $this->friendlyName;
         $device->save();
         if ($device->displayName !== $before) {
-            \App\Support\Audit::device($device, 'rename', __('Renamed :from to :to', ['from' => $before, 'to' => $device->displayName]), ['from' => $before, 'to' => $device->displayName]);
+            Audit::device($device, 'rename', __('Renamed :from to :to', ['from' => $before, 'to' => $device->displayName]), ['from' => $before, 'to' => $device->displayName]);
         }
         $this->editMode = false;
-        \App\Support\LiveUpdates::device($device->id, 'settings');
+        LiveUpdates::device($device->id, 'settings');
     }
 
     public function mount()
@@ -69,10 +72,10 @@ class DeviceDetail extends Component
         $device->tags = $tags === [] ? null : $tags;
         $device->save();
         if ($device->tagList !== $before) {
-            \App\Support\Audit::device($device, 'tags', __('Tags: :tags', ['tags' => implode(', ', $device->tagList) ?: '—']), ['from' => $before, 'to' => $device->tagList]);
+            Audit::device($device, 'tags', __('Tags: :tags', ['tags' => implode(', ', $device->tagList) ?: '—']), ['from' => $before, 'to' => $device->tagList]);
         }
         $this->editTags = false;
-        \App\Support\LiveUpdates::device($device->id, 'settings');
+        LiveUpdates::device($device->id, 'settings');
         // The device list shows the tags and filters by them.
         $this->dispatch('device-tags-changed');
     }
@@ -117,7 +120,7 @@ class DeviceDetail extends Component
 
         Device::query()->whereKey($this->selectedDeviceId)->update(['public_key' => null, 'key_registered_at' => null]);
         if ($device = Device::find($this->selectedDeviceId)) {
-            \App\Support\Audit::device($device, 'reset-key', __('Device key reset'));
+            Audit::device($device, 'reset-key', __('Device key reset'));
         }
     }
 
@@ -133,10 +136,10 @@ class DeviceDetail extends Component
             'selectedDevice' => $device,
             'activeCommands' => $device->activeCommands(),
             // The state of each container hour by hour for the last 12 hours (the bar in the table of the containers).
-            'containerBeats' => $device->docker !== null ? \App\Services\InventoryTimelineService::beats($device, 'container') : [],
+            'containerBeats' => $device->docker !== null ? InventoryTimelineService::beats($device, 'container') : [],
             // The audit log of the device: its commands (and the wakes / pings other agents did for
             // it), the scans of its ports by another agent, and what was changed on it.
-            'history' => \App\Support\Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])),
+            'history' => Audit::history($device, array_filter([($address = $device->portScanAddress()) ? 'ports:'.$address : null])),
         ]);
     }
 }

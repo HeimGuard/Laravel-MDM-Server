@@ -3,6 +3,9 @@
 namespace App\Livewire;
 
 use App\Models\Device;
+use App\Support\Audit;
+use App\Support\LiveUpdates;
+use App\Support\PingUsage;
 use Livewire\Component;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
@@ -74,13 +77,13 @@ class PingSettings extends Component
         $changes = array_intersect_key($device->getDirty(), array_flip(['ping_address', 'ping_prefix', 'ping_mac', 'ping_via_id']));
         $device->save();
         if ($addressChanged) {
-            \App\Support\PingUsage::forgetCurrent($device->id);
+            PingUsage::forgetCurrent($device->id);
         }
         if ($changes !== [] || $switchChanged) {
             // The password is never in the audit.
-            \App\Support\Audit::device($device, 'settings', __('Ping settings changed'), ['changes' => $changes]);
+            Audit::device($device, 'settings', __('Ping settings changed'), ['changes' => $changes]);
         }
-        \App\Support\LiveUpdates::device($device->id, 'settings');
+        LiveUpdates::device($device->id, 'settings');
 
         $this->dispatch('ping-settings-saved');
         $this->dispatch('closeModal');

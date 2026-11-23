@@ -2,6 +2,11 @@
 
 namespace App\Models;
 
+use App\Support\LiveUpdates;
+use App\Support\NetworkMap;
+use App\Support\WingetCodes;
+use Carbon\CarbonInterface;
+use Carbon\CarbonInterval;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
@@ -136,7 +141,7 @@ class DeviceCommand extends Model
             // A network of the agent's own interfaces (it checks that too), not larger than a /22.
             $cidr = $params['cidr'] ?? null;
             if (! is_string($cidr) || ! preg_match('#^(\d{1,3}(?:\.\d{1,3}){3})/(\d{1,2})$#', $cidr, $matches)
-                || (int) $matches[2] < self::MIN_SCAN_PREFIX || (int) $matches[2] > 30 || \App\Support\NetworkMap::cidr($matches[1], (int) $matches[2]) !== $cidr) {
+                || (int) $matches[2] < self::MIN_SCAN_PREFIX || (int) $matches[2] > 30 || NetworkMap::cidr($matches[1], (int) $matches[2]) !== $cidr) {
                 return null;
             }
 
@@ -303,7 +308,7 @@ class DeviceCommand extends Model
             }
         }
         foreach (array_unique($ids) as $id) {
-            \App\Support\LiveUpdates::device($id, 'command');
+            LiveUpdates::device($id, 'command');
         }
     }
 
@@ -315,7 +320,7 @@ class DeviceCommand extends Model
             $updated = self::query()->whereKey($wake->id)->whereIn('status', self::ACTIVE)->toBase()->update([
                 'status' => 'succeeded',
                 'progress' => 100,
-                'message' => __('Online after :time', ['time' => $wake->created_at->diffForHumans(now(), ['syntax' => \Carbon\CarbonInterface::DIFF_ABSOLUTE, 'parts' => 2])]),
+                'message' => __('Online after :time', ['time' => $wake->created_at->diffForHumans(now(), ['syntax' => CarbonInterface::DIFF_ABSOLUTE, 'parts' => 2])]),
                 'started_at' => $wake->started_at ?? now(),
                 'finished_at' => now(),
                 'updated_at' => now(),
@@ -415,7 +420,7 @@ class DeviceCommand extends Model
     /** The message with the meaning of winget exit codes (App\Support\WingetCodes). */
     public function getDisplayMessageAttribute(): ?string
     {
-        return \App\Support\WingetCodes::explain($this->message);
+        return WingetCodes::explain($this->message);
     }
 
     public function getResultNoteAttribute(): ?string
@@ -436,7 +441,7 @@ class DeviceCommand extends Model
         }
         $seconds = max(0, $this->finished_at->getTimestamp() - $this->started_at->getTimestamp());
 
-        return $seconds < 60 ? __(':count s', ['count' => $seconds]) : \Carbon\CarbonInterval::seconds($seconds)->cascade()->forHumans(['short' => true, 'parts' => 2]);
+        return $seconds < 60 ? __(':count s', ['count' => $seconds]) : CarbonInterval::seconds($seconds)->cascade()->forHumans(['short' => true, 'parts' => 2]);
     }
 
     /** What the agent gets: the id it reports back with, the command and its parameters. */

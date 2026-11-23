@@ -4,6 +4,7 @@ namespace App\Livewire\Notifications;
 
 use App\Models\AlertRule;
 use App\Models\Device;
+use App\Support\Audit;
 use Livewire\Component;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
@@ -56,11 +57,11 @@ class DeviceRules extends Component
         $threshold = $gb ? null : $threshold;
 
         $rule = $this->ruleFor($type);
-        $device = \App\Models\Device::find($this->deviceId);
+        $device = Device::find($this->deviceId);
         $label = __($this->types()[$type]['label'] ?? $type);
         if (! $setting['enabled']) {
             if ($rule && $device) {
-                \App\Support\Audit::device($device, 'alerts', __('Alert turned off: :alert', ['alert' => $label]), ['type' => $type]);
+                Audit::device($device, 'alerts', __('Alert turned off: :alert', ['alert' => $label]), ['type' => $type]);
             }
             $rule?->delete();
 
@@ -74,7 +75,7 @@ class DeviceRules extends Component
         $created = ! $rule->exists;
         $rule->save();
         if ($device && ($created || $rule->wasChanged())) {
-            \App\Support\Audit::device($device, 'alerts', ($created ? __('Alert turned on: :alert', ['alert' => $label]) : __('Alert changed: :alert', ['alert' => $label])),
+            Audit::device($device, 'alerts', ($created ? __('Alert turned on: :alert', ['alert' => $label]) : __('Alert changed: :alert', ['alert' => $label])),
                 ['type' => $type, 'threshold' => $threshold, 'unit' => $gb ? 'gb' : 'percent', 'limit_gb' => $limit, 'minutes' => $minutes]);
         }
         $this->dispatch('alertRuleSaved');

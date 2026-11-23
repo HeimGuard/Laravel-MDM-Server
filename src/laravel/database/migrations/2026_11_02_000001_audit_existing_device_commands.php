@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Device;
 use App\Models\DeviceCommand;
+use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -14,8 +16,8 @@ return new class extends Migration
     {
         $audited = DB::table('activities')->where('data', 'like', '%"command_id"%')->pluck('data')
             ->map(fn ($data) => json_decode($data, true)['command_id'] ?? null)->filter()->flip();
-        $userType = (new App\Models\User)->getMorphClass();
-        $deviceType = (new App\Models\Device)->getMorphClass();
+        $userType = (new User)->getMorphClass();
+        $deviceType = (new Device)->getMorphClass();
 
         DeviceCommand::query()->orderBy('id')->chunk(500, function ($commands) use ($audited, $userType, $deviceType) {
             $rows = [];

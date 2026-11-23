@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\DeviceSecurity;
+use App\Livewire\SecurityScan\RuleForm;
 use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityRule;
+use App\Models\User;
 use App\Support\SecurityParsers;
 use App\Support\SecurityScanner;
 use App\Support\Syslog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /** Syslog of other servers and devices: the sender is the device whose IP address it is. */
@@ -155,7 +159,7 @@ class SyslogTest extends TestCase
         Syslog::ingest([$this->message('192.168.1.20', 'Synology-Backup', 'Backup task [Daily] (1) finished.', ['host' => 'nas'])]);
         $event = SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->firstOrFail();
 
-        [$definition, $record] = \App\Livewire\SecurityScan\RuleForm::parserFor($event);
+        [$definition, $record] = RuleForm::parserFor($event);
 
         $this->assertSame([], SecurityRule::errorsOf($definition));
         $parsed = SecurityParsers::apply($definition, $record);
@@ -179,10 +183,10 @@ class SyslogTest extends TestCase
     {
         $this->enableParser();
         $router = $this->pingDevice('192.168.1.1');
-        $user = \App\Models\User::factory()->create();
+        $user = User::factory()->create();
         Syslog::ingest([$this->message('192.168.1.1', 'sshd', 'Failed password for root from 1.2.3.4 port 22 ssh2')]);
 
-        \Livewire\Livewire::actingAs($user)->test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $router->id])
+        Livewire::actingAs($user)->test(DeviceSecurity::class, ['deviceId' => $router->id])
             ->assertSee('ssh from web01')
             ->assertSee('1.2.3.4');
     }

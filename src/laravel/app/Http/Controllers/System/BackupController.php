@@ -26,8 +26,8 @@ class BackupController extends BaseController
         $path = storage_path('backups');
 
         if (file_exists($path)) {
-            foreach (File::allFiles($path . '/') as $file) {
-                if (!Str::endsWith($file->getFilename(), '.zip')) {
+            foreach (File::allFiles($path.'/') as $file) {
+                if (! Str::endsWith($file->getFilename(), '.zip')) {
                     continue;
                 }
                 $date = explode('_', str_replace('.zip', '', $file->getFilename()))[0];
@@ -45,16 +45,16 @@ class BackupController extends BaseController
         }
 
         return view('system.backup.index', [
-            'layout'  => config('boilerplate.layouts.system'),
+            'layout' => config('boilerplate.layouts.system'),
             'backups' => $backups,
         ]);
     }
 
     public function download($file_name = null)
     {
-        if (!empty($file_name)) {
-            $path = storage_path('backups/' . $file_name);
-            if (!File::exists($path)) {
+        if (! empty($file_name)) {
+            $path = storage_path('backups/'.$file_name);
+            if (! File::exists($path)) {
                 abort(404);
             }
 
@@ -66,9 +66,9 @@ class BackupController extends BaseController
 
     public function delete($backup_date)
     {
-        foreach ([$backup_date . '_database.zip', $backup_date . '_storage.zip'] as $file) {
-            $path = storage_path('backups/' . $file);
-            if (!empty($path)) {
+        foreach ([$backup_date.'_database.zip', $backup_date.'_storage.zip'] as $file) {
+            $path = storage_path('backups/'.$file);
+            if (! empty($path)) {
                 File::delete($path);
             }
         }
@@ -82,7 +82,7 @@ class BackupController extends BaseController
         $restoreStorage = $request->boolean('restore_storage');
         $restoreEnv = $request->boolean('restore_env');
 
-        if (!$restoreDb && !$restoreStorage && !$restoreEnv) {
+        if (! $restoreDb && ! $restoreStorage && ! $restoreEnv) {
             return redirect()->back()->with('error', __('Select at least one component to restore'));
         }
 
@@ -92,13 +92,13 @@ class BackupController extends BaseController
             abort(404);
         }
 
-        $dbZip = storage_path('backups/' . $date->format('Y-m-d') . '_database.zip');
-        $fsZip = storage_path('backups/' . $date->format('Y-m-d') . '_storage.zip');
+        $dbZip = storage_path('backups/'.$date->format('Y-m-d').'_database.zip');
+        $fsZip = storage_path('backups/'.$date->format('Y-m-d').'_storage.zip');
 
-        if ($restoreDb && !File::exists($dbZip)) {
+        if ($restoreDb && ! File::exists($dbZip)) {
             abort(404);
         }
-        if (($restoreStorage || $restoreEnv) && !File::exists($fsZip)) {
+        if (($restoreStorage || $restoreEnv) && ! File::exists($fsZip)) {
             abort(404);
         }
 

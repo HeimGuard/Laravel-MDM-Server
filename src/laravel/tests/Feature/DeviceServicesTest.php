@@ -16,7 +16,7 @@ class DeviceServicesTest extends TestCase
 
     private function report(array $extra, array $machine = []): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'secret-token');
         $device->save();
 

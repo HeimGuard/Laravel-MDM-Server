@@ -18,7 +18,7 @@ class DataTable extends DataTableComponent
     public bool $failed = false;
 
     public $listeners = [
-        'jobAdded'   => '$refresh',
+        'jobAdded' => '$refresh',
         'closeModal' => '$refresh',
     ];
 
@@ -35,19 +35,19 @@ class DataTable extends DataTableComponent
     {
         if ($this->failed) {
             return [
-                'id'        => $row->id,
-                'uuid'      => $row->payload['uuid'],
-                'name'      => $row->payload['displayName'],
-                'queue'     => '[' . $row->connection . '] ' . $row->queue,
+                'id' => $row->id,
+                'uuid' => $row->payload['uuid'],
+                'name' => $row->payload['displayName'],
+                'queue' => '['.$row->connection.'] '.$row->queue,
                 'failed_at' => $row->failed_at,
             ];
         }
 
         return [
-            'id'           => $row->id,
-            'uuid'         => $row->payload['uuid'],
-            'name'         => $row->payload['displayName'],
-            'queue'        => '[' . $row->connection . '] ' . $row->queue,
+            'id' => $row->id,
+            'uuid' => $row->payload['uuid'],
+            'name' => $row->payload['displayName'],
+            'queue' => '['.$row->connection.'] '.$row->queue,
             'available_at' => $row->available_at,
         ];
     }
@@ -56,17 +56,17 @@ class DataTable extends DataTableComponent
     {
         if ($this->failed) {
             return [
-                'uuid'      => __('UUID'),
-                'queue'     => __('Queue'),
-                'name'      => __('Name'),
+                'uuid' => __('UUID'),
+                'queue' => __('Queue'),
+                'name' => __('Name'),
                 'failed_at' => __('Failed At'),
             ];
         }
 
         return [
-            'uuid'         => __('UUID'),
-            'queue'        => __('Queue'),
-            'name'         => __('Name'),
+            'uuid' => __('UUID'),
+            'queue' => __('Queue'),
+            'name' => __('Name'),
             'available_at' => __('Available At'),
         ];
     }
@@ -74,7 +74,7 @@ class DataTable extends DataTableComponent
     public function renderCasts(): array
     {
         return [
-            'failed_at'    => FormatDateTime::class,
+            'failed_at' => FormatDateTime::class,
             'available_at' => FormatDateTime::class,
         ];
     }
@@ -84,40 +84,40 @@ class DataTable extends DataTableComponent
         if ($this->failed) {
             return [
                 [
-                    'type'        => 'livewire',
-                    'action'      => 'trace',
-                    'parameters'  => $item['uuid'],
-                    'text'        => __('Trace'),
+                    'type' => 'livewire',
+                    'action' => 'trace',
+                    'parameters' => $item['uuid'],
+                    'text' => __('Trace'),
                     'actionClass' => '',
-                    'iconClass'   => 'fas fa-bug',
+                    'iconClass' => 'fas fa-bug',
                 ],
                 [
-                    'type'        => 'livewire',
-                    'action'      => 'retry',
-                    'parameters'  => $item['uuid'],
-                    'text'        => __('Retry'),
+                    'type' => 'livewire',
+                    'action' => 'retry',
+                    'parameters' => $item['uuid'],
+                    'text' => __('Retry'),
                     'actionClass' => '',
-                    'iconClass'   => 'fas fa-sync',
+                    'iconClass' => 'fas fa-sync',
                 ],
             ];
         }
 
         return [
             [
-                'type'        => 'livewire',
-                'action'      => 'runNow',
-                'parameters'  => $item['id'],
-                'text'        => __('Run now'),
+                'type' => 'livewire',
+                'action' => 'runNow',
+                'parameters' => $item['id'],
+                'text' => __('Run now'),
                 'actionClass' => '',
-                'iconClass'   => 'fas fa-play',
+                'iconClass' => 'fas fa-play',
             ],
             [
-                'type'        => 'livewire',
-                'action'      => 'stop',
-                'parameters'  => $item['id'],
-                'text'        => __('Delete'),
+                'type' => 'livewire',
+                'action' => 'stop',
+                'parameters' => $item['id'],
+                'text' => __('Delete'),
                 'actionClass' => '',
-                'iconClass'   => 'fas fa-trash',
+                'iconClass' => 'fas fa-trash',
             ],
         ];
     }
@@ -126,7 +126,7 @@ class DataTable extends DataTableComponent
     {
         Gate::authorize('is-system-admin');
         $job = Job::find($jobId);
-        if (!$job) {
+        if (! $job) {
             return;
         }
 

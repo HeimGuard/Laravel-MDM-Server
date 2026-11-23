@@ -8,6 +8,7 @@ use App\Livewire\DeviceDetail;
 use App\Models\Device;
 use App\Models\User;
 use App\Support\AgentScript;
+use App\Support\InstallCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
@@ -19,7 +20,7 @@ class DeviceAgentStatusTest extends TestCase
 
     private function createDevice(array $machine = [], string $token = 'secret-token'): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', $token);
         $device->data = json_encode(['machine' => $machine + ['RestartRequired' => 'false']]);
         $device->save();
@@ -138,10 +139,10 @@ class DeviceAgentStatusTest extends TestCase
         $linux = $this->createDevice(['AgentVersion' => '0.9.0', 'Platform' => 'linux']);
         $windows = $this->createDevice(['AgentVersion' => '0.9.0', 'Platform' => 'windows']);
 
-        $this->assertSame(\App\Support\InstallCommands::for()['pwsh'], \App\Support\InstallCommands::update($linux));
-        $this->assertSame(\App\Support\InstallCommands::for()['windows'], \App\Support\InstallCommands::update($windows));
-        $this->assertStringNotContainsString('-EnrolmentCode', \App\Support\InstallCommands::update($linux));
-        $this->assertStringContainsString("-ServerUrl '".url('/')."' -Install -ServerKeyFingerprint '", \App\Support\InstallCommands::update($linux));
+        $this->assertSame(InstallCommands::for()['pwsh'], InstallCommands::update($linux));
+        $this->assertSame(InstallCommands::for()['windows'], InstallCommands::update($windows));
+        $this->assertStringNotContainsString('-EnrolmentCode', InstallCommands::update($linux));
+        $this->assertStringContainsString("-ServerUrl '".url('/')."' -Install -ServerKeyFingerprint '", InstallCommands::update($linux));
     }
 
     public function test_platform_is_guessed_for_older_agents(): void
@@ -161,7 +162,7 @@ class DeviceAgentStatusTest extends TestCase
 
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])
             ->assertSee('Or run on the device (sudo pwsh)')
-            ->assertSee(\App\Support\InstallCommands::update($device));
+            ->assertSee(InstallCommands::update($device));
     }
 
     public function test_agent_badge_colour_follows_the_version(): void

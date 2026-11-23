@@ -5,8 +5,8 @@ namespace App\Livewire;
 use App\Models\ValueSample;
 use App\Support\DeviceUsage;
 use Carbon\CarbonImmutable;
-use Livewire\Attributes\Url;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 class DeviceMetrics extends Component

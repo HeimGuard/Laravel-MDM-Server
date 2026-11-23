@@ -15,7 +15,7 @@ class WarnAboutDefaultPassword
     {
         $password = $event->user->getAuthPassword();
 
-        if (!is_string($password) || !Hash::check('the-password-of-choice', $password)) {
+        if (! is_string($password) || ! Hash::check('the-password-of-choice', $password)) {
             return;
         }
 

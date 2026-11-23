@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\InventoryDefinition;
 use App\Models\InventorySample;
 use App\Services\InventoryService;
+use App\Support\ValueRetention;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
@@ -117,7 +118,7 @@ class InventoryTest extends TestCase
         $this->assertSame(1, $device->inventoryHistory('service', 'cron')->count());
 
         // The same setting as the values: 5 days.
-        Setting::query()->updateOrCreate(['index' => \App\Support\ValueRetention::SETTING, 'settable_id' => null, 'settable_type' => null], ['value' => '5', 'type' => SettingDataType::INT]);
+        Setting::query()->updateOrCreate(['index' => ValueRetention::SETTING, 'settable_id' => null, 'settable_type' => null], ['value' => '5', 'type' => SettingDataType::INT]);
         $this->assertSame(1, InventoryService::prune());
         $this->assertSame(['State' => 'stopped'], $device->latestInventory('service', 'cron'));
     }

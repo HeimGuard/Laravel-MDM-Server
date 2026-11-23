@@ -16,7 +16,7 @@ class DeviceNetworksTest extends TestCase
     public function test_interfaces_have_a_type_and_a_connection_state(): void
     {
         $this->actingAs(User::factory()->create());
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'secret-token');
         $device->data = json_encode(['machine' => ['Drives' => [], 'Networks' => [
             // Agents 1.8.0+: type and connection reported.

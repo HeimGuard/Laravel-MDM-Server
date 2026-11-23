@@ -5,11 +5,12 @@ namespace App\Support;
 use App\Models\AlertEvent;
 use App\Models\AlertRule;
 use App\Models\Device;
+use App\Models\NetworkNeighbour;
+use App\Models\PortScanResult;
 use App\Models\ScriptRun;
 use App\Models\SecurityFinding;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -297,7 +298,7 @@ class AlertEvaluator
         $since = $rule->created_at->max(now()->subDay());
         $known = $rule->events()->where('triggered_at', '>=', $since->copy()->subMinute())->pluck('value')->map(fn ($value) => (int) $value)->all();
         $sent = 0;
-        foreach (\App\Models\NetworkNeighbour::unknown($this->devices) as $neighbour) {
+        foreach (NetworkNeighbour::unknown($this->devices) as $neighbour) {
             $agent = $this->devices->firstWhere('id', $neighbour->seen_by);
             if ($agent === null || $neighbour->first_seen_at->lt($since) || in_array($neighbour->id, $known, true)) {
                 continue;
@@ -305,7 +306,7 @@ class AlertEvaluator
             $message = __(':device appeared in :network (:details), seen by :agent.', [
                 'device' => $neighbour->displayName,
                 'network' => $neighbour->network,
-                'details' => collect([$neighbour->hostname ? $neighbour->ip : null, $neighbour->mac, \App\Support\MacVendor::lookup($neighbour->mac)])->filter()->implode(', '),
+                'details' => collect([$neighbour->hostname ? $neighbour->ip : null, $neighbour->mac, MacVendor::lookup($neighbour->mac)])->filter()->implode(', '),
                 'agent' => $agent->displayName,
             ]);
             $rule->events()->create([
@@ -343,13 +344,13 @@ class AlertEvaluator
             ->bySeverity()->get();
         $sent = 0;
         foreach ($findings as $finding) {
-            $scanner = \App\Models\PortScanResult::query()->where('site', $finding->site)->where('ip', $finding->target_ip)->value('scanned_by');
+            $scanner = PortScanResult::query()->where('site', $finding->site)->where('ip', $finding->target_ip)->value('scanned_by');
             $agent = $scanner === null ? null : $this->devices->firstWhere('id', $scanner);
             if ($agent === null) {
                 // The scan it came from is gone (pruned): it will resolve on the next scan, skip it.
                 continue;
             }
-            $host = collect([$finding->target_ip, $finding->target_mac, \App\Support\MacVendor::lookup($finding->target_mac)])->filter()->implode(', ');
+            $host = collect([$finding->target_ip, $finding->target_mac, MacVendor::lookup($finding->target_mac)])->filter()->implode(', ');
             $message = __(':finding on :host in :network, seen by :agent.', [
                 'finding' => $finding->message,
                 'host' => $host ?: ($finding->target_ip ?? '?'),

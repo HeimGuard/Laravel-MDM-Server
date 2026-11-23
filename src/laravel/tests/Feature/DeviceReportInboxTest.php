@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\DevicesChanged;
 use App\Jobs\ProcessDeviceReport;
 use App\Models\Device;
 use App\Support\DeviceReportInbox;
@@ -37,7 +38,7 @@ class DeviceReportInboxTest extends TestCase
 
     public function test_the_report_is_stored_by_the_job_and_the_answer_is_the_same(): void
     {
-        Event::fake([\App\Events\DevicesChanged::class]);
+        Event::fake([DevicesChanged::class]);
         $device = $this->device();
 
         $response = $this->withToken('secret-token')->postJson('/api/device', $this->report('new-name'));
@@ -47,7 +48,7 @@ class DeviceReportInboxTest extends TestCase
         $this->assertSame('new-name', $device->name);
         $this->assertSame('new-name', $device->data->machine->Hostname);
         // The portal is told once the report is stored (the pages reload).
-        Event::assertDispatched(\App\Events\DevicesChanged::class, fn ($event) => $event->deviceId === $device->id && $event->what === 'report');
+        Event::assertDispatched(DevicesChanged::class, fn ($event) => $event->deviceId === $device->id && $event->what === 'report');
     }
 
     public function test_the_request_only_queues_the_report(): void

@@ -17,7 +17,7 @@ class AuthController extends Controller
     // Before the first user exists there is nobody to log in: create the account first.
     public function login(Request $request)
     {
-        if (!User::query()->exists()) {
+        if (! User::query()->exists()) {
             return redirect()->route('setup');
         }
 

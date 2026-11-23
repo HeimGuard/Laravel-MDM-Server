@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\Device;
+
 class InstallCommands
 {
     /**
@@ -43,7 +45,7 @@ class InstallCommands
     /**
      * Command that updates the agent already installed on the device.
      */
-    public static function update(\App\Models\Device $device): string
+    public static function update(Device $device): string
     {
         return static::for()[$device->platform === 'linux' ? 'pwsh' : 'windows'];
     }

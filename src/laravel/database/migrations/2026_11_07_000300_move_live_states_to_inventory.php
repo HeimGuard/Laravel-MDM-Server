@@ -2,6 +2,7 @@
 
 use App\Models\Device;
 use App\Models\InventoryDefinition;
+use App\Services\InventoryService;
 use App\Services\ReportInventoryService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
@@ -42,7 +43,7 @@ return new class extends Migration
             $state = json_decode((string) ($row->live_state ?? ''), true) ?: [];
             foreach (['services' => 'service', 'containers' => 'container'] as $list => $kind) {
                 $things = [];
-                foreach (\App\Services\InventoryService::snapshot($type, $id, $kind) as $name => $thing) {
+                foreach (InventoryService::snapshot($type, $id, $kind) as $name => $thing) {
                     $stateOf = $thing['data']['State'] ?? null;
                     $things[$name] = ($stateOf === 'running' && ($thing['data']['Health'] ?? null) === 'unhealthy') ? 'unhealthy' : $stateOf;
                 }

@@ -2,9 +2,10 @@
 
 namespace App\Support;
 
-use App\Models\SecurityRule;
 use App\Jobs\ApplySecurityFeed;
 use App\Jobs\FetchSecurityFeedChunk;
+use App\Models\SecurityRule;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -196,7 +197,7 @@ class SecurityFeed
         return self::disk()->exists(self::dir($run).'/failed');
     }
 
-    private static function disk(): \Illuminate\Contracts\Filesystem\Filesystem
+    private static function disk(): Filesystem
     {
         return Storage::disk('local');
     }

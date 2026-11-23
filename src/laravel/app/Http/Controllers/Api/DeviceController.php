@@ -74,7 +74,7 @@ class DeviceController extends Controller
     {
         $invitation = Enrolment::where('code', (string) $request->json('enrolment_code'))->where('expire_at', '>', CarbonImmutable::now())->first();
 
-        if (null === $invitation) {
+        if ($invitation === null) {
             // Too many wrong codes (guessing): the open ones are dropped, a new one is made on the page.
             if (RateLimiter::attempt('enrolment-failures', Enrolment::MAX_FAILURES, fn () => true, 900) === false) {
                 Enrolment::query()->delete();
@@ -85,7 +85,7 @@ class DeviceController extends Controller
 
         $token = Str::random(60);
 
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', $token);
         // Agents 1.7.0+ send their public key, the request is signed with it (checked by the middleware).
         if ($key = $request->attributes->get('mdm_public_key')) {

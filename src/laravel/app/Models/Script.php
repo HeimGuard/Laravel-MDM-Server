@@ -4,12 +4,13 @@ namespace App\Models;
 
 use Cron\CronExpression;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use SteelAnts\LaravelBoilerplate\Models\Activity;
 use SteelAnts\LaravelBoilerplate\Traits\Auditable;
+use Throwable;
 
 /**
  * A remediation script: a PowerShell detection script (exit 0 = compliant, 1 = needs remediation)
@@ -170,7 +171,7 @@ class Script extends Model
      * script with manual remediation only detects, unless $remediate (Remediate on a device).
      *
      * @param  array<int>  $deviceIds
-     * @return \Illuminate\Support\Collection<int, ScriptRun>
+     * @return Collection<int, ScriptRun>
      */
     public function runOn(array $deviceIds, ?User $user = null, bool $scheduled = false, bool $remediate = false)
     {

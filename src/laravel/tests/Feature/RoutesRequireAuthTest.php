@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\DeviceSignature;
+use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as Router;
 use Tests\TestCase;
@@ -19,8 +21,8 @@ class RoutesRequireAuthTest extends TestCase
         'device.signature',
         'guest',
         'is-system-admin',
-        \Illuminate\Auth\Middleware\Authenticate::class,
-        \App\Http\Middleware\DeviceSignature::class,
+        Authenticate::class,
+        DeviceSignature::class,
     ];
 
     /**

@@ -3,9 +3,9 @@
 namespace App\Livewire\Script;
 
 use App\Models\Script;
-use App\Support\PowerShellCheck;
 use App\Services\AiService;
 use App\Services\ScriptGeneratorService;
+use App\Support\PowerShellCheck;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Livewire\Component;

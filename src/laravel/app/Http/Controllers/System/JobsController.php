@@ -16,10 +16,10 @@ class JobsController extends BaseController
         $jobClasses = JobHelper::getAllManuallyRunnableJobs();
 
         return view('system.job.index', [
-            'layout'        => config('boilerplate.layouts.system'),
+            'layout' => config('boilerplate.layouts.system'),
             'waiting_count' => Job::count(),
-            'failed_count'  => FailedJob::count(),
-            'jobs_classes'  => $jobClasses,
+            'failed_count' => FailedJob::count(),
+            'jobs_classes' => $jobClasses,
         ]);
     }
 

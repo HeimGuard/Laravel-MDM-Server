@@ -10,6 +10,7 @@ use App\Services\InventoryTimelineService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /** The table of the containers: the ports published to the outside, short, and the bar of the last 12 hours. */
@@ -53,7 +54,7 @@ class ContainerTableTest extends TestCase
     }
 
     /** @dataProvider ports */
-    #[\PHPUnit\Framework\Attributes\DataProvider('ports')]
+    #[DataProvider('ports')]
     public function test_only_the_published_ports_by_the_host_port(string $docker, array $expected): void
     {
         $this->assertSame($expected, DockerPortsService::published($docker));

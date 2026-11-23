@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\PortalUrl;
 use Illuminate\Support\ServiceProvider;
 use URL;
 
@@ -25,12 +26,12 @@ class AppServiceProvider extends ServiceProvider
             config(['boilerplate.system_admins' => ['1']]);
         }
 
-        if (config('app.env') != 'local' && !$this->openedDirectly()) {
+        if (config('app.env') != 'local' && ! $this->openedDirectly()) {
             URL::forceScheme('https');
         }
         // The scheduler (notifications) links to the address the portal is opened with.
         if ($this->app->runningInConsole() && ! $this->app->runningUnitTests()) {
-            \App\Support\PortalUrl::apply();
+            PortalUrl::apply();
         }
     }
 

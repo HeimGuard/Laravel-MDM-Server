@@ -3,6 +3,8 @@
 namespace App\Livewire;
 
 use App\Models\Device;
+use App\Support\Audit;
+use App\Support\LiveUpdates;
 use Livewire\Component;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
@@ -45,9 +47,9 @@ class WakeSettings extends Component
         $changes = $device->getDirty();
         $device->save();
         if ($changes !== []) {
-            \App\Support\Audit::device($device, 'settings', __('Wake-on-LAN settings changed'), ['changes' => $changes]);
+            Audit::device($device, 'settings', __('Wake-on-LAN settings changed'), ['changes' => $changes]);
         }
-        \App\Support\LiveUpdates::device($device->id, 'settings');
+        LiveUpdates::device($device->id, 'settings');
 
         $this->dispatch('closeModal');
     }

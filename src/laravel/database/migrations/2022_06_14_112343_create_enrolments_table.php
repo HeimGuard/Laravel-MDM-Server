@@ -15,8 +15,8 @@ class CreateEnrolmentsTable extends Migration
     {
         Schema::create('enrolments', function (Blueprint $table) {
             $table->id();
-            $table->string("code");
-            $table->timestamp("expire_at");
+            $table->string('code');
+            $table->timestamp('expire_at');
         });
     }
 

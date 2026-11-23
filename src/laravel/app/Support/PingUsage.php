@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\ValueDefinition;
 use App\Models\ValueSample;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * The pings of a ping-only device by an agent of its network, kept as measured values: ping.up (1 answered, 0 not) of
@@ -54,7 +55,7 @@ class PingUsage
      * The pings since a time, oldest first, as the rows the views read (up, rtt, created_at): the response time of an answered
      * one is the ping.rtt sample of the same moment.
      *
-     * @return \Illuminate\Support\Collection<int, object>
+     * @return Collection<int, object>
      */
     public static function checks(int $deviceId, \DateTimeInterface $since, ?int $limit = null)
     {

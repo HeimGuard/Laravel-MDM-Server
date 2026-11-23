@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\NetworkMap;
+use App\Support\SecurityScanner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
@@ -100,7 +101,7 @@ class PortScanResult extends Model
             'scanned_at' => now(),
         ]);
         // Turn the open ports into security findings (and alerts) via the detection rules.
-        rescue(fn () => \App\Support\SecurityScanner::scanPorts($result));
+        rescue(fn () => SecurityScanner::scanPorts($result));
 
         return true;
     }

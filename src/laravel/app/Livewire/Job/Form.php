@@ -32,20 +32,20 @@ class Form extends FormComponent
     protected function rules()
     {
         $rules = [];
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
-                $rules['properties.' . $name] = [];
-                $rules['properties.' . $name][] = !isset($data['value']) ? 'required' : 'nullable';
-                if (!class_exists($data['type']) || !is_subclass_of($data['type'], Model::class)) {
-                    $rules['properties.' . $name][] = match ($data['type']) {
+                $rules['properties.'.$name] = [];
+                $rules['properties.'.$name][] = ! isset($data['value']) ? 'required' : 'nullable';
+                if (! class_exists($data['type']) || ! is_subclass_of($data['type'], Model::class)) {
+                    $rules['properties.'.$name][] = match ($data['type']) {
                         'int', 'float' => 'numeric',
-                        'bool'               => 'boolean',
-                        Carbon::class        => 'date',
+                        'bool' => 'boolean',
+                        Carbon::class => 'date',
                         SupportCarbon::class => 'date',
-                        default              => 'string',
+                        default => 'string',
                     };
                 } else {
-                    $rules['properties.' . $name][] = Rule::exists(($data['type'])::first()->getTable(), 'id');
+                    $rules['properties.'.$name][] = Rule::exists(($data['type'])::first()->getTable(), 'id');
                 }
             }
         }
@@ -58,7 +58,7 @@ class Form extends FormComponent
     {
         $fields = [];
 
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
                 $fields[] = $name;
             }
@@ -71,15 +71,15 @@ class Form extends FormComponent
     {
         $properties = [];
 
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
-                if (!class_exists($data['type']) || !is_subclass_of($data['type'], Model::class)) {
+                if (! class_exists($data['type']) || ! is_subclass_of($data['type'], Model::class)) {
                     $properties[$name] = match ($data['type']) {
                         'int', 'float' => $data['value'] ?? 0,
-                        'bool'               => $data['value'] ?? false,
-                        Carbon::class        => $data['value'] ?? null,
+                        'bool' => $data['value'] ?? false,
+                        Carbon::class => $data['value'] ?? null,
                         SupportCarbon::class => $data['value'] ?? null,
-                        default              => $data['value'] ?? '',
+                        default => $data['value'] ?? '',
                     };
                 } else {
                     $properties[$name] = $data['value'] ?? ($data['type'])::select('id')->first()->id;
@@ -94,15 +94,15 @@ class Form extends FormComponent
     public function types()
     {
         $types = [];
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
-                if (!class_exists($data['type']) || !is_subclass_of($data['type'], Model::class)) {
+                if (! class_exists($data['type']) || ! is_subclass_of($data['type'], Model::class)) {
                     $types[$name] = match ($data['type']) {
                         'int', 'float' => 'int',
-                        'bool'               => 'checkbox',
-                        Carbon::class        => 'datetime',
+                        'bool' => 'checkbox',
+                        Carbon::class => 'datetime',
                         SupportCarbon::class => 'datetime',
-                        default              => 'string',
+                        default => 'string',
                     };
                 }
             }
@@ -116,7 +116,7 @@ class Form extends FormComponent
     {
         $labels = [];
 
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
                 $labels[$name] = Str::title($name);
             }
@@ -131,8 +131,8 @@ class Form extends FormComponent
 
         if (
             empty($parameter)
-            || !class_exists($parameter['type'])
-            || !is_subclass_of($parameter['type'], \Illuminate\Database\Eloquent\Model::class)
+            || ! class_exists($parameter['type'])
+            || ! is_subclass_of($parameter['type'], Model::class)
         ) {
             return [];
         }
@@ -155,7 +155,7 @@ class Form extends FormComponent
             $type = $param->getType();
             if ($type instanceof \ReflectionUnionType) {
                 $nonString = array_filter($type->getTypes(), fn ($t) => $t->getName() !== 'string');
-                $typeClass = !empty($nonString) ? reset($nonString)->getName() : $type->getTypes()[0]->getName();
+                $typeClass = ! empty($nonString) ? reset($nonString)->getName() : $type->getTypes()[0]->getName();
             } else {
                 $typeClass = $type?->getName();
             }
@@ -182,27 +182,27 @@ class Form extends FormComponent
 
         $class = JobHelper::resolveClass($this->job);
 
-        if (!empty($this->job_parameters) && count($this->job_parameters) > 0) {
+        if (! empty($this->job_parameters) && count($this->job_parameters) > 0) {
             foreach ($this->job_parameters as $name => $data) {
-                if (!class_exists($data['type']) || !is_subclass_of($data['type'], Model::class)) {
+                if (! class_exists($data['type']) || ! is_subclass_of($data['type'], Model::class)) {
                     $this->properties[$name] = match ($data['type']) {
-                        'int'                => (int) ($this->properties[$name] ?? 0),
-                        'float'              => (float) ($this->properties[$name] ?? 0.0),
-                        'bool'               => (bool) ($this->properties[$name] ?? false),
-                        Carbon::class        => !empty($this->properties[$name]) ? Carbon::parse($this->properties[$name]) : null,
-                        SupportCarbon::class => !empty($this->properties[$name]) ? SupportCarbon::parse($this->properties[$name]) : null,
-                        default              => (string) ($this->properties[$name] ?? ''),
+                        'int' => (int) ($this->properties[$name] ?? 0),
+                        'float' => (float) ($this->properties[$name] ?? 0.0),
+                        'bool' => (bool) ($this->properties[$name] ?? false),
+                        Carbon::class => ! empty($this->properties[$name]) ? Carbon::parse($this->properties[$name]) : null,
+                        SupportCarbon::class => ! empty($this->properties[$name]) ? SupportCarbon::parse($this->properties[$name]) : null,
+                        default => (string) ($this->properties[$name] ?? ''),
                     };
 
                     continue;
                 }
-                $this->properties[$name] = !empty($this->properties[$name]) ? ($data['type'])::find($this->properties[$name]) : null;
+                $this->properties[$name] = ! empty($this->properties[$name]) ? ($data['type'])::find($this->properties[$name]) : null;
             }
         }
 
         dispatch(new $class(...$this->properties));
 
-        alert()->success($this->job . ' ' . __('Job Scheduled'))->now();
+        alert()->success($this->job.' '.__('Job Scheduled'))->now();
         $this->dispatch('closeModal');
     }
 

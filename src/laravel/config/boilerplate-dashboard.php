@@ -1,8 +1,10 @@
 <?php
 
+use App\Policies\DashboardPolicy;
+
 // Merged with the package config (steelants/laravel-boilerplate.dashboard), only what differs.
 return [
 
-    'policy' => App\Policies\DashboardPolicy::class,
+    'policy' => DashboardPolicy::class,
 
 ];
