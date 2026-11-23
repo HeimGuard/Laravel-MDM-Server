@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.37.0] - 2026-11-23
+
 ### Added
 - Switch without SNMP (TP-Link Easy Smart): in the Ping settings of a ping-only device choose the switch and enter its user name and
   password, and the device shows its ports (link and speed, bad packets, packets sent and received). The agent of its network is the
