@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\NetworkNeighbour;
 use App\Models\NetworkSite;
+use App\Services\SwitchService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -342,6 +343,8 @@ class NetworkMap
             $this->edge($id, $key, 'uplink', $online > 0);
         }
 
+        // Devices plugged into a switch by hand (switch_id, switch_port), by the switch.
+        $plugged = $devices->filter(fn (Device $device) => $device->switch_id !== null)->groupBy('switch_id');
         // Devices, linked to each of their networks.
         foreach ($devices as $device) {
             $memberOf = collect($this->networks)->filter(fn ($network) => isset($network['members'][$device->id]));
@@ -364,11 +367,19 @@ class NetworkMap
                 $device->offline => 'offline',
                 default => 'up',
             };
+            // A switch whose ports are read: a card with its ports, each a button that opens the devices plugged into it.
+            $switch = SwitchService::mapCard($device, $plugged->get($device->id, collect()));
+            // Plugged into a switch: its port on the card.
+            $into = $device->switch_id !== null ? $byId->get($device->switch_id) : null;
+            if ($into !== null && $device->switch_port !== null) {
+                $badges[] = __('port :port', ['port' => $device->switch_port]);
+            }
             $this->node('device:'.$device->id, 'device', $device->displayName,
-                $addresses ?: ($device->offline ? __('offline') : null), $device->typeIcon,
+                $addresses ?: ($device->offline ? __('offline') : null), $switch ? 'fas fa-network-wired' : $device->typeIcon,
                 $device->isPingOnly ? 'success' : 'primary', state: $state,
                 url: route('devices', ['selectedDeviceId' => $device->id]), badges: $badges,
-                extra: ['isolated' => $isolated, 'ping' => $device->isPingOnly,
+                extra: ['isolated' => $isolated, 'ping' => $device->isPingOnly, 'switch' => $switch,
+                    'title' => $into !== null && $device->switch_port !== null ? __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]) : null,
                     // Laid out with the site of its own network (not of a VPN).
                     'group' => $memberOf->pluck('site')->filter()->first() ?? ($siteOf[$device->id] ?? null)]);
             foreach ($memberOf as $key => $network) {

@@ -36,6 +36,14 @@
    device or the network (not all devices of a LAN are in the VPN). Ping-only devices are in the
    network of their address; their agent shows how many it pings.
 
+**A switch** whose ports are read (a ping-only device with a switch set in its Ping settings, see
+[Devices](devices.md#switch-without-snmp-ports-agents-1370)) is a card of its own among the devices of its network: its ports are buttons,
+coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link) with a ring for bad packets, and
+their tooltip names the link and the devices plugged into them. A click on a port opens the devices of the network that have no port yet
+(a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand (a switch like the TP-Link
+Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
+`lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.
+
 **This server** is placed in the network the agents reach it from over private addresses. Its
 public address is `MDM_PUBLIC_ADDRESS` when set, else the address another device of that network
 reaches it through (the router's), else what its name (`APP_URL`, else the address system admins

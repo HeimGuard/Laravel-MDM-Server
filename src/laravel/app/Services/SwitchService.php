@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Device;
 use App\Models\ValueDefinition;
 use App\Support\LiveUpdates;
+use App\Support\NetworkMap;
 use App\Support\Signing;
 use App\Support\ValueRecorder;
 use Illuminate\Support\Facades\Cache;
@@ -200,5 +201,96 @@ class SwitchService
         ksort($ports);
 
         return array_values($ports);
+    }
+
+    /**
+     * The devices that can be plugged into a port of the switch: the ones of its network (the network map) that have no port
+     * yet, and the ones already on this port.
+     *
+     * @return array<int, array{id: int, name: string, address: string, selected: bool}>
+     */
+    public static function candidates(Device $switch, int $port): array
+    {
+        $network = collect(NetworkMap::build()['networks'])->first(fn (array $network) => collect($network['devices'])->contains('id', $switch->id));
+        if ($network === null) {
+            return [];
+        }
+        $devices = Device::query()->whereKey(collect($network['members'])->pluck('id')->reject($switch->id)->all())->get()->keyBy('id');
+        $rows = [];
+        foreach ($network['members'] as $member) {
+            $device = $devices->get($member['id']);
+            if ($device === null) {
+                continue;
+            }
+            $here = $device->switch_id === $switch->id && $device->switch_port === $port;
+            if ($device->switch_id === null || $here) {
+                $rows[] = ['id' => $device->id, 'name' => $member['name'], 'address' => $member['address'], 'selected' => $here];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Sets which devices are on a port: the selected ones (of the candidates) are plugged into it, the ones that were on it and are not
+     * selected any more are not. Returns how many devices changed.
+     *
+     * @param  array<int, mixed>  $selected  device ids
+     */
+    public static function assign(Device $switch, int $port, array $selected): int
+    {
+        $selected = array_map('intval', $selected);
+        $changed = 0;
+        foreach (self::candidates($switch, $port) as $candidate) {
+            $device = Device::find($candidate['id']);
+            $wanted = in_array($candidate['id'], $selected, true);
+            if ($device === null || $wanted === $candidate['selected']) {
+                continue;
+            }
+            $device->forceFill(['switch_id' => $wanted ? $switch->id : null, 'switch_port' => $wanted ? $port : null])->save();
+            $changed++;
+        }
+        if ($changed > 0) {
+            LiveUpdates::device($switch->id, 'switch');
+        }
+
+        return $changed;
+    }
+
+    /** The devices of a deleted switch are not plugged into it any more (a setting has no foreign key). */
+    public static function forget(Device $switch): void
+    {
+        Device::query()->whereSettingIn('lan.switch_device_id', [$switch->id])->get()
+            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null])->save());
+    }
+
+    /**
+     * What the map shows on the card of a switch: its ports with the link and the devices plugged into each, or null for a
+     * device that is no switch.
+     *
+     * @param  \Illuminate\Support\Collection<int, Device>  $plugged  the devices plugged into this switch (switch_id)
+     * @return array{id: int, ports: array<int, array<string, mixed>>, empty: string}|null
+     */
+    public static function mapCard(Device $device, $plugged): ?array
+    {
+        if (! self::enabled($device)) {
+            return null;
+        }
+        $ports = [];
+        foreach (self::ports($device) ?? [] as $port) {
+            $on = $plugged->where('switch_port', $port['port'])->map(fn (Device $other) => $other->displayName)->values()->all();
+            $link = __(self::LINKS[$port['link']] ?? 'Down');
+            $ports[] = $port + [
+                'devices' => $on,
+                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]),
+                'title' => implode(' · ', array_filter([
+                    __('Port :port', ['port' => $port['port']]), $link,
+                    $port['bad'] > 0 ? trans_choice(':count bad packet|:count bad packets', $port['bad']) : null,
+                    $on === [] ? null : implode(', ', $on),
+                ])),
+            ];
+        }
+
+        return ['id' => $device->id, 'ports' => $ports, 'empty' => __('Ports not read yet')];
     }
 }

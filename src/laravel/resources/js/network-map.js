@@ -10,13 +10,30 @@ const SPAN = { tunnel: 3 };
 
 const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+// The ports of a switch whose ports are read (agents 1.37.0+): a button each, by the speed of its link.
+function portsHtml(card) {
+    if (!card.ports.length) {
+        return `<span class="nm-sub">${esc(card.empty)}</span>`;
+    }
+    const speed = (link) => (link === 6 ? 'is-gig' : link >= 3 ? 'is-fast' : link === 2 ? 'is-slow' : 'is-down');
+
+    return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}"`
+        + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
+}
+
 function nodeHtml(node) {
     const badges = (node.badges || []).map((badge) => `<span class="nm-badge${badge === 'isolated' ? ' is-warning' : ''}">${esc(badge)}</span>`).join('');
     const dot = node.kind === 'device' || (node.kind === 'unknown' && !node.more) ? `<span class="nm-dot is-${esc(node.state)}"></span>` : '';
-    return `<span class="nm-icon"><i class="${esc(node.icon)}"></i></span>`
+    const head = `<span class="nm-icon"><i class="${esc(node.icon)}"></i></span>`
         + `<span class="nm-text"><span class="nm-label">${esc(node.label)}${badges}</span>`
         + (node.sub ? `<span class="nm-sub">${dot}${esc(node.sub)}</span>` : '')
         + '</span>';
+    // A switch is not a link as a whole (its ports are buttons): the head is.
+    if (node.switch) {
+        return `<a class="nm-head" href="${esc(node.url)}">${head}</a>${portsHtml(node.switch)}`;
+    }
+
+    return head;
 }
 
 function rankSpan(edge, nodes) {
@@ -114,10 +131,10 @@ export function createNetworkMap(root, data) {
         layer.innerHTML = '';
         const elements = new Map();
         for (const node of map.nodes) {
-            const el = document.createElement(node.url ? 'a' : 'div');
-            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}`;
+            const el = document.createElement(node.url && !node.switch ? 'a' : 'div');
+            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}${node.switch ? ' is-switch' : ''}`;
             el.dataset.id = node.id;
-            if (node.url) {
+            if (node.url && !node.switch) {
                 el.href = node.url;
             }
             el.innerHTML = nodeHtml(node);
@@ -498,6 +515,13 @@ export function createNetworkMap(root, data) {
             event.stopPropagation();
         }
     }, true);
+    // A port of a switch: the devices plugged into it (a modal of the page, a multiselect).
+    viewport.addEventListener('click', (event) => {
+        const port = event.target.closest('.nm-port');
+        if (port && !moved) {
+            window.Livewire?.dispatch('openModal', { livewireComponents: 'networks.switch-port', title: port.dataset.heading, parameters: { deviceId: Number(port.dataset.switch), port: Number(port.dataset.port) } });
+        }
+    });
     viewport.addEventListener('click', (event) => {
         const network = event.target.closest('.nm-node.is-toggle');
         if (network && !moved) {

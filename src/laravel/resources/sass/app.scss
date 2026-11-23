@@ -297,6 +297,28 @@ label.mdm-tag {
     &.is-unknown .nm-badge { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
 }
 
+// A switch whose ports are read: the card has its ports as buttons (colour = speed of the link, ring = bad packets).
+.nm-node.is-switch {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .4rem;
+    white-space: normal;
+
+    .nm-head { display: flex; align-items: center; gap: .5rem; color: inherit; text-decoration: none; white-space: nowrap; }
+    .nm-ports { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .nm-port {
+        min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; border: 2px solid var(--hg-offline); border-radius: .4rem;
+        background: transparent; color: var(--bs-body-color); font-size: .7rem; font-weight: 600; line-height: 1; cursor: pointer;
+        &.is-gig { border-color: var(--hg-ok); }
+        &.is-fast { border-color: var(--hg-info); }
+        &.is-slow { border-color: var(--hg-high); }
+        &.is-down { border-style: dashed; opacity: .75; }
+        &.has-devices { background: var(--hg-surface-raised); }
+        &.has-errors { box-shadow: 0 0 0 2px var(--hg-high); }
+        &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
+    }
+}
+
 // A network that shows or hides its devices on a click.
 .nm-node.is-toggle { cursor: pointer; }
 .nm-chev { font-size: .6rem; margin-left: .4rem; opacity: .6; }

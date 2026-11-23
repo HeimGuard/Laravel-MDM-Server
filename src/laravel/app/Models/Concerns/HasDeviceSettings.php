@@ -24,6 +24,9 @@ trait HasDeviceSettings
         'ping_mac' => ['lan.mac', SettingDataType::STRING, 'ping'],
         'ping_via_id' => ['lan.via_device_id', SettingDataType::INT, 'ping'],
         // A switch without SNMP the agent reads the ports of (App\Services\SwitchService): the kind, the user and the password (encrypted).
+        // Where a device (of any kind) is plugged in by a cable: the switch (a ping-only device) and its port, set by hand.
+        'switch_id' => ['lan.switch_device_id', SettingDataType::INT, 'any'],
+        'switch_port' => ['lan.switch_port', SettingDataType::INT, 'any'],
         'switch_type' => ['switch.type', SettingDataType::STRING, 'ping'],
         'switch_user' => ['switch.user', SettingDataType::STRING, 'ping'],
         'switch_password' => ['switch.password', SettingDataType::STRING, 'ping'],
@@ -47,7 +50,13 @@ trait HasDeviceSettings
             }
         });
         // A polymorphic relation has no foreign key to cascade.
-        static::deleted(fn ($device) => $device->settings()->delete());
+        static::deleted(function ($device) {
+            $device->settings()->delete();
+            // A switch that is gone: the devices plugged into it are not any more.
+            if (($device->attributes['kind'] ?? 'agent') === 'ping') {
+                \App\Services\SwitchService::forget($device);
+            }
+        });
         static::saved(function ($device) {
             if ($device->pendingSettings !== []) {
                 $device->storeSettings();
@@ -58,7 +67,9 @@ trait HasDeviceSettings
     /** The kind of device an attribute is of: the settings of the other kind are not its own. */
     private function ownsSetting(string $attribute): bool
     {
-        return (self::SETTING_ATTRIBUTES[$attribute][2] === 'ping') === (($this->attributes['kind'] ?? 'agent') === 'ping');
+        $kind = self::SETTING_ATTRIBUTES[$attribute][2];
+
+        return $kind === 'any' || ($kind === 'ping') === (($this->attributes['kind'] ?? 'agent') === 'ping');
     }
 
     public function getAttribute($key)

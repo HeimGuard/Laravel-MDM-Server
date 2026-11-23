@@ -125,4 +125,60 @@ class SwitchPortsTest extends TestCase
         Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('switchType', '')->call('save');
         $this->assertFalse(SwitchService::enabled($switch->fresh()));
     }
+
+    private function printer(): Device
+    {
+        $device = new Device;
+        $device->forceFill(['kind' => 'ping', 'name' => 'printer', 'os' => '', 'token' => hash('sha256', 'printer'), 'ping_address' => '192.168.1.50', 'ping_prefix' => 24])->save();
+
+        return $device->fresh();
+    }
+
+    public function test_devices_are_plugged_into_a_port_of_the_switch_and_the_map_shows_it(): void
+    {
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+
+        // The devices of its network without a port (not the switch itself).
+        $ids = array_column(SwitchService::candidates($switch, 3), 'id');
+        $this->assertContains($printer->id, $ids);
+        $this->assertNotContains($switch->id, $ids);
+
+        $this->assertSame(1, SwitchService::assign($switch, 3, [$printer->id]));
+        $this->assertSame([$switch->id, 3], [$printer->fresh()->switch_id, $printer->fresh()->switch_port]);
+        // Plugged in: not a candidate of another port, but of its own.
+        $this->assertNotContains($printer->id, array_column(SwitchService::candidates($switch, 4), 'id'));
+        $this->assertSame([true], array_column(array_filter(SwitchService::candidates($switch, 3), fn (array $row) => $row['id'] === $printer->id), 'selected'));
+
+        $nodes = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id');
+        $card = $nodes['device:'.$switch->id]['switch'];
+        $this->assertCount(5, $card['ports']);
+        $this->assertSame([$printer->displayName], collect($card['ports'])->firstWhere('port', 3)['devices']);
+        $this->assertContains('port 3', $nodes['device:'.$printer->id]['badges']);
+
+        // Not selected any more: free again. A deleted switch frees its devices too.
+        $this->assertSame(1, SwitchService::assign($switch, 3, []));
+        $this->assertNull($printer->fresh()->switch_port);
+        SwitchService::assign($switch, 5, [$printer->id]);
+        $switch->delete();
+        $this->assertNull($printer->fresh()->switch_id);
+    }
+
+    public function test_the_modal_of_a_port_saves_the_devices_ticked(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $this->relay();
+
+        Livewire::test(\App\Livewire\Networks\SwitchPort::class, ['deviceId' => $switch->id, 'port' => 2])
+            ->assertSee('printer')
+            ->set('selected', [$printer->id])
+            ->call('save')
+            ->assertDispatched('closeModal');
+
+        $this->assertSame([$switch->id, 2], [$printer->fresh()->switch_id, $printer->fresh()->switch_port]);
+    }
 }
