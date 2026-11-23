@@ -244,4 +244,18 @@ class SwitchPortsTest extends TestCase
         $this->assertContains('port 3', $gateway['badges']);
         $this->assertStringContainsString('Plugged into', (string) $gateway['title']);
     }
+
+    public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void
+    {
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        SwitchService::assign($switch, 3, [$printer->id]);
+
+        $html = view('partials.device.switch-ports', ['device' => $switch->fresh()])->render();
+
+        $this->assertStringContainsString('printer', $html);
+        $this->assertStringContainsString(route('devices', ['selectedDeviceId' => $printer->id]), $html);
+    }
 }

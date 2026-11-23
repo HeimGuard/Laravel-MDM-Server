@@ -102,5 +102,5 @@ user name and password.
   this switch: its web interface has no TLS and trusts the address of the agent after the login.
 - **What is stored:** measured values of the device (`switch.port.link` with the port as name, `switch.port.bad`, `switch.port.tx`
   and `switch.port.rx` (good packets, at most every 10 minutes), `switch.ports.up`), kept as long as `history_days`. The device
-  detail has a card with the ports (link and speed, bad packets, packets sent and received).
+  detail has a card with the ports (link and speed, bad packets, packets sent and received); after the number of a port the devices plugged into it are badges that link to them.
 - An agent older than 1.37.0 ignores the `probe`: the ping works, the ports stay empty.

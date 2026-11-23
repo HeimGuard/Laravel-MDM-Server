@@ -1,5 +1,9 @@
 {{-- The ports of a switch without SNMP, read by the agent of its network (App\Services\SwitchService). --}}
-@php($ports = \App\Services\SwitchService::enabled($device) ? \App\Services\SwitchService::ports($device) : null)
+@php
+    $ports = \App\Services\SwitchService::enabled($device) ? \App\Services\SwitchService::ports($device) : null;
+    // The devices plugged into the ports by hand (the network map), by the port.
+    $plugged = $ports === null ? collect() : \App\Models\Device::query()->whereSettingIn('lan.switch_device_id', [$device->id])->get()->groupBy(fn ($other) => $other->switch_port);
+@endphp
 @if (\App\Services\SwitchService::enabled($device))
     <div class="card mt-3">
         <div class="card-body">
@@ -26,7 +30,14 @@
                         <tbody>
                             @foreach ($ports as $port)
                                 <tr wire:key="switch-port-{{ $port['port'] }}">
-                                    <td class="fw-medium">{{ $port['port'] }}</td>
+                                    <td class="fw-medium text-nowrap">
+                                        {{ $port['port'] }}
+                                        @foreach ($plugged->get($port['port'], collect()) as $other)
+                                            <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Plugged into :switch, port :port', ['switch' => $device->displayName, 'port' => $port['port']]) }}">
+                                                <x-badge color="secondary" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
+                                            </a>
+                                        @endforeach
+                                    </td>
                                     <td>
                                         <span class="badge text-bg-{{ $port['link'] >= 2 ? 'success' : 'secondary' }} fw-medium">{{ __(\App\Services\SwitchService::LINKS[$port['link']] ?? 'Down') }}</span>
                                     </td>

@@ -15,7 +15,7 @@ function portsHtml(card) {
     if (!card.ports.length) {
         return `<span class="nm-sub">${esc(card.empty)}</span>`;
     }
-    const speed = (link) => (link === 6 ? 'is-gig' : link >= 3 ? 'is-fast' : link === 2 ? 'is-slow' : 'is-down');
+    const speed = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
 
     return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}"`
         + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
@@ -184,7 +184,7 @@ export function createNetworkMap(root, data) {
         }
         // The cell of a switch in the grid: its card and the row of its devices under it (room for the links between).
         const LEVEL = 8;
-        const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 3 ? 'is-fast' : link === 2 ? 'is-slow' : 'is-linkdown');
+        const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
         // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
         // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
         const portLinks = (id, el, elLeft, elTop, rowLeft) => {
