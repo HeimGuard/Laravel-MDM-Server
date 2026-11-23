@@ -1683,7 +1683,11 @@ class Device extends Model
 
         return static::query()->whereKey($mine)->orderBy('id')->get()
             ->take(self::MAX_PING_TARGETS)
-            ->map(fn (Device $device) => ['id' => $device->id, 'address' => $device->ping_address])
+            ->map(fn (Device $device) => array_filter(
+                // probe: what the agent requests from a switch (agents 1.37.0+), see SwitchService.
+                ['id' => $device->id, 'address' => $device->ping_address, 'probe' => \App\Services\SwitchService::probe($device, $relay)],
+                fn ($value) => $value !== null,
+            ))
             ->values()->all();
     }
 

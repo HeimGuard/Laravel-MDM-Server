@@ -245,6 +245,7 @@
 
                 @if ($selectedDevice->isPingOnly)
                     @livewire('ping-monitor', ['deviceId' => $selectedDevice->id], key('ping-monitor' . $selectedDevice->id))
+                    @include('partials.device.switch-ports', ['device' => $selectedDevice])
                 @else
                     @livewire('device-metrics', ['selectedDeviceId' => $selectedDevice->id], key('device-metrics' . $selectedDevice->id))
                     {{-- The open ports of the host, the same card as of a ping-only device (the scan runs on another agent). --}}

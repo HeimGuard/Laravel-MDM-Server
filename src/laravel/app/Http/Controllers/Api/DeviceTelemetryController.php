@@ -59,6 +59,8 @@ class DeviceTelemetryController extends Controller
 
         return response()->json([
             'taken' => Device::recordPings($device, $request->json('results')),
+            // What the agent read from the devices of its network for the server (ports of a switch, agents 1.37.0+).
+            'probed' => \App\Services\SwitchService::record($device, $request->json('probes')),
             // Pings made while the agent could not reach the server (agents 1.11.0+).
             'backfilled' => Device::backfillPings($device, $request->json('backlog')),
             // The current list, so the agent follows changes between its reports.

@@ -26,6 +26,28 @@
             @error('via') <div class="invalid-feedback">{{ $message }}</div> @enderror
             <div class="form-text">{{ __('Automatic: an agent in its network; in another subnet (behind a router) the stationary agents of each site try in turn until one gets an answer and keep it. Choose an agent when you know which one reaches it.') }}</div>
         </div>
+        <div class="col-12">
+            <label class="form-label" for="ping-settings-switch">{{ __('Switch') }}</label>
+            <select class="form-select" id="ping-settings-switch" wire:model.live="switchType">
+                <option value="">{{ __('Not a switch (or without ports to read)') }}</option>
+                @foreach ($switchTypes as $type => $label)
+                    <option value="{{ $type }}">{{ $label }}</option>
+                @endforeach
+            </select>
+            <div class="form-text">{{ __('A switch without SNMP: the agent that pings it reads the ports from its web page (agents :version or newer).', ['version' => \App\Services\SwitchService::VERSION]) }}</div>
+        </div>
+        @if ($switchType !== '')
+            <div class="col-6">
+                <label class="form-label" for="ping-settings-switch-user">{{ __('User name') }}</label>
+                <input autocomplete="off" class="form-control @error('switchUser') is-invalid @enderror" id="ping-settings-switch-user" type="text" wire:model="switchUser">
+            </div>
+            <div class="col-6">
+                <label class="form-label" for="ping-settings-switch-password">{{ __('Password') }}</label>
+                <input autocomplete="new-password" class="form-control" id="ping-settings-switch-password" placeholder="{{ $switchHasPassword ? __('Leave empty to keep it') : '' }}" type="password" wire:model="switchPassword">
+            </div>
+            @error('switchUser') <div class="col-12 small text-danger">{{ $message }}</div> @enderror
+            <div class="col-12 small text-body-secondary">{{ __('The password is stored encrypted and sent to the agent encrypted with its own key, so only that agent can read it. Use a password made for this switch.') }}</div>
+        @endif
         @error('address') <div class="col-12 small text-danger">{{ $message }}</div> @enderror
         <div class="col-12 small text-body-secondary">{{ __('The prefix tells which agents share its network: they ping it and wake it. A new address starts the history over (offline until it answers).') }}</div>
     </div>

@@ -82,3 +82,25 @@ address, the prefix of its network (`/24`) and optionally the MAC address for Wa
   the unanswered periods marked. Every ping is stored as measured values (`ping.up`, `ping.rtt`, see [Measured values](server.md#measured-values)) and kept as long as the history setting says (`history_days` in System > Settings, 30 days by default, cleaned daily): with fewer days the 30-day views are shorter.
 - In the device list it has a network icon; alerts offer the status only (offline for *n* minutes). Its address, prefix and MAC are changed in
   **Ping settings** in the device menu.
+
+### Switch without SNMP: ports (agents 1.37.0+)
+
+A ping-only device can be a **switch** whose ports the portal shows although it has no SNMP (TP-Link Easy Smart, the way
+[check_tplink](https://github.com/Clete2/check_tplink) reads them). In **Ping settings** choose the kind of switch and enter its
+user name and password.
+
+- **The agent is the ingress proxy of the server into its network.** The agent that pings the device gets a `probe` with its
+  target: the HTTP requests (steps) to make to that device, the same ones the web interface makes (`GET /PortStatisticsRpm.htm`,
+  and `POST /logon.cgi` first when the switch is not logged in: the first time and every 10 minutes, or after an answer without
+  ports). It makes them every minute while the device answers pings, and returns the body of the last answer. It does not read
+  it: the server finds the ports in it (`SwitchService::parse`), so another page or model is a change of the server only.
+- **Limits of the proxy** (`Invoke-LanProbe`): only the device it was given, only HTTP (GET, POST, default port 80), a path of
+  letters, digits and `._~/%-`, no `..`, no redirects, 4 steps of 5 seconds, 256 KB of the answer, 4 devices at a time.
+  It is not a general proxy into the network.
+- **The password** is stored encrypted (`APP_KEY`) and never shown again. It goes to the agent only inside the step, encrypted with
+  the public key of that agent (RSA-OAEP), so only it can read it (nobody on the way, no other agent). Use a password made for
+  this switch: its web interface has no TLS and trusts the address of the agent after the login.
+- **What is stored:** measured values of the device (`switch.port.link` with the port as name, `switch.port.bad`, `switch.port.tx`
+  and `switch.port.rx` (good packets, at most every 10 minutes), `switch.ports.up`), kept as long as `history_days`. The device
+  detail has a card with the ports (link and speed, bad packets, packets sent and received).
+- An agent older than 1.37.0 ignores the `probe`: the ping works, the ports stay empty.

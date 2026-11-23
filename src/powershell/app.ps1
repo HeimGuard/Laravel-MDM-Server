@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.36.2'
+$AgentVersion = '1.37.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -5301,9 +5301,68 @@ function Set-PingTargets {
     $script:PingTargets = @(@($Targets) | Where-Object { $_ } | ForEach-Object {
             $address = $null
             if ("$($_.id)" -match '^[0-9]{1,10}$' -and [System.Net.IPAddress]::TryParse("$($_.address)", [ref]$address) -and $address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork) {
-                @{ Id = [long]$_.id; Address = $address }
+                # probe (agents 1.37.0+): HTTP requests the server wants made to this device (Invoke-LanProbe).
+                @{ Id = [long]$_.id; Address = $address; Probe = $(if ($_.PSObject.Properties['probe']) { $_.probe } else { $null }) }
             }
         } | Select-Object -First 32)
+}
+
+function ConvertFrom-ServerSecret {
+    # A secret the server encrypted with the public key of this device (RSA-OAEP, SHA-1): a JSON object of strings, the
+    # password of a device in the network. Only this agent can read it, it is never stored.
+    param ([string]$Secret)
+
+    $bytes = (Get-DeviceKey).Decrypt([Convert]::FromBase64String($Secret), [System.Security.Cryptography.RSAEncryptionPadding]::OaepSHA1)
+    return [System.Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+}
+
+function Invoke-LanProbe {
+    # The agent as an ingress proxy of the server into its network (agents 1.37.0+): the HTTP requests (steps) the server
+    # gave for a ping-only device, made to that device only (its address, from the target list), one after another with
+    # the same cookies; the answer of the last one goes back, the server reads it (a page of a switch). Not a general
+    # proxy: GET and POST over HTTP (port 1-65535, 80 default), a path without "..", no redirects, 4 steps, 5 s each,
+    # 256 KB of the answer. A POST carries a form: a secret (ConvertFrom-ServerSecret) is the fields of it.
+    param ($Target)
+
+    $probe = $Target.Probe
+    $result = @{ id = $Target.Id; status = 0; body = $null; error = $null }
+    $client = $null
+    try {
+        Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+        $handler = New-Object System.Net.Http.HttpClientHandler
+        $handler.AllowAutoRedirect = $false
+        $handler.CookieContainer = New-Object System.Net.CookieContainer
+        $client = New-Object System.Net.Http.HttpClient($handler)
+        $client.Timeout = [TimeSpan]::FromSeconds(5)
+        $port = 80
+        if ($probe.PSObject.Properties['port'] -and "$($probe.port)" -match '^[0-9]{1,5}$' -and [int]$probe.port -ge 1 -and [int]$probe.port -le 65535) { $port = [int]$probe.port }
+        foreach ($step in @(@($probe.steps) | Select-Object -First 4)) {
+            $method = "$($step.method)".ToUpperInvariant()
+            $path = "$($step.path)"
+            if ($method -notin 'GET', 'POST' -or $path -notmatch '^/[A-Za-z0-9._~/%-]*(\?[A-Za-z0-9._~%=&-]*)?$' -or $path.Contains('..')) {
+                throw 'A step the agent does not make'
+            }
+            $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($method), "http://$($Target.Address):$port$path")
+            if ($method -eq 'POST') {
+                $fields = New-Object 'System.Collections.Generic.Dictionary[string,string]'
+                if ($step.PSObject.Properties['form']) { foreach ($field in $step.form.PSObject.Properties) { $fields[$field.Name] = "$($field.Value)" } }
+                if ($step.PSObject.Properties['secret'] -and $step.secret) { foreach ($field in (ConvertFrom-ServerSecret -Secret "$($step.secret)").PSObject.Properties) { $fields[$field.Name] = "$($field.Value)" } }
+                $request.Content = New-Object System.Net.Http.FormUrlEncodedContent($fields)
+            }
+            $response = $client.SendAsync($request).GetAwaiter().GetResult()
+            $bytes = $response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+            $result.status = [int]$response.StatusCode
+            $result.body = [System.Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min($bytes.Length, 262144))
+            $response.Dispose()
+        }
+    }
+    catch {
+        $result.error = "$($_.Exception.Message)".Substring(0, [Math]::Min(200, "$($_.Exception.Message)".Length))
+    }
+    finally {
+        if ($client) { $client.Dispose() }
+    }
+    return $result
 }
 
 function Invoke-Pings {
@@ -5387,8 +5446,16 @@ function Send-PingResults {
             $reply = $pings[$_.Id]
             @{ id = $_.Id; up = [bool]$reply.Up; rtt = $(if ($reply.Up) { $reply.Rtt } else { $null }); at = $at }
         })
+    # The requests the server wants made to the devices that answered (agents 1.37.0+, at most every minute, 4 devices).
+    if ($null -eq $script:ProbeAt) { $script:ProbeAt = @{} }
+    $probes = @($script:PingTargets | Where-Object { $_.Probe -and $pings[$_.Id].Up -and ((Get-UnixTime) - [long]$script:ProbeAt["$($_.Id)"]) -ge 60 } | Select-Object -First 4 | ForEach-Object {
+            $script:ProbeAt["$($_.Id)"] = Get-UnixTime
+            Invoke-LanProbe -Target $_
+        })
+    $body = @{ results = $results }
+    if ($probes.Count -gt 0) { $body['probes'] = $probes }
     try {
-        $response = Invoke-MdmApi -Method Post -Path 'device/pings' -Token $Token -Body @{ results = $results }
+        $response = Invoke-MdmApi -Method Post -Path 'device/pings' -Token $Token -Body $body
         if ($response.PSObject.Properties['ping_targets']) {
             Set-PingTargets -Targets $response.ping_targets
         }

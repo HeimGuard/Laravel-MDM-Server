@@ -23,6 +23,10 @@ trait HasDeviceSettings
         'ping_prefix' => ['lan.prefix', SettingDataType::INT, 'ping'],
         'ping_mac' => ['lan.mac', SettingDataType::STRING, 'ping'],
         'ping_via_id' => ['lan.via_device_id', SettingDataType::INT, 'ping'],
+        // A switch without SNMP the agent reads the ports of (App\Services\SwitchService): the kind, the user and the password (encrypted).
+        'switch_type' => ['switch.type', SettingDataType::STRING, 'ping'],
+        'switch_user' => ['switch.user', SettingDataType::STRING, 'ping'],
+        'switch_password' => ['switch.password', SettingDataType::STRING, 'ping'],
         'wake_mac' => ['lan.mac', SettingDataType::STRING, 'agent'],
         'wake_address' => ['lan.address', SettingDataType::STRING, 'agent'],
         'wake_prefix' => ['lan.prefix', SettingDataType::INT, 'agent'],

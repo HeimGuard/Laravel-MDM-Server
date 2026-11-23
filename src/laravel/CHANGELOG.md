@@ -7,6 +7,12 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Added
+- Switch without SNMP (TP-Link Easy Smart): in the Ping settings of a ping-only device choose the switch and enter its user name and
+  password, and the device shows its ports (link and speed, bad packets, packets sent and received). The agent of its network is the
+  ingress proxy of the server (agents 1.37.0+): it makes the HTTP requests the server gives it to that device only, the server reads
+  the page. The password is stored encrypted and goes to the agent encrypted with its own key.
+
 ## [1.36.2] - 2026-11-23
 
 ### Added
