@@ -97,7 +97,7 @@
                         </thead>
                         <tbody>
                             @forelse ($events as $event)
-                                <tr wire:key="security-event-{{ $event->id }}">
+                                <tr wire:key="security-event-{{ $event->cache_key ?? $event->id }}">
                                     <td class="ps-3 small text-nowrap text-body-secondary" title="{{ $event->occurred_at }}">{{ $event->occurred_at->diffForHumans() }}</td>
                                     <td class="small"><a wire:navigate href="{{ route('devices', ['selectedDeviceId' => $event->device_id, 'tab' => 'security']) }}">{{ $event->device?->displayName }}</a></td>
                                     <td class="small fw-medium text-nowrap"><span class="badge text-bg-{{ SecurityEvent::TONES[$event->type] ?? 'secondary' }} fw-medium">{{ $event->label }}</span></td>

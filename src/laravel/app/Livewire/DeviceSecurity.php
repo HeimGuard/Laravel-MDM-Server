@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
+use App\Services\SyslogUnparsedService;
 use App\Support\SecurityExport;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -66,7 +67,9 @@ class DeviceSecurity extends Component
             'inventory' => $inventory,
             'findings' => $open->whereNull('acknowledged_at')->values(),
             'acknowledged' => $open->whereNotNull('acknowledged_at')->values(),
-            'events' => SecurityEvent::query()->forDevice($device->id)->latest('occurred_at')->limit(20)->get(),
+            // The events and the syslog messages no parser reads (kept in the cache for a day), newest first.
+            'events' => SecurityEvent::query()->forDevice($device->id)->latest('occurred_at')->limit(20)->get()
+                ->concat(SyslogUnparsedService::events($device->id))->sortByDesc(fn (SecurityEvent $event) => $event->occurred_at)->take(20)->values(),
         ]);
     }
 }

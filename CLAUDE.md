@@ -53,7 +53,8 @@ to test and what has broken tests before. Read it instead of searching the code 
   - **Something that happened** (a log event, offline, an agent update, a finding of a port scan): `events`.
   - **Something a user did**: `activities` (`Audit`); its execution: `device_commands`, `script_runs`.
   - Alerts and notifications stay in `alert_events`. Raw logs are not stored, only the events made of them; the one exception is syslog, where a message no parser
-    reads is stored as an event of the type `syslog` (so it is visible what arrives and a parser can be written).
+    reads is kept in the **cache** for a day (`SyslogUnparsedService`, shown in the table of the events as an event of the type `syslog`, not in
+    `events`), so it is visible what arrives and a parser can be written.
 - History keeps **changes only** (a value that did not change adds no sample), for all of it one setting
   (`history_days`), no retention per key and no config file for it.
 - **Never discard data.** Where two sources report the same thing (the auth log of the agent and the same messages forwarded

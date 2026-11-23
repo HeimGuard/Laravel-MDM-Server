@@ -281,11 +281,12 @@ in the Docker image receives it on port 5514 (UDP and TCP, published as 514 in t
 `php artisan mdm:syslog-ingest`, which makes records of the log source `syslog` (`Time`, `Host`, `Facility`, `Severity`, `App`,
 `Pid`, `Message`) and runs them through the same parsers and rules as the logs of the agents (parsers of the source `syslog`
 in the `detection-policy` feed read `App`, e.g. `sshd`, `sudo`).
-A message that no parser reads is not lost: it is stored as an event of the type `syslog` (the program in User, the host name in
-Source, the same message of the same program is one event with a count), so the Events list shows what arrives and a parser can be
-written for it. It needs the portal to take logs (Security page). System admins have an "Add parser" button on such an event (Security → Events and the
-Security tab of the device): it opens the parser editor with a parser that matches that whole message (`RuleForm::parserFor`), to be
-changed to read the part that varies.
+A message that no parser reads is not stored: it is kept in the **cache** for a day (`SyslogUnparsedService`; the program in User, the host name in
+Source, the same message of the same program is one entry with a count, at most 500 messages per device, the day counts from the last time it arrived)
+and shown in the same table as the events (Security → Events and the Security tab of the device) as an event of the type `syslog`, so the table shows
+what arrives and a parser can be written for it. It is gone a day after it was seen last. It needs the portal to take logs (Security page). System
+admins have an **Add parser** button on such an event: it opens the parser editor with a parser that matches that whole message
+(`RuleForm::parserFor`), to be changed to read the part that varies.
 
 The sender is found by its IP address: it has to be the address of a device (an interface an agent reports, the address of a
 ping device, or the public address of exactly one device). An address that is no device's, or that two devices have (a Docker

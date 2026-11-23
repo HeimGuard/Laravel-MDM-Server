@@ -6,6 +6,7 @@ use App\Jobs\SyncSecurityFeed;
 use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\Device;
 use App\Models\SecurityEvent;
+use App\Services\SyslogUnparsedService;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
@@ -185,6 +186,11 @@ class Page extends Component
                     $q->where(fn ($q) => $q->whereLike('data->user', $like)->orWhereLike('data->source_origin', $like)->orWhereLike('message', $like));
                 })
                 ->limit($this->eventLimit + 1)->get();
+            // The syslog messages no parser reads (cache, a day) are in the same table.
+            if ($this->eventType === '' || $this->eventType === 'syslog') {
+                $events = $events->concat(SyslogUnparsedService::events($this->eventDevice !== '' ? (int) $this->eventDevice : null, $this->eventDays, $this->eventSearch))
+                    ->sortByDesc(fn (SecurityEvent $event) => $event->occurred_at)->values();
+            }
             $moreEvents = $events->count() > $this->eventLimit;
             $events = $events->take($this->eventLimit);
         }
@@ -194,10 +200,10 @@ class Page extends Component
             'findings' => $this->tab === 'findings' ? $this->findings()->bySeverity()->limit(self::LIMIT)->get() : collect(),
             'events' => $events,
             'moreEvents' => $moreEvents ?? false,
-            'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->where('eventable_type', (new Device)->getMorphClass())->select('eventable_id')->distinct())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
+            'eventDevices' => $this->tab === 'events' ? Device::query()->whereIn('id', SecurityEvent::query()->where('eventable_type', (new Device)->getMorphClass())->select('eventable_id')->distinct())->orWhereIn('id', SyslogUnparsedService::events()->pluck('eventable_id')->unique()->all())->get()->mapWithKeys(fn ($device) => [$device->id => $device->displayName])->sort() : collect(),
             'rules' => $this->tab === 'rules' ? SecurityRule::query()->detection()->addSelect(['open_count' => SecurityFinding::query()->active()->selectRaw('count(distinct device_id) + count(distinct case when device_id is null then target_ip end)')->whereColumn('security_rule_id', 'security_rules.id')])->orderBy('source')->orderBy('name')->get() : collect(),
             'parsers' => $this->tab === 'rules' ? SecurityRule::query()->parsers()->orderBy('source')->orderBy('name')->get() : collect(),
-            'eventTypes' => $this->tab === 'events' ? SecurityEvent::query()->distinct()->orderBy('type')->pluck('type')->mapWithKeys(fn ($type) => [$type => (new SecurityEvent(['type' => $type]))->label]) : collect(),
+            'eventTypes' => $this->tab === 'events' ? SecurityEvent::query()->distinct()->orderBy('type')->pluck('type')->when(SyslogUnparsedService::events()->isNotEmpty(), fn ($types) => $types->push('syslog'))->unique()->sort()->values()->mapWithKeys(fn ($type) => [$type => (new SecurityEvent(['type' => $type]))->label]) : collect(),
             'pending' => SecurityInbox::pending(),
             'feed' => ['enabled' => SecurityFeed::enabled()] + SecurityFeed::state(),
             'scanned' => SecurityInventory::query()->count(),

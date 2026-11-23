@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Device;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
+use App\Services\SyslogUnparsedService;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -12,8 +13,8 @@ use Throwable;
  * Syslog from other servers and devices (RFC 3164 and 5424, UDP and TCP on port 5514, published as 514). rsyslog in the
  * container receives it and hands every message as a line of JSON to `php artisan mdm:syslog-ingest`, which uses this class:
  * the sender is the device whose IP address it is (an interface of an agent, the address of a ping device), the
- * messages are records of the log source "syslog" and go through the same parsers and rules as the logs of the agents; what no parser reads is stored as events of the type
- * "syslog" (see unparsed()).
+ * messages are records of the log source "syslog" and go through the same parsers and rules as the logs of the agents; what no parser reads is not
+ * stored, only kept in the cache for a day (see unparsed() and SyslogUnparsedService).
  * Messages from an address that belongs to no device (or to more than one) are dropped.
  */
 class Syslog
@@ -134,7 +135,7 @@ class Syslog
     }
 
     /**
-     * The messages no parser reads, as events of the type "syslog" (the same message of the same program is one event with
+     * The messages no parser reads, grouped like events (the same message of the same program is one entry with
      * a count), so that it is visible what arrives and a parser can be written for it. User is the program, Source the host name.
      *
      * @param  array<int, array<string, string>>  $records
@@ -209,10 +210,12 @@ class Syslog
                 continue;
             }
             try {
-                $events = SecurityInventory::sanitizeEvents(array_merge(
-                    SecurityParsers::run([['source' => 'syslog', 'records' => $records]], $parsers),
-                    self::unparsed($records, $parsers),
-                ));
+                $events = SecurityInventory::sanitizeEvents(SecurityParsers::run([['source' => 'syslog', 'records' => $records]], $parsers));
+                // What no parser reads is not stored: it is kept in the cache for a day (SyslogUnparsedService).
+                $unparsed = self::unparsed($records, $parsers);
+                if ($unparsed !== []) {
+                    SyslogUnparsedService::record($id, $unparsed);
+                }
                 if ($events !== []) {
                     SecurityScanner::ingest($device, [], $events);
                     $result['events'] += count($events);

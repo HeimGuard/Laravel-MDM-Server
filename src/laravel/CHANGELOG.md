@@ -48,8 +48,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   Security → Events) that opens the parser editor with a parser for that message.
 
 ### Changed
-- Syslog: a message that no parser reads is now stored as an event of the type "syslog" (Security → Events and the Security tab of the
-  device), so you can see what a device sends and write a parser for it. Until now such messages were dropped.
+- Syslog: a message that no parser reads is kept in the cache for a day and shown in the table of the events as an event of the type "syslog"
+  (Security → Events and the Security tab of the device), so you can see what a device sends and write a parser for it. It is not stored in the database.
 
 ### Fixed
 - Syslog of a ping-only device (a host without the agent) was stored, but never shown: its Security tab now lists the events made of its

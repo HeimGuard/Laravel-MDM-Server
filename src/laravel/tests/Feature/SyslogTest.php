@@ -7,6 +7,7 @@ use App\Livewire\SecurityScan\RuleForm;
 use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityRule;
+use App\Services\SyslogUnparsedService;
 use App\Models\User;
 use App\Support\SecurityParsers;
 use App\Support\SecurityScanner;
@@ -128,16 +129,17 @@ class SyslogTest extends TestCase
         $result = Syslog::ingest($messages);
 
         $this->assertSame(['192.168.1.77' => 2], $result['unknown']);
-        // Two parsed ones and the message no parser reads (a "syslog" event, see the next test).
-        $this->assertSame(3, $result['events']);
-        $events = SecurityEvent::query()->forDevice($router->id)->where('type', 'failed_logon')->get()->sortBy('user')->values();
+        // The two parsed ones are events; the message no parser reads is kept in the cache (see the next test).
+        $this->assertSame(2, $result['events']);
+        $this->assertSame(['job started'], SyslogUnparsedService::events($router->id)->pluck('message')->all());
+        $events = SecurityEvent::query()->forDevice($router->id)->get()->sortBy('user')->values();
         $this->assertSame(['bob', 'root'], $events->pluck('user')->all());
         $this->assertSame(['1.2.3.4', '1.2.3.4'], $events->pluck('source')->all());
         $this->assertSame('ssh from web01', $events[0]->message);
         $this->assertSame(0, SecurityEvent::query()->where('eventable_id', '!=', $router->id)->count());
     }
 
-    public function test_a_message_no_parser_reads_is_stored_as_a_syslog_event(): void
+    public function test_a_message_no_parser_reads_is_kept_in_the_cache_for_a_day_not_stored(): void
     {
         $this->enableParser();
         $nas = $this->pingDevice('192.168.1.20');
@@ -145,19 +147,56 @@ class SyslogTest extends TestCase
 
         $result = Syslog::ingest([$line('Test message'), $line('Test message'), $line('Another one'), $this->message('192.168.1.20', 'sshd', 'Failed password for root from 1.2.3.4 port 22 ssh2')]);
 
-        $this->assertSame(3, $result['events']);
-        $events = SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->get()->sortBy('message')->values();
+        // Only the parsed one is an event in the database.
+        $this->assertSame(1, $result['events']);
+        $this->assertSame(1, SecurityEvent::query()->count());
+        // The others are in the cache, as events of the type "syslog" for the tables.
+        $events = SyslogUnparsedService::events($nas->id)->sortBy('message')->values();
         $this->assertSame(['Another one', 'Test message'], $events->pluck('message')->all());
         $this->assertSame([1, 2], $events->pluck('count')->all());
         $this->assertSame(['synology', 'synology'], $events->pluck('user')->all());
         $this->assertSame(['nas', 'nas'], $events->pluck('source')->all());
+        $this->assertSame(['syslog', 'syslog'], $events->pluck('type')->all());
+        // Again: the same message is one entry with a higher count.
+        Syslog::ingest([$line('Test message')]);
+        $this->assertSame([1, 3], SyslogUnparsedService::events($nas->id)->sortBy('message')->pluck('count')->all());
+        // All devices, with the filters of the table.
+        $this->assertCount(2, SyslogUnparsedService::events());
+        $this->assertCount(1, SyslogUnparsedService::events(null, 0, 'another'));
+
+        // A day later it is gone.
+        \Illuminate\Support\Carbon::setTestNow(now()->addHours(25));
+        $this->assertCount(0, SyslogUnparsedService::events($nas->id));
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function test_the_messages_are_kept_without_any_parser(): void
+    {
+        $nas = $this->pingDevice('192.168.1.20');
+
+        Syslog::ingest([$this->message('192.168.1.20', 'synology', 'Test message')]);
+
+        $this->assertSame(['Test message'], SyslogUnparsedService::events($nas->id)->pluck('message')->all());
+        $this->assertSame(0, SecurityEvent::query()->count());
+    }
+
+    public function test_the_unparsed_messages_are_in_the_tables_of_the_events(): void
+    {
+        $user = \App\Models\User::factory()->create();
+        $nas = $this->pingDevice('192.168.1.20');
+        Syslog::ingest([$this->message('192.168.1.20', 'synology', 'Test message')]);
+
+        \Livewire\Livewire::actingAs($user)->test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $nas->id])->assertSee('Test message');
+        \Livewire\Livewire::actingAs($user)->test(\App\Livewire\SecurityScan\Page::class)->set('tab', 'events')->assertSee('Test message');
     }
 
     public function test_a_parser_can_be_made_of_an_unparsed_message(): void
     {
         $nas = $this->pingDevice('192.168.1.20');
         Syslog::ingest([$this->message('192.168.1.20', 'Synology-Backup', 'Backup task [Daily] (1) finished.', ['host' => 'nas'])]);
-        $event = SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->firstOrFail();
+        $event = SyslogUnparsedService::events($nas->id)->firstOrFail();
+        // The same message by its key (the button of the table).
+        $this->assertSame($event->message, SyslogUnparsedService::find($event->cache_key)->message);
 
         [$definition, $record] = RuleForm::parserFor($event);
 
@@ -167,16 +206,6 @@ class SyslogTest extends TestCase
         $this->assertSame('Backup task [Daily] (1) finished.', $parsed['Message']);
         // Read by it, the message is no longer an event of the type "syslog".
         $this->assertSame([], Syslog::unparsed([$record], [$definition]));
-    }
-
-    public function test_the_messages_are_stored_without_any_parser(): void
-    {
-        $nas = $this->pingDevice('192.168.1.20');
-
-        $result = Syslog::ingest([$this->message('192.168.1.20', 'synology', 'Test message')]);
-
-        $this->assertSame(1, $result['events']);
-        $this->assertSame(1, SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->count());
     }
 
     public function test_the_events_of_a_ping_only_device_are_shown_without_an_inventory(): void

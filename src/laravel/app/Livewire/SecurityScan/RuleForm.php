@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\SecurityEvent;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
+use App\Services\SyslogUnparsedService;
 use App\Support\SecurityParsers;
 use App\Support\SecurityScanner;
 use Illuminate\Support\Facades\Gate;
@@ -59,14 +60,16 @@ class RuleForm extends Component
 
     private const PARSER_SAMPLE = '{"Time": "2026-10-05T10:00:00Z", "Identifier": "su", "Pid": 123, "Message": "FAILED SU (to root) alice on pts/0"}';
 
-    public function mount(?int $ruleId = null, ?int $copyOf = null, string $kind = 'detection', ?int $eventId = null): void
+    public function mount(?int $ruleId = null, ?int $copyOf = null, string $kind = 'detection', ?int $eventId = null, ?string $eventKey = null): void
     {
         Gate::authorize('is-system-admin');
         $definition = $kind === 'parser' ? self::PARSER_TEMPLATE : self::TEMPLATE;
         $record = null;
-        if ($eventId) {
-            // A parser for a syslog message nothing reads (an event of the type "syslog"): it matches this message.
-            $event = SecurityEvent::query()->where('type', 'syslog')->findOrFail($eventId);
+        if ($eventKey !== null || $eventId) {
+            // A parser for a syslog message nothing reads (an event of the type "syslog": kept in the cache for a day, or one stored before): it
+            // matches this message.
+            $event = $eventKey !== null ? SyslogUnparsedService::find($eventKey) : SecurityEvent::query()->where('type', 'syslog')->find($eventId);
+            abort_if($event === null, 404);
             [$definition, $record] = self::parserFor($event);
         } elseif ($ruleId) {
             $rule = SecurityRule::query()->findOrFail($ruleId);
@@ -98,7 +101,7 @@ class RuleForm extends Component
         $message = (string) $event->message;
         $definition = [
             'kind' => 'parser',
-            'key' => 'custom.syslog-'.Str::limit(str_replace('_', '-', $name ?: 'message'), 30, '').'-'.$event->id,
+            'key' => 'custom.syslog-'.Str::limit(str_replace('_', '-', $name ?: 'message'), 30, '').'-'.($event->id ?? substr(md5((string) $event->cache_key), 0, 6)),
             'name' => mb_strimwidth('Syslog: '.($app !== '' ? $app.': ' : '').$message, 0, 100, '…'),
             'source' => 'syslog',
             'when' => $app !== '' ? ['field' => 'App', 'op' => 'eq', 'value' => $app] : null,
