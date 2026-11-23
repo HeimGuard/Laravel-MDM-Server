@@ -616,29 +616,45 @@ export function createNetworkMap(root, data) {
         tip.innerHTML = `<div class="nm-tip-head"><span class="nm-tip-title">${esc(port.heading)}</span><span class="nm-tip-link">${esc(port.link_name)}</span></div>`
             + `<div class="nm-tip-grid">${row(card.labels.bad, fmt(port.bad))}${row(card.labels.tx, fmt(port.tx))}${row(card.labels.rx, fmt(port.rx))}</div>`
             + `<div class="nm-tip-sub">${esc(card.labels.devices)}</div>`
-            + (port.devices.length ? port.devices.map((name) => `<div class="nm-tip-device">${esc(name)}</div>`).join('') : `<div class="nm-tip-none">${esc(card.labels.none)}</div>`)
-            + `<div class="nm-tip-hint">${esc(card.labels.hint)}</div>`;
+            + (port.devices.length ? port.devices.map((device) => `<a class="nm-tip-device" href="${esc(device.url)}">${esc(device.name)}</a>`).join('') : `<div class="nm-tip-none">${esc(card.labels.none)}</div>`)
+            + `<button type="button" class="nm-tip-action" data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}">${esc(card.labels.hint)}</button>`;
         const box = button.getBoundingClientRect();
         const stageBox = stage.getBoundingClientRect();
         tip.style.left = `${(box.left - stageBox.left) / view.scale + box.width / 2 / view.scale - 24}px`;
-        tip.style.top = `${(box.bottom - stageBox.top) / view.scale + 8}px`;
+        tip.style.top = `${(box.bottom - stageBox.top) / view.scale + 4}px`;
         tip.hidden = false;
     };
+    // It stays while the pointer is on the port or on the dropdown (the way from one to the other takes a moment): the devices in it are links.
+    let hideTimer = null;
+    const cancelHide = () => { clearTimeout(hideTimer); hideTimer = null; };
+    const hideSoon = () => { cancelHide(); hideTimer = setTimeout(() => { tip.hidden = true; }, 250); };
+    tip.addEventListener('pointerenter', cancelHide);
+    tip.addEventListener('pointerleave', hideSoon);
+    tip.addEventListener('pointerdown', (event) => event.stopPropagation());
     layer.addEventListener('pointerover', (event) => {
         const button = event.target.closest('.nm-port');
         if (button) {
+            cancelHide();
             showTip(button);
-        } else {
-            tip.hidden = true;
+        } else if (!event.target.closest('.nm-port-tip')) {
+            hideSoon();
         }
     });
-    layer.addEventListener('pointerleave', () => { tip.hidden = true; });
+    layer.addEventListener('pointerleave', hideSoon);
+    const openPort = (source) => window.Livewire?.dispatch('openModal', { livewireComponents: 'networks.switch-port', title: source.dataset.heading, parameters: { deviceId: Number(source.dataset.switch), port: Number(source.dataset.port) } });
+    tip.addEventListener('click', (event) => {
+        const action = event.target.closest('.nm-tip-action');
+        if (action) {
+            tip.hidden = true;
+            openPort(action);
+        }
+    });
 
     // A port of a switch: the devices plugged into it (a modal of the page, a multiselect).
     viewport.addEventListener('click', (event) => {
         const port = event.target.closest('.nm-port');
         if (port && !moved) {
-            window.Livewire?.dispatch('openModal', { livewireComponents: 'networks.switch-port', title: port.dataset.heading, parameters: { deviceId: Number(port.dataset.switch), port: Number(port.dataset.port) } });
+            openPort(port);
         }
     });
     viewport.addEventListener('click', (event) => {

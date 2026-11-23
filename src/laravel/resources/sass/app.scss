@@ -321,7 +321,7 @@ label.mdm-tag {
 
 // The dropdown of a port (on hover).
 .nm-port-tip {
-    position: absolute; z-index: 5; width: 15rem; padding: .6rem .75rem; pointer-events: none;
+    position: absolute; z-index: 5; width: 15rem; padding: .6rem .75rem; cursor: default;
     border: 1px solid var(--hg-line-strong); border-radius: .6rem; background: var(--hg-surface-raised);
     box-shadow: 0 10px 28px rgba(0, 0, 0, .55); font-size: .75rem; line-height: 1.3; white-space: normal;
     &[hidden] { display: none; }
@@ -331,9 +331,9 @@ label.mdm-tag {
     .nm-tip-grid { display: grid; grid-template-columns: 1fr auto; row-gap: .15rem; margin-top: .45rem; color: var(--bs-secondary-color); }
     .nm-tip-value { color: var(--bs-body-color); }
     .nm-tip-sub { margin-top: .5rem; padding-top: .4rem; border-top: 1px solid var(--hg-line); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color); }
-    .nm-tip-device { margin-top: .2rem; font-weight: 600; }
+    .nm-tip-device { display: block; margin-top: .2rem; font-weight: 600; color: var(--bs-body-color); text-decoration: none; &:hover { color: var(--hg-ok); } }
     .nm-tip-none { margin-top: .2rem; color: var(--bs-secondary-color); }
-    .nm-tip-hint { margin-top: .5rem; color: var(--hg-info); font-size: .68rem; }
+    .nm-tip-action { display: block; margin: .5rem 0 0; padding: 0; border: 0; background: none; color: var(--hg-info); font-size: .68rem; cursor: pointer; &:hover { text-decoration: underline; } }
 }
 // The ports in the legend of the map.
 .nm-port-key {

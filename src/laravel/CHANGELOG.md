@@ -8,6 +8,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Fixed
+- Network map: the dropdown of a port of a switch stays while the pointer moves onto it (it vanished at once), the devices in it are links and
+  it has a button for the devices on the port.
 - Network map: a router that is the gateway of a network and also a device of the portal (a ping-only router) is one node, the gateway, not
   also a card among the devices. Plugged into a port of a switch, it has the tag *port N* and the tooltip on the gateway.
 

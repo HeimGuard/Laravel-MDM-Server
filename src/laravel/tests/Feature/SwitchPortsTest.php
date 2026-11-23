@@ -155,7 +155,7 @@ class SwitchPortsTest extends TestCase
         $nodes = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id');
         $card = $nodes['device:'.$switch->id]['switch'];
         $this->assertCount(5, $card['ports']);
-        $this->assertSame([$printer->displayName], collect($card['ports'])->firstWhere('port', 3)['devices']);
+        $this->assertSame([$printer->displayName], array_column(collect($card['ports'])->firstWhere('port', 3)['devices'], 'name'));
         $this->assertContains('port 3', $nodes['device:'.$printer->id]['badges']);
 
         // Not selected any more: free again. A deleted switch frees its devices too.

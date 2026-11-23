@@ -278,10 +278,11 @@ class SwitchService
         }
         $ports = [];
         foreach (self::ports($device) ?? [] as $port) {
-            $on = $plugged->where('switch_port', $port['port'])->map(fn (Device $other) => $other->displayName)->values()->all();
+            $onPort = $plugged->where('switch_port', $port['port'])->values();
+            $on = $onPort->map(fn (Device $other) => $other->displayName)->all();
             $link = __(self::LINKS[$port['link']] ?? 'Down');
             $ports[] = $port + [
-                'devices' => $on,
+                'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->all(),
                 'link_name' => $link,
                 'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]),
                 'title' => implode(' · ', array_filter([
