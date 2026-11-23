@@ -3,11 +3,13 @@
 namespace App\Livewire\SecurityScan;
 
 use App\Models\Device;
+use App\Models\SecurityEvent;
 use App\Models\SecurityInventory;
 use App\Models\SecurityRule;
 use App\Support\SecurityParsers;
 use App\Support\SecurityScanner;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Livewire\Component;
 use SteelAnts\Modal\Livewire\Attributes\AllowInModal;
 
@@ -57,11 +59,16 @@ class RuleForm extends Component
 
     private const PARSER_SAMPLE = '{"Time": "2026-10-05T10:00:00Z", "Identifier": "su", "Pid": 123, "Message": "FAILED SU (to root) alice on pts/0"}';
 
-    public function mount(?int $ruleId = null, ?int $copyOf = null, string $kind = 'detection'): void
+    public function mount(?int $ruleId = null, ?int $copyOf = null, string $kind = 'detection', ?int $eventId = null): void
     {
         Gate::authorize('is-system-admin');
         $definition = $kind === 'parser' ? self::PARSER_TEMPLATE : self::TEMPLATE;
-        if ($ruleId) {
+        $record = null;
+        if ($eventId) {
+            // A parser for a syslog message nothing reads (an event of the type "syslog"): it matches this message.
+            $event = SecurityEvent::query()->where('type', 'syslog')->findOrFail($eventId);
+            [$definition, $record] = self::parserFor($event);
+        } elseif ($ruleId) {
             $rule = SecurityRule::query()->findOrFail($ruleId);
             $this->ruleId = $rule->id;
             $this->readOnly = $rule->built_in;
@@ -74,7 +81,39 @@ class RuleForm extends Component
         }
         $this->json = json_encode($definition, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->previewDeviceId = SecurityInventory::query()->latest('collected_at')->value('device_id');
-        $this->sample = ($definition['kind'] ?? null) === 'parser' ? self::PARSER_SAMPLE : '';
+        $this->sample = $record !== null ? json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : (($definition['kind'] ?? null) === 'parser' ? self::PARSER_SAMPLE : '');
+    }
+
+    /**
+     * The parser that reads the message of an event of the type "syslog" (the program in User, the host name in Source),
+     * and the record to try it on. The pattern is the whole message: to read the part that changes, replace it with a
+     * group (for example "(?<user>\\S+)") and use it in the event.
+     *
+     * @return array{0: array, 1: array<string, string>}
+     */
+    public static function parserFor(SecurityEvent $event): array
+    {
+        $app = (string) $event->user;
+        $name = trim(preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($app)), '_');
+        $message = (string) $event->message;
+        $definition = [
+            'kind' => 'parser',
+            'key' => 'custom.syslog-'.Str::limit(str_replace('_', '-', $name ?: 'message'), 30, '').'-'.$event->id,
+            'name' => mb_strimwidth('Syslog: '.($app !== '' ? $app.': ' : '').$message, 0, 100, '…'),
+            'source' => 'syslog',
+            'when' => $app !== '' ? ['field' => 'App', 'op' => 'eq', 'value' => $app] : null,
+            'pattern' => '^'.preg_quote($message).'$',
+            'event' => [
+                'type' => 'syslog_'.Str::limit($name ?: 'event', 20, ''),
+                'user' => '{App}',
+                'source' => '{Host}',
+                'message' => '{Message}',
+            ],
+        ];
+        $definition = array_filter($definition, fn ($value) => $value !== null);
+        $record = ['Time' => $event->occurred_at?->toIso8601String() ?? now()->toIso8601String(), 'Host' => (string) $event->source, 'App' => $app, 'Message' => $message];
+
+        return [$definition, $record];
     }
 
     /** @return array{definition: ?array, errors: array<int, string>} */

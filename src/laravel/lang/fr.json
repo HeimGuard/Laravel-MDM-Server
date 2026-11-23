@@ -103,6 +103,7 @@
     "Add its MAC address to wake it": "Ajoutez son adresse MAC pour le réveiller",
     "Add one": "En ajouter une",
     "Add parser": "Ajouter un analyseur",
+    "Add a parser that reads this message": "Ajouter un parser qui lit ce message",
     "Add rule": "Ajouter une règle",
     "Add tags": "Ajouter des étiquettes",
     "Add the MAC address": "Ajouter l’adresse MAC",

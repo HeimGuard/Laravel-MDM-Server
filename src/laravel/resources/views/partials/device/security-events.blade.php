@@ -9,9 +9,10 @@
                     <td class="text-break">{{ $event->user }}</td>
                     <td class="d-none d-md-table-cell text-break text-body-secondary">{{ $event->source }}</td>
                     <td class="d-none d-lg-table-cell text-break text-body-secondary">{{ $event->message }}</td>
+                    <td class="text-end">@if ($event->type === 'syslog')@include('partials.device.add-parser', ['event' => $event])@endif</td>
                 </tr>
             @empty
-                <x-empty-state colspan="6">{{ __('No events.') }}</x-empty-state>
+                <x-empty-state colspan="7">{{ __('No events.') }}</x-empty-state>
             @endforelse
         </tbody>
     </table>

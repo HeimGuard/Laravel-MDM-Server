@@ -90,6 +90,9 @@
                                 <th class="d-none d-md-table-cell">{{ __('User') }}</th>
                                 <th class="d-none d-md-table-cell">{{ __('Source') }}</th>
                                 <th class="d-none d-lg-table-cell pe-3">{{ __('Detail') }}</th>
+                                @if ($isAdmin)
+                                    <th></th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
@@ -102,9 +105,16 @@
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->user ?? '—' }}</td>
                                     <td class="d-none d-md-table-cell small text-break">{{ $event->source ?? '—' }}</td>
                                     <td class="d-none d-lg-table-cell small text-body-secondary text-break pe-3">{{ $event->message }}</td>
+                                    @if ($isAdmin)
+                                        <td class="pe-3 text-end">
+                                            @if ($event->type === 'syslog')
+                                                @include('partials.device.add-parser', ['event' => $event])
+                                            @endif
+                                        </td>
+                                    @endif
                                 </tr>
                             @empty
-                                <x-empty-state colspan="7">{{ __('No events.') }}</x-empty-state>
+                                <x-empty-state colspan="{{ $isAdmin ? 8 : 7 }}">{{ __('No events.') }}</x-empty-state>
                             @endforelse
                         </tbody>
                     </table>

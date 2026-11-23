@@ -149,6 +149,22 @@ class SyslogTest extends TestCase
         $this->assertSame(['nas', 'nas'], $events->pluck('source')->all());
     }
 
+    public function test_a_parser_can_be_made_of_an_unparsed_message(): void
+    {
+        $nas = $this->pingDevice('192.168.1.20');
+        Syslog::ingest([$this->message('192.168.1.20', 'Synology-Backup', 'Backup task [Daily] (1) finished.', ['host' => 'nas'])]);
+        $event = SecurityEvent::query()->forDevice($nas->id)->where('type', 'syslog')->firstOrFail();
+
+        [$definition, $record] = \App\Livewire\SecurityScan\RuleForm::parserFor($event);
+
+        $this->assertSame([], SecurityRule::errorsOf($definition));
+        $parsed = SecurityParsers::apply($definition, $record);
+        $this->assertSame('syslog_synology_backup', $parsed['Type']);
+        $this->assertSame('Backup task [Daily] (1) finished.', $parsed['Message']);
+        // Read by it, the message is no longer an event of the type "syslog".
+        $this->assertSame([], Syslog::unparsed([$record], [$definition]));
+    }
+
     public function test_the_messages_are_stored_without_any_parser(): void
     {
         $nas = $this->pingDevice('192.168.1.20');

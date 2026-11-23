@@ -11,7 +11,6 @@
             'startup' => [__('Startup'), count($inventory?->data['startup'] ?? [])],
             'software' => [__('Software'), count($inventory?->data['software'] ?? [])],
             'processes' => [__('Processes'), count($inventory?->data['processes'] ?? [])],
-            'events' => [__('Events'), $events->count()],
         ];
         $columns = [
             'listening' => ['Protocol', 'Address', 'Port', 'Process'],
@@ -65,20 +64,29 @@
         </details>
     @endif
 
+    {{-- The latest events of every device (an agent's logs, its syslog or the syslog of a ping-only host). --}}
+    @if ($events->isNotEmpty())
+        <div class="d-flex align-items-center mb-2">
+            <div class="fw-medium me-auto">{{ __('Events') }}</div>
+            @if ($inventory)
+                <x-search-input x-model="search" />
+            @endif
+        </div>
+        <div class="card card-body py-2 mb-3">
+            @include('partials.device.security-events', ['events' => $events])
+        </div>
+    @endif
+
     @if ($inventory === null && $device->isPingOnly)
-        {{-- No agent: the findings of the server's own checks (port scans) and the events of its syslog. --}}
-        @if ($events->isNotEmpty())
-            <div class="fw-medium mb-2">{{ __('Events') }}</div>
-            <div class="card card-body py-2">
-                @include('partials.device.security-events', ['events' => $events])
-            </div>
-        @endif
+        {{-- No agent: the findings of the server's own checks (port scans) and the events above. --}}
     @elseif ($inventory === null)
         <div class="small text-body-secondary">{{ __('No security inventory yet: it needs agent :version or newer.', ['version' => Device::SECURITY_VERSION]) }}</div>
     @else
         <div class="d-flex align-items-center mb-2">
             <div class="fw-medium me-auto">{{ __('What the agent reports') }}</div>
-            <x-search-input x-model="search" />
+            @if ($events->isEmpty())
+                <x-search-input x-model="search" />
+            @endif
         </div>
         <div class="d-flex flex-column gap-2">
             @foreach ($lists as $key => [$label, $count])
