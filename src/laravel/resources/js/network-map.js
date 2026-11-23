@@ -86,7 +86,22 @@ export function createNetworkMap(root, data) {
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="in" title="Zoom in"><i class="fas fa-plus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="out" title="Zoom out"><i class="fas fa-minus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="fit" title="Fit"><i class="fas fa-expand"></i></button>'
+        + '<button class="btn btn-light btn-sm" type="button" data-zoom="motion"><i class="fas"></i></button>'
         + '</div>';
+    // The links of the ports run (the dashes move with the speed of the link) unless the system asks for less motion (Windows: animation
+    // effects off) and the user has not turned it on here; the choice is kept in the browser.
+    const motionButton = root.querySelector('[data-zoom="motion"]');
+    let animate = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    try {
+        const stored = window.localStorage.getItem('mdm.map.animate');
+        animate = stored === null ? animate : stored === '1';
+    } catch (error) { /* the browser keeps nothing: the default */ }
+    const showMotion = () => {
+        root.classList.toggle('is-still', !animate);
+        motionButton.title = animate ? 'Stop the movement of the links' : 'Move the links by the speed of the ports';
+        motionButton.firstElementChild.className = `fas fa-${animate ? 'pause' : 'play'}`;
+    };
+    showMotion();
     const viewport = root.querySelector('.nm-viewport');
     const stage = root.querySelector('.nm-stage');
     const svg = root.querySelector('.nm-links');
@@ -676,6 +691,11 @@ export function createNetworkMap(root, data) {
         if (action === 'in') zoomAt(1.25, rect.width / 2, rect.height / 2);
         if (action === 'out') zoomAt(0.8, rect.width / 2, rect.height / 2);
         if (action === 'fit') fit(true);
+        if (action === 'motion') {
+            animate = !animate;
+            try { window.localStorage.setItem('mdm.map.animate', animate ? '1' : '0'); } catch (error) { /* nothing to keep */ }
+            showMotion();
+        }
     });
 
     render(data);

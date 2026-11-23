@@ -319,7 +319,9 @@ label.mdm-tag {
     }
 }
 
-// The movement of the links of the ports (the dashes are 12 long with the gap).
+// The movement of the links of the ports (the dashes are 12 long with the gap); the button of the map stops it (and starts it where the system
+// asks for less motion).
+.network-map.is-still .nm-link.is-port { animation: none; }
 @keyframes nm-flow { to { stroke-dashoffset: -12; } }
 
 // The dropdown of a port (on hover).
@@ -387,7 +389,6 @@ label.mdm-tag {
         &.is-slow { stroke: var(--hg-high); --nm-flow: 5s; }
         &.is-linkdown { stroke: var(--hg-offline); stroke-dasharray: 4 4; animation: none; }
         &.is-down { animation: none; }
-        @media (prefers-reduced-motion: reduce) { animation: none; stroke-dasharray: none; }
     }
     &.is-side { stroke-width: 1.6; opacity: .4; &.is-active { stroke-width: 2.6; opacity: 1; } }
 }

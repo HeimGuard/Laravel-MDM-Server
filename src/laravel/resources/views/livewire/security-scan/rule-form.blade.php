@@ -15,6 +15,9 @@
                 @if ($aiError !== '')
                     <x-notice type="warning">{{ $aiError }}</x-notice>
                 @endif
+                @unless (\App\Services\AiService::available())
+                    <div class="small text-body-secondary mb-2"><i class="fas fa-info-circle me-1"></i>{{ __('AI is not set up (MDM_AI_API_KEY).') }}</div>
+                @endunless
                 @if (! $aiPending && \App\Services\AiService::available())
                     <div class="d-flex align-items-center gap-2 mb-2">
                         <button class="btn btn-sm btn-outline-primary" type="button" wire:click="generateParser" wire:loading.attr="disabled" wire:target="generateParser">
