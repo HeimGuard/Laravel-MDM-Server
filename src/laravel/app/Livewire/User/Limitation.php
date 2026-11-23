@@ -21,7 +21,7 @@ class Limitation extends Component
     public function mount(User $user)
     {
         $this->user = $user;
-        if (!empty($user->limitationSetting)) {
+        if (! empty($user->limitationSetting)) {
             $this->limitation = $user->limitationSetting;
         }
     }
@@ -30,10 +30,10 @@ class Limitation extends Component
     public function limits()
     {
         return [
-            10   => 10,
-            20   => 20,
-            50   => 50,
-            100  => 100,
+            10 => 10,
+            20 => 20,
+            50 => 50,
+            100 => 100,
             1000 => 1000,
         ];
     }
@@ -45,7 +45,7 @@ class Limitation extends Component
             ['index' => 'limitation.items_per_page'],
             [
                 'value' => $validatedData['limitation'],
-                'type'  => SettingDataType::INT,
+                'type' => SettingDataType::INT,
             ],
         );
 

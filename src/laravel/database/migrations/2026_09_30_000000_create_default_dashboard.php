@@ -37,7 +37,7 @@ return new class extends Migration
         $widgetId = DB::table('dashboard_widgets')->insertGetId([
             'dashboard_id' => $dashboardId,
             'type' => class_basename(DeviceStatus::class),
-            'config' => json_encode((new DeviceStatus())->default()),
+            'config' => json_encode((new DeviceStatus)->default()),
             'created_at' => $now,
             'updated_at' => $now,
         ]);

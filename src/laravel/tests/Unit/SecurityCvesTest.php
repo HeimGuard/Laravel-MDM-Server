@@ -301,7 +301,12 @@ class SecurityCvesTest extends TestCase
         $index = SecurityCves::index($cves);
         $foo = ['Name' => 'libfoo1', 'SourcePackage' => 'foo', 'Version' => '1.0-1', 'Source' => 'dpkg', 'Origin' => 'Ubuntu'];
 
-        $ids = function (array $found) { $keys = array_keys($found); sort($keys); return $keys; };
+        $ids = function (array $found) {
+            $keys = array_keys($found);
+            sort($keys);
+
+            return $keys;
+        };
         $this->assertSame(['CVE-A', 'CVE-C'], $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'CVE-B is about bar on Ubuntu');
         $this->assertSame($ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu')), $ids(SecurityCves::affecting($cves, $foo, 'noble', 'ubuntu', $index)), 'the index changes nothing but the cost');
         $this->assertSame(['CVE-B', 'CVE-C'], $ids(SecurityCves::affecting($cves, ['Origin' => 'Debian'] + $foo, 'bookworm', 'debian', $index)));

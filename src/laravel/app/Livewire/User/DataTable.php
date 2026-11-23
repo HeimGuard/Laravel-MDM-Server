@@ -33,9 +33,9 @@ class DataTable extends DataTableComponent
     public function row($row): array
     {
         return [
-            'id'         => $row->id,
-            'name'       => $row->name,
-            'email'      => $row->email,
+            'id' => $row->id,
+            'name' => $row->name,
+            'email' => $row->email,
             'totp_force' => $row->totp_force,
         ];
     }
@@ -43,36 +43,36 @@ class DataTable extends DataTableComponent
     public function headers(): array
     {
         return [
-            'id'         => __('ID'),
-            'name'       => __('Name'),
-            'email'      => __('E-mail'),
+            'id' => __('ID'),
+            'name' => __('Name'),
+            'email' => __('E-mail'),
             'totp_force' => __('Enforce MFA'),
         ];
     }
 
     public function actions($item): array
     {
-        if ($item['id'] == auth()->user()->id && !Gate::allows('is-system-admin')) {
+        if ($item['id'] == auth()->user()->id && ! Gate::allows('is-system-admin')) {
             return [];
         }
 
         return [
             [
-                'type'        => 'livewire',
-                'action'      => 'edit',
-                'parameters'  => $item['id'],
-                'text'        => __('Edit'),
+                'type' => 'livewire',
+                'action' => 'edit',
+                'parameters' => $item['id'],
+                'text' => __('Edit'),
                 'actionClass' => '',
-                'iconClass'   => 'fas fa-pen',
+                'iconClass' => 'fas fa-pen',
             ],
             [
-                'type'        => 'livewire',
-                'action'      => 'remove',
-                'parameters'  => $item['id'],
-                'text'        => __('Remove'),
+                'type' => 'livewire',
+                'action' => 'remove',
+                'parameters' => $item['id'],
+                'text' => __('Remove'),
                 'actionClass' => 'text-danger',
-                'iconClass'   => 'fas fa-trash',
-                'confirm'     => __('Are you sure?'),
+                'iconClass' => 'fas fa-trash',
+                'confirm' => __('Are you sure?'),
             ],
         ];
     }
@@ -81,29 +81,29 @@ class DataTable extends DataTableComponent
     {
         $name = e($value);
         if ($row->isSystemAdmin) {
-            $name .= ' <span class="badge text-bg-danger ms-1">' . __('System Admin') . '</span>';
+            $name .= ' <span class="badge text-bg-danger ms-1">'.__('System Admin').'</span>';
         }
 
         $lastLogin = $row->last_login_at
-            ? '<span title="' . e($row->last_login_at) . '">' . e(__('Last login :time', ['time' => $row->last_login_at->diffForHumans()])) . '</span>'
+            ? '<span title="'.e($row->last_login_at).'">'.e(__('Last login :time', ['time' => $row->last_login_at->diffForHumans()])).'</span>'
             : e(__('Never logged in'));
 
-        return $name . '<div class="small text-muted">' . $lastLogin . '</div>';
+        return $name.'<div class="small text-muted">'.$lastLogin.'</div>';
     }
 
     /** Long addresses wrap instead of widening the table on phones. */
     public function renderColumnEmail(mixed $value, $row): string
     {
-        return '<span class="text-break">' . e($value) . '</span>';
+        return '<span class="text-break">'.e($value).'</span>';
     }
 
     public function renderColumnTotpForce($value, $row): string
     {
-        $button = !empty($value)
+        $button = ! empty($value)
             ? '<i class="fa fa-check-circle text-success"></i>'
             : '<i class="fa fa-times-circle text-danger"></i>';
 
-        return '<button class="btn btn-link" wire:click="change(' . $row['id'] . ',\'totp_force\')">' . $button . '</button>';
+        return '<button class="btn btn-link" wire:click="change('.$row['id'].',\'totp_force\')">'.$button.'</button>';
     }
 
     public function edit($id)
@@ -122,7 +122,7 @@ class DataTable extends DataTableComponent
     {
         Gate::authorize('is-system-admin');
         $user = User::where('id', $id)->first();
-        $user->update([$name => !$user->{$name}]);
+        $user->update([$name => ! $user->{$name}]);
         alert()->success(__('Updated'))->now();
         $this->dispatch('closeModal');
     }

@@ -6,10 +6,12 @@ use App\Livewire\Networks\Page;
 use App\Livewire\Networks\Show;
 use App\Models\Device;
 use App\Models\DeviceCommand;
+use App\Models\NetworkNeighbour;
 use App\Models\PortScanResult;
 use App\Models\User;
 use App\Support\NetworkMap;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
@@ -49,7 +51,7 @@ class PortScanTest extends TestCase
             'secret-token', ['server' => ['REMOTE_ADDR' => '31.30.4.122']])->assertOk();
     }
 
-    private function sendResult(array $payload): \Illuminate\Testing\TestResponse
+    private function sendResult(array $payload): TestResponse
     {
         return $this->signedJson('POST', '/api/device/port-scan', $payload, 'secret-token', ['server' => ['REMOTE_ADDR' => '31.30.4.122']]);
     }
@@ -109,7 +111,7 @@ class PortScanTest extends TestCase
         // actingAs after the signed device request: it forgets the guards, which would otherwise
         // leave the device (not a user) as auth()->user() when the page renders.
         $this->actingAs(User::factory()->create());
-        $neighbour = \App\Models\NetworkNeighbour::query()->where('ip', '192.168.1.50')->firstOrFail();
+        $neighbour = NetworkNeighbour::query()->where('ip', '192.168.1.50')->firstOrFail();
 
         Livewire::withQueryParams(['view' => 'list'])->test(Page::class)->call('scanPorts', $neighbour->id)->assertHasNoErrors();
         $command = $agent->commands()->where('command', 'scanPorts')->firstOrFail();
@@ -126,7 +128,7 @@ class PortScanTest extends TestCase
         $agent = $this->agent();
         $this->seeNeighbour();
         $this->actingAs(User::factory()->create());
-        $neighbour = \App\Models\NetworkNeighbour::query()->where('ip', '192.168.1.50')->firstOrFail();
+        $neighbour = NetworkNeighbour::query()->where('ip', '192.168.1.50')->firstOrFail();
 
         Livewire::withQueryParams(['view' => 'list'])->test(Page::class)->call('scanPorts', $neighbour->id, true)->assertHasNoErrors();
         $command = $agent->commands()->where('command', 'scanPorts')->firstOrFail();

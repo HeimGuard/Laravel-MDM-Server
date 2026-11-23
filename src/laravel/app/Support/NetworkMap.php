@@ -273,7 +273,9 @@ class NetworkMap
         }
         foreach ($sites as $site) {
             $count = collect($siteOf)->filter(fn ($s) => $s === $site)->count();
-            $this->node('site:'.$site, 'site', match ($site) { '?' => __('Unknown address'), 'local' => __('Public address unknown'), default => $site },
+            $this->node('site:'.$site, 'site', match ($site) {
+                '?' => __('Unknown address'), 'local' => __('Public address unknown'), default => $site
+            },
                 $site === 'local' ? __('this server · set MDM_PUBLIC_ADDRESS') : ($site === $serverSite ? __('public · this server') : __('public')),
                 $site === $serverSite ? 'fas fa-home' : 'fas fa-building', $site === '?' ? 'secondary' : 'success',
                 badges: [trans_choice(':count device|:count devices', $count)], extra: ['group' => $site]);
@@ -441,7 +443,9 @@ class NetworkMap
             // The detail of the network: each device with its address and MAC address there.
             'members' => collect($network['members'])->map(fn ($member, $id) => [
                 'id' => $id, 'name' => $byId[$id]->displayName, 'address' => $member['address'], 'mac' => self::macOf($byId[$id], $member['address']),
-                'state' => match (true) { $byId[$id]->isPingOnly && $byId[$id]->offline => 'warning', $byId[$id]->offline => 'offline', default => 'up' },
+                'state' => match (true) {
+                    $byId[$id]->isPingOnly && $byId[$id]->offline => 'warning', $byId[$id]->offline => 'offline', default => 'up'
+                },
             ])->sortBy(fn ($member) => ip2long($member['address']) ?: PHP_INT_MAX)->values()->all(),
             'gatewayName' => $network['gatewayName'] ?? null,
             'relays' => collect($network['members'])->keys()->filter(fn ($id) => ! $byId[$id]->isPingOnly && ! $byId[$id]->offline && $byId[$id]->signsRequests)->map(fn ($id) => $byId[$id]->displayName)->values()->all(),

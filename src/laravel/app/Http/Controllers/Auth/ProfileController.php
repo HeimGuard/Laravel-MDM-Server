@@ -16,7 +16,7 @@ class ProfileController extends BaseController
     public function index(Request $request)
     {
         return view('auth.profile', [
-            'user'     => $request->user(),
+            'user' => $request->user(),
             'sessions' => [],
         ]);
     }
@@ -24,11 +24,11 @@ class ProfileController extends BaseController
     public function update(UpdateUserRequest $request): RedirectResponse
     {
         $validated = $request->validated();
-        if (!Hash::check($validated['password'], auth()->user()->password)) {
+        if (! Hash::check($validated['password'], auth()->user()->password)) {
             return redirect()->route('profile.index')->with('error', __('Incorrect old password'));
         }
 
-        if (!empty($validated['newPassword']) && !empty($validated['password'])) {
+        if (! empty($validated['newPassword']) && ! empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['newPassword']);
             unset($validated['newPassword']);
         } else {
@@ -43,7 +43,7 @@ class ProfileController extends BaseController
     public function api(Request $request)
     {
         return view('auth.profile_api', [
-            'user'   => $request->user(),
+            'user' => $request->user(),
             'tokens' => $request->user()->tokens->all(),
         ]);
     }
@@ -52,11 +52,11 @@ class ProfileController extends BaseController
     {
         $validated = $request->validated();
         $tokenCreationParameters = [
-            'name'      => $validated['token_name'],
+            'name' => $validated['token_name'],
             'abilities' => ['*'],
         ];
 
-        if (!empty($validated['expire_at'])) {
+        if (! empty($validated['expire_at'])) {
             $tokenCreationParameters['expires_at'] = Carbon::parse($validated['expire_at']);
         }
 
@@ -64,7 +64,7 @@ class ProfileController extends BaseController
 
         return redirect()->route('profile.api')->with([
             'success' => __('Created'),
-            'secret'  => $newToken,
+            'secret' => $newToken,
         ]);
     }
 

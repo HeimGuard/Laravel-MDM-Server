@@ -6,7 +6,9 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\NetworkNeighbour;
 use App\Models\PortScanResult;
+use App\Support\Audit;
 use App\Support\NetworkMap;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
@@ -32,6 +34,7 @@ class Page extends Component
     {
         $this->view = in_array($this->view, ['list', 'internet'], true) ? $this->view : 'map';
     }
+
     /** Live update (resources/js/live.js): devices changed; the map gets the new data. */
     #[On('devices-changed')]
     public function devicesChanged(): void
@@ -120,7 +123,7 @@ class Page extends Component
     public function add(int $id)
     {
         $neighbour = NetworkNeighbour::query()->whereNull('ignored_at')->findOrFail($id);
-        $device = new Device();
+        $device = new Device;
         $device->forceFill([
             'kind' => 'ping',
             'name' => $neighbour->hostname ? Str::before($neighbour->hostname, '.') : $neighbour->ip,
@@ -131,7 +134,7 @@ class Page extends Component
             'ping_mac' => $neighbour->mac,
         ]);
         $device->save();
-        \App\Support\Audit::device($device, 'create', __('Added from the network map: :ip', ['ip' => $neighbour->ip]), ['ip' => $neighbour->ip, 'mac' => $neighbour->mac]);
+        Audit::device($device, 'create', __('Added from the network map: :ip', ['ip' => $neighbour->ip]), ['ip' => $neighbour->ip, 'mac' => $neighbour->mac]);
 
         return $this->redirect(route('devices', ['selectedDeviceId' => $device->id]));
     }
@@ -169,7 +172,7 @@ class Page extends Component
     }
 
     /** Per unknown device: its latest port scan, an active one, and whether a scan can be sent. */
-    protected function portScans(): \Illuminate\Support\Collection
+    protected function portScans(): Collection
     {
         $portScanEnabled = PortScanResult::enabled();
         $unknown = NetworkNeighbour::unknown()->keyBy('id');

@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Models\Device;
+use App\Support\LiveUpdates;
 use App\Support\Signing;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Reverb\Events\MessageReceived;
@@ -43,7 +44,7 @@ class RecordDeviceHeartbeat
             }
             // Metrics at the top level (older agents), live state in "state".
             Device::recordHeartbeat((int) $matches[1], $data, 'ws', is_array($data) ? ($data['state'] ?? null) : null, false);
-            \App\Support\LiveUpdates::fromReverb($event->connection->app(), (int) $matches[1], 'heartbeat');
+            LiveUpdates::fromReverb($event->connection->app(), (int) $matches[1], 'heartbeat');
         } catch (Throwable $e) {
             // Reverb swallows listener exceptions (its logger is off without --debug), report them
             // to the application log so they show up next to the web errors.

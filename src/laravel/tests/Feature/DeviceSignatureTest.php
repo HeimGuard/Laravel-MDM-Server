@@ -3,14 +3,13 @@
 namespace Tests\Feature;
 
 use App\Events\DeviceCommandIssued;
-use App\Livewire\DeviceAlerts;
-use App\Livewire\DeviceDetail;
-use App\Models\User;
-use Livewire\Livewire;
 use App\Listeners\RecordDeviceHeartbeat;
+use App\Livewire\DeviceDetail;
 use App\Models\Device;
+use App\Models\User;
 use App\Support\Signing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
 
@@ -22,7 +21,7 @@ class DeviceSignatureTest extends TestCase
 
     private function createDevice(bool $withKey = true): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'secret-token');
         $device->save();
 

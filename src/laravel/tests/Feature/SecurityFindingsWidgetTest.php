@@ -31,7 +31,7 @@ class SecurityFindingsWidgetTest extends TestCase
     {
         SecurityRule::syncBuiltIn();
         $rule = SecurityRule::query()->detection()->firstOrFail();
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', uniqid('', true));
         $device->save();
 

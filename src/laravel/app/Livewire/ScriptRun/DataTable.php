@@ -3,6 +3,7 @@
 namespace App\Livewire\ScriptRun;
 
 use App\Models\ScriptRun;
+use App\Support\LiveUpdates;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
 use SteelAnts\DataTable\Livewire\DataTableComponent;
@@ -145,7 +146,7 @@ class DataTable extends DataTableComponent
             return;
         }
         $run->script->runOn([$run->device_id], auth()->user(), false, true);
-        \App\Support\LiveUpdates::device($run->device_id, 'script');
+        LiveUpdates::device($run->device_id, 'script');
     }
 
     /** The latest run of the script on the device needs a remediation and the script has one. */

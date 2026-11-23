@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Livewire\ShowDevices;
 use App\Models\Device;
+use App\Models\DeviceCommand;
 use App\Models\User;
+use App\Support\AgentScript;
 use App\Support\SmartAlerts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +23,7 @@ class DeviceListSpeedTest extends TestCase
         $device = new Device;
         $device->token = hash('sha256', $name);
         $device->name = $name;
-        $device->data = json_encode(['machine' => ['Hostname' => $name, 'AgentVersion' => \App\Support\AgentScript::version(), 'Platform' => 'linux', 'RestartRequired' => $restart, 'Drives' => [], 'Networks' => [
+        $device->data = json_encode(['machine' => ['Hostname' => $name, 'AgentVersion' => AgentScript::version(), 'Platform' => 'linux', 'RestartRequired' => $restart, 'Drives' => [], 'Networks' => [
             ['Name' => 'eth0', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'IPAddresses' => ['10.0.0.'.random_int(2, 250)]],
         ]]]);
         $device->save();
@@ -90,7 +92,7 @@ class DeviceListSpeedTest extends TestCase
 
         // The expiry of stale commands (SmartAlerts::preload) is one query per command type; the detail asks for its own.
         $expiries = collect(DB::getQueryLog())->filter(fn ($query) => str_contains($query['query'], '"device_commands"') && str_contains($query['query'], '"command" = '))->count();
-        $this->assertLessThanOrEqual(count(\App\Models\DeviceCommand::TIMEOUTS) * 2, $expiries);
+        $this->assertLessThanOrEqual(count(DeviceCommand::TIMEOUTS) * 2, $expiries);
         $component->assertSee('b1')->assertSee('b6');
     }
 }

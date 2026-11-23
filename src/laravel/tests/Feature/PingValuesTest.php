@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Device;
 use App\Support\PingUsage;
+use App\Support\ValueRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -83,7 +84,7 @@ class PingValuesTest extends TestCase
         PingUsage::record($printer->id, true, 2.4, null, 7);
 
         // A ping from an hour ago (a backlog the agent sent later).
-        \App\Support\ValueRecorder::recordMany((new Device)->getMorphClass(), $printer->id, [[now()->subHour(), PingUsage::values(false, null, 9)]]);
+        ValueRecorder::recordMany((new Device)->getMorphClass(), $printer->id, [[now()->subHour(), PingUsage::values(false, null, 9)]]);
 
         $fresh = Device::find($printer->id);
         $this->assertSame([2.4, 7], [$fresh->ping_rtt, $fresh->ping_relay_id]);

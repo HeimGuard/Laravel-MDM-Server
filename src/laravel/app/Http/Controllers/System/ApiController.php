@@ -4,6 +4,7 @@ namespace App\Http\Controllers\System;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Route;
 use ReflectionClass;
 use ReflectionMethod;
@@ -15,7 +16,7 @@ class ApiController extends Controller
     /**
      * Handle the incoming request.
      *
-     * @return \Illuminate\Http\Response
+     * @return Response
      */
     public function index(Request $request)
     {
@@ -23,7 +24,7 @@ class ApiController extends Controller
         $routesCollection = Route::getRoutes();
 
         foreach ($routesCollection as $route) {
-            if (!str_starts_with($route->uri(), 'api')) {
+            if (! str_starts_with($route->uri(), 'api')) {
                 continue;
             }
 
@@ -51,11 +52,11 @@ class ApiController extends Controller
             }
 
             $routes[] = [
-                'Method'      => $route->methods()[0],
-                'Uri'         => $route->uri(),
+                'Method' => $route->methods()[0],
+                'Uri' => $route->uri(),
                 'Description' => ($reflectionMethod != null ? $this->phpDocsDescription($reflectionMethod) : ''),
-                'Parameters'  => ($reflectionMethod != null ? $this->phpDocsParameters($reflectionMethod) : []),
-                'Returns'     => $returns,
+                'Parameters' => ($reflectionMethod != null ? $this->phpDocsParameters($reflectionMethod) : []),
+                'Returns' => $returns,
             ];
         }
 
@@ -92,8 +93,8 @@ class ApiController extends Controller
             ] = explode(' ', $line, 4);
 
             $args[] = [
-                'type'    => $type,
-                'name'    => $name,
+                'type' => $type,
+                'name' => $name,
                 'comment' => $comment,
             ];
         }

@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\ValueDefinition;
 use App\Models\ValueSample;
-use Illuminate\Support\Facades\DB;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 
 /**

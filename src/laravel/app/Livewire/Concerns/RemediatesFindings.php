@@ -8,8 +8,8 @@ use App\Services\FindingExplanationService;
 use App\Services\ScriptGeneratorService;
 use App\Support\SecurityRules;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 
 /**

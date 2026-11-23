@@ -2,14 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\DeviceAlerts;
+use App\Livewire\DeviceCommands;
+use App\Livewire\DeviceDetail;
 use App\Livewire\Networks\Page;
 use App\Livewire\Networks\Show;
 use App\Models\AlertRule;
 use App\Models\Device;
+use App\Models\DeviceCommand;
 use App\Models\NetworkNeighbour;
+use App\Models\Script;
 use App\Models\User;
 use App\Support\AlertEvaluator;
 use App\Support\NetworkMap;
+use App\Support\PowerShellCheck;
 use App\Support\SmartAlerts;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -119,8 +125,8 @@ class NetworkDiscoveryTest extends TestCase
 
         // On the device page too (ping-only devices have no report, but alerts of their own).
         $this->actingAs($user);
-        Livewire::test(\App\Livewire\DeviceDetail::class, ['selectedDeviceId' => $printer->id])->assertSeeLivewire('device-alerts');
-        Livewire::test(\App\Livewire\DeviceAlerts::class, ['selectedDeviceId' => $printer->id])->assertSee('The device has another address')->assertSee('Use 192.168.1.31');
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $printer->id])->assertSeeLivewire('device-alerts');
+        Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $printer->id])->assertSee('The device has another address')->assertSee('Use 192.168.1.31');
 
         // Confirmed: pinged there, the alert is gone.
         $this->assertNull(SmartAlerts::run($printer->fresh(), 'address', $user));
@@ -242,8 +248,8 @@ class NetworkDiscoveryTest extends TestCase
         $this->assertSame($command->id, collect(NetworkMap::build()['networks'])->firstWhere('id', $key)['scan']['command']['id']);
 
         // Only networks of /22 and smaller, in the right notation.
-        $this->assertNull(\App\Models\DeviceCommand::sanitizeParams('scanNetwork', ['cidr' => '10.0.0.0/16']));
-        $this->assertNull(\App\Models\DeviceCommand::sanitizeParams('scanNetwork', ['cidr' => '192.168.1.7/24']));
+        $this->assertNull(DeviceCommand::sanitizeParams('scanNetwork', ['cidr' => '10.0.0.0/16']));
+        $this->assertNull(DeviceCommand::sanitizeParams('scanNetwork', ['cidr' => '192.168.1.7/24']));
         // Older agents cannot.
         $old = $this->agent('scan', 'old-token', '1.15.0');
         $this->assertSame(__('Needs agent :version or newer', ['version' => '1.16.0']), $old->commandRefusal('scanNetwork', ['cidr' => '192.168.1.0/24']));
@@ -279,17 +285,17 @@ class NetworkDiscoveryTest extends TestCase
 
     public function test_installations_start_with_a_script_that_allows_scans(): void
     {
-        $script = \App\Models\Script::query()->where('name', 'Allow network scans')->firstOrFail();
+        $script = Script::query()->where('name', 'Allow network scans')->firstOrFail();
 
         // Detection only on a run: the remediation waits for Remediate.
         $this->assertTrue($script->manual_remediation);
         $this->assertSame('all', $script->platform);
-        $this->assertSame($script->fingerprint, \App\Models\Script::fingerprintOf('all', 60, $script->detection, $script->remediation));
+        $this->assertSame($script->fingerprint, Script::fingerprintOf('all', 60, $script->detection, $script->remediation));
         // It passes the checks of the script form.
-        $this->assertSame([], \App\Support\PowerShellCheck::errors($script->detection));
-        $this->assertSame([], \App\Support\PowerShellCheck::errors($script->remediation));
-        $this->assertTrue(\App\Support\PowerShellCheck::exits($script->detection, 0));
-        $this->assertTrue(\App\Support\PowerShellCheck::exits($script->detection, 1));
+        $this->assertSame([], PowerShellCheck::errors($script->detection));
+        $this->assertSame([], PowerShellCheck::errors($script->remediation));
+        $this->assertTrue(PowerShellCheck::exits($script->detection, 0));
+        $this->assertTrue(PowerShellCheck::exits($script->detection, 1));
         $this->assertStringContainsString("network_discovery -NotePropertyValue 'scan'", $script->remediation);
     }
 
@@ -314,12 +320,12 @@ class NetworkDiscoveryTest extends TestCase
         $this->assertSame(['192.168.1.0/24'], $agent->scannableNetworks);
 
         // Not allowed on the device: offered with the reason, not sent.
-        Livewire::test(\App\Livewire\DeviceCommands::class, ['selectedDeviceId' => $agent->id])
+        Livewire::test(DeviceCommands::class, ['selectedDeviceId' => $agent->id])
             ->assertSee('Scan 192.168.1.0/24')->assertSee('network_discovery is')
             ->call('scan', '192.168.1.0/24')->assertHasErrors('command');
 
         $agent->forceFill(['data' => json_encode(['machine' => $this->machine('scan')])])->save();
-        Livewire::test(\App\Livewire\DeviceCommands::class, ['selectedDeviceId' => $agent->id])
+        Livewire::test(DeviceCommands::class, ['selectedDeviceId' => $agent->id])
             ->call('scan', '10.0.0.0/24')->assertHasNoErrors()
             ->call('scan', '192.168.1.0/24')->assertHasNoErrors();
         $this->assertSame([['cidr' => '192.168.1.0/24']], $agent->commands()->where('command', 'scanNetwork')->pluck('params')->all());

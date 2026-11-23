@@ -2,26 +2,37 @@
 
 namespace Tests\Feature;
 
+use App\Events\DevicesChanged;
+use App\Livewire\DeviceAlerts;
 use App\Livewire\DeviceCommands;
 use App\Livewire\DeviceDetail;
 use App\Livewire\Notifications\DeviceRules;
 use App\Livewire\Notifications\Page;
 use App\Livewire\Notifications\RuleForm;
+use App\Livewire\PingMonitor;
+use App\Livewire\PingSettings;
+use App\Livewire\Script\Run;
 use App\Livewire\Script\Schedule;
 use App\Livewire\ShowDevices;
+use App\Livewire\WakeSettings;
+use App\Models\AlertEvent;
 use App\Models\AlertRule;
 use App\Models\Device;
 use App\Models\DeviceCommand;
-use App\Support\DeviceUsage;
-use App\Support\PingUsage;
 use App\Models\NotificationSetting;
 use App\Models\Script;
 use App\Models\User;
 use App\Support\AlertEvaluator;
+use App\Support\DeviceUsage;
 use App\Support\Notifier;
+use App\Support\PingUsage;
+use App\Support\PortalUrl;
+use App\Support\SmartAlerts;
+use App\Support\WingetCodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
@@ -155,7 +166,7 @@ class FleetFeaturesTest extends TestCase
         $printer = new Device;
         $printer->forceFill(['kind' => 'ping', 'name' => 'Printer', 'os' => '', 'token' => hash('sha256', 'p'), 'ping_address' => '192.168.1.50', 'tags' => ['printers']])->save();
         Livewire::test(Schedule::class, ['scriptId' => $script->id])->set('targetMode', 'devices')->assertDontSee('Printer')->set('targetMode', 'tags')->assertDontSee('printers');
-        Livewire::test(\App\Livewire\Script\Run::class, ['scriptId' => $script->id])->assertDontSee('Printer');
+        Livewire::test(Run::class, ['scriptId' => $script->id])->assertDontSee('Printer');
 
         Livewire::test(Schedule::class, ['scriptId' => $script->id])->set('enabled', false)->call('save');
         $this->assertNull($script->fresh()->schedule);
@@ -262,24 +273,24 @@ class FleetFeaturesTest extends TestCase
         config(['app.url' => 'http://localhost']);
         // Only a signed-in user's page is taken, not any request's Host header.
         $this->get('http://evil.example/login');
-        $this->assertNull(\App\Support\PortalUrl::remembered());
+        $this->assertNull(PortalUrl::remembered());
         // Nor a user who is not a system admin (they could send any Host header with their session).
         $admin = User::factory()->create();
         config(['boilerplate.system_admins' => [(string) $admin->id]]);
         $this->actingAs(User::factory()->create())->get('https://evil.example/devices')->assertOk();
-        $this->assertNull(\App\Support\PortalUrl::remembered());
+        $this->assertNull(PortalUrl::remembered());
         $this->actingAs($admin)->get('https://mdm.example.com/devices')->assertOk();
-        $this->assertSame('https://mdm.example.com', \App\Support\PortalUrl::remembered());
+        $this->assertSame('https://mdm.example.com', PortalUrl::remembered());
 
         // The scheduler (no request) links there.
-        \App\Support\PortalUrl::apply();
+        PortalUrl::apply();
         $this->assertSame('https://mdm.example.com/devices?selectedDeviceId=5', url('/devices?selectedDeviceId=5'));
 
         // APP_URL set to a real address wins.
         config(['app.url' => 'https://portal.example.org']);
-        $this->assertTrue(\App\Support\PortalUrl::configured());
+        $this->assertTrue(PortalUrl::configured());
         $this->actingAs($admin)->get('https://other.example.com/devices');
-        $this->assertSame('https://mdm.example.com', \App\Support\PortalUrl::remembered());
+        $this->assertSame('https://mdm.example.com', PortalUrl::remembered());
     }
 
     public function test_metric_disk_and_scope_alerts(): void
@@ -459,7 +470,7 @@ class FleetFeaturesTest extends TestCase
             ->assertSee('pc-a')
             ->set('tab', 'history')
             ->assertViewHas('events', fn ($events) => $events->count() === 1);
-        $this->assertSame(1, \App\Models\AlertEvent::firingCountFor($user));
+        $this->assertSame(1, AlertEvent::firingCountFor($user));
 
         Livewire::test(RuleForm::class, ['ruleId' => $rule->id])->call('delete')->assertDispatched('closeModal');
         $this->assertSame(0, AlertRule::count());
@@ -551,16 +562,16 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame('expired', $again->fresh()->status);
         $this->assertStringContainsString('did not come online within 10 minutes', $again->fresh()->message);
 
-        $alerts = collect(\App\Support\SmartAlerts::for($sleeping->fresh()));
+        $alerts = collect(SmartAlerts::for($sleeping->fresh()));
         $wake = $alerts->firstWhere('key', 'wake');
         $this->assertSame('danger', $wake['severity']);
         $this->assertSame('wake', $wake['action']['command']);
         $this->assertNull($wake['refusal']);
-        $this->assertNull(collect(\App\Support\SmartAlerts::for($relay->fresh()))->first(fn ($alert) => str_starts_with($alert['key'], 'failed:')));
+        $this->assertNull(collect(SmartAlerts::for($relay->fresh()))->first(fn ($alert) => str_starts_with($alert['key'], 'failed:')));
 
         // Try again from the alert: a new wake through the relay.
         $this->actingAs(User::factory()->create());
-        Livewire::test(\App\Livewire\DeviceAlerts::class, ['selectedDeviceId' => $sleeping->id])->call('runAlert', 'wake')->assertHasNoErrors();
+        Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $sleeping->id])->call('runAlert', 'wake')->assertHasNoErrors();
         $this->assertSame(1, $relay->commands()->where('command', 'wake')->active()->count());
     }
 
@@ -597,13 +608,13 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame(['Report failed: HTTP 500', 'Inventory collection failed: access denied'], array_column($device->recentAgentErrors, 'message'));
         $this->assertSame(2, $device->recentAgentErrors[0]['count']);
 
-        $alert = collect(\App\Support\SmartAlerts::for($device))->firstWhere('key', 'agent_errors');
+        $alert = collect(SmartAlerts::for($device))->firstWhere('key', 'agent_errors');
         $this->assertSame('The agent reported 2 errors', $alert['title']);
         $this->assertStringStartsWith('Report failed: HTTP 500 · 2 times', $alert['message']);
         $this->assertCount(1, $alert['details']);
 
         $this->actingAs(User::factory()->create());
-        Livewire::test(\App\Livewire\DeviceAlerts::class, ['selectedDeviceId' => $device->id])
+        Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])
             ->assertSee('The agent reported 2 errors')
             ->call('runAlert', 'agent_errors')
             ->assertDontSee('The agent reported');
@@ -664,14 +675,14 @@ class FleetFeaturesTest extends TestCase
         // Only the status alert makes sense for it.
         $this->app['auth']->forgetGuards();
         $this->actingAs($user);
-        Livewire::test(\App\Livewire\PingMonitor::class, ['deviceId' => $printer->id])
+        Livewire::test(PingMonitor::class, ['deviceId' => $printer->id])
             ->assertSee('50 %')
             ->assertSee('192.168.1.50')
             ->call('setRange', '7d')->assertSet('range', '7d');
         // The range from the URL (?range=30d), as for devices with the agent.
-        Livewire::withQueryParams(['range' => '30d'])->test(\App\Livewire\PingMonitor::class, ['deviceId' => $printer->id])->assertSet('range', '30d');
-        Livewire::withQueryParams(['range' => 'nope'])->test(\App\Livewire\PingMonitor::class, ['deviceId' => $printer->id])->assertSet('range', '1h');
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $printer->id])
+        Livewire::withQueryParams(['range' => '30d'])->test(PingMonitor::class, ['deviceId' => $printer->id])->assertSet('range', '30d');
+        Livewire::withQueryParams(['range' => 'nope'])->test(PingMonitor::class, ['deviceId' => $printer->id])->assertSet('range', '1h');
+        Livewire::test(PingSettings::class, ['deviceId' => $printer->id])
             ->set('address', 'nope')->call('save')->assertHasErrors('address')
             ->set('address', '192.168.1.51')->set('mac', '')->call('save')->assertHasNoErrors()->assertDispatched('ping-settings-saved');
         $this->assertSame(['192.168.1.51', null, null], [$printer->fresh()->ping_address, $printer->fresh()->ping_mac, $printer->fresh()->last_seen_at]);
@@ -698,15 +709,15 @@ class FleetFeaturesTest extends TestCase
     public function test_device_changes_are_announced_for_live_updates(): void
     {
         $device = $this->device('a');
-        \Illuminate\Support\Facades\Event::fake([\App\Events\DevicesChanged::class]);
+        Event::fake([DevicesChanged::class]);
 
         Device::recordHeartbeat($device->id);
         $this->signedJson('POST', '/api/device', ['machine' => ['Hostname' => 'pc', 'Drives' => [], 'AgentVersion' => '1.10.1']], 'a')->assertOk();
         $device->issueCommand('restart');
 
-        $announced = collect(\Illuminate\Support\Facades\Event::dispatched(\App\Events\DevicesChanged::class))->map(fn ($call) => $call[0]->what)->all();
+        $announced = collect(Event::dispatched(DevicesChanged::class))->map(fn ($call) => $call[0]->what)->all();
         $this->assertSame(['heartbeat', 'report', 'command'], $announced);
-        $event = new \App\Events\DevicesChanged($device->id, 'report');
+        $event = new DevicesChanged($device->id, 'report');
         $this->assertSame('private-devices', $event->broadcastOn()->name);
         $this->assertSame(['device_id' => $device->id, 'what' => 'report'], $event->broadcastWith());
 
@@ -838,7 +849,7 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame(['wake_mac' => null, 'wake_address' => null, 'wake_prefix' => null], Device::sanitizeWakeSettings('', ' ', 24));
 
         $this->actingAs(User::factory()->create());
-        Livewire::test(\App\Livewire\WakeSettings::class, ['deviceId' => $pc->id])
+        Livewire::test(WakeSettings::class, ['deviceId' => $pc->id])
             ->set('mac', 'aa-bb-cc-dd-ee-10')->set('address', '192.168.1.20')->set('prefix', 24)
             ->call('save')->assertHasNoErrors();
         $pc = $pc->fresh();
@@ -849,7 +860,7 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame(['AA:BB:CC:DD:EE:10'], $pc->wake()->params['macs']);
 
         // Emptied again: what the agent reports.
-        Livewire::test(\App\Livewire\WakeSettings::class, ['deviceId' => $pc->id])
+        Livewire::test(WakeSettings::class, ['deviceId' => $pc->id])
             ->set('mac', '')->set('address', '')->call('save')->assertHasNoErrors();
         $this->assertSame([], $pc->fresh()->wakeMacs);
         // The settings are in the menu of the device.
@@ -876,7 +887,7 @@ class FleetFeaturesTest extends TestCase
         // A device stays with the agent that pings it when that is as good (no moving around).
         $current = Device::pingAssignments();
         foreach ($current as $id => $relayId) {
-            \App\Support\PingUsage::record($id, true, null, null, $relayId);
+            PingUsage::record($id, true, null, null, $relayId);
         }
         $this->assertSame($current, Device::pingAssignments());
 
@@ -907,7 +918,7 @@ class FleetFeaturesTest extends TestCase
             Device::recordHeartbeat($office->id, channel: 'http');
         };
         $slot = intdiv(now()->getTimestamp(), Device::ROUTED_PING_SECONDS);
-        $this->travelTo(\Illuminate\Support\Carbon::createFromTimestamp(($slot + 2 - $slot % 2) * Device::ROUTED_PING_SECONDS + 10));
+        $this->travelTo(Carbon::createFromTimestamp(($slot + 2 - $slot % 2) * Device::ROUTED_PING_SECONDS + 10));
         $alive();
         $this->assertSame($nas->id, $archer->fresh()->pingRelay()->id);
         $this->travel(Device::ROUTED_PING_SECONDS)->seconds();
@@ -919,7 +930,7 @@ class FleetFeaturesTest extends TestCase
         $this->assertSame($office->id, $archer->fresh()->pingRelay()->id);
 
         // One can be chosen for it.
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $archer->id])
+        Livewire::test(PingSettings::class, ['deviceId' => $archer->id])
             ->assertSee('pc-office')
             ->set('via', (string) $nas->id)->call('save')->assertHasNoErrors();
         $this->assertSame($nas->id, $archer->fresh()->ping_via_id);
@@ -928,7 +939,7 @@ class FleetFeaturesTest extends TestCase
         // The chosen agent offline: nobody else takes it.
         $nas->forceFill(['last_seen_at' => now()->subHour()])->saveQuietly();
         $this->assertNull($archer->fresh()->pingRelay());
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $archer->id])->set('via', '999999')->call('save')->assertHasErrors('via');
+        Livewire::test(PingSettings::class, ['deviceId' => $archer->id])->set('via', '999999')->call('save')->assertHasErrors('via');
     }
 
     public function test_sync_of_a_ping_only_device_pings_it_now(): void
@@ -1003,9 +1014,9 @@ class FleetFeaturesTest extends TestCase
         $device = $this->device('pc', ['Platform' => 'windows'], version: '1.12.4');
         $command = $device->commands()->create(['command' => 'installUpdate', 'params' => ['kind' => 'winget', 'id' => 'Heroic'], 'status' => 'failed', 'message' => 'winget upgrade Heroic: exit -1978335090, Found Heroic']);
         $this->assertSame('winget upgrade Heroic: exit 0x8A15008E (An upgrade is available but uses a different install technology than the current installation: uninstall it and install the new version), Found Heroic', $command->resultNote);
-        $this->assertStringContainsString('HTTP 404 when downloading the installer', \App\Support\WingetCodes::explain('exit -2145844844'));
+        $this->assertStringContainsString('HTTP 404 when downloading the installer', WingetCodes::explain('exit -2145844844'));
         // Not a winget code, or no code at all: unchanged.
-        $this->assertSame('exit 1', \App\Support\WingetCodes::explain('exit 1'));
-        $this->assertSame('Updated to 1.12.4', \App\Support\WingetCodes::explain('Updated to 1.12.4'));
+        $this->assertSame('exit 1', WingetCodes::explain('exit 1'));
+        $this->assertSame('Updated to 1.12.4', WingetCodes::explain('Updated to 1.12.4'));
     }
 }

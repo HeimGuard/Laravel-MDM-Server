@@ -96,7 +96,7 @@ class AptUpdate
     public static function advice(array $problem): string
     {
         $ppa = self::ppa($problem['repository']);
-        $remove = $ppa !== null ? "sudo add-apt-repository --remove {$ppa}" : "remove its entry from /etc/apt/sources.list.d/ (or sources.list)";
+        $remove = $ppa !== null ? "sudo add-apt-repository --remove {$ppa}" : 'remove its entry from /etc/apt/sources.list.d/ (or sources.list)';
 
         return match ($problem['type']) {
             self::UNSIGNED => "{$problem['repository']}: get the repository key again (into /etc/apt/keyrings/) and name it with Signed-By in the repository's entry; if the repository is not needed, {$remove}.",

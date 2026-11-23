@@ -6,10 +6,12 @@ use App\Models\AlertEvent;
 use App\Models\AlertRule;
 use App\Models\Device;
 use App\Models\Enrolment;
+use App\Support\Audit;
 use App\Support\InstallCommands;
 use App\Support\SmartAlerts;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -39,7 +41,7 @@ class ShowDevices extends Component
     #[Url(except: '')]
     public string $search = '';
 
-    /* Device Enrolment*/
+    /* Device Enrolment */
     public $addDevice = false;
 
     /** agent (enrolment code, install commands) or ping (a ping-only device). */
@@ -52,7 +54,9 @@ class ShowDevices extends Component
     public $pingPrefix = 24;
 
     public string $pingMac = '';
+
     public $enrollmentCode;
+
     public $enrollmentCodeExpiration;
 
     /** Short labels of the smart alerts in the "Attention" column (updates have their own column). */
@@ -79,7 +83,7 @@ class ShowDevices extends Component
             $this->enrollmentCode = Enrolment::generateCode();
             $this->enrollmentCodeExpiration = CarbonImmutable::now()->add(15, 'min');
 
-            $enrolment = new Enrolment();
+            $enrolment = new Enrolment;
             $enrolment->code = $this->enrollmentCode;
             $enrolment->expire_at = $this->enrollmentCodeExpiration;
             $enrolment->save();
@@ -103,10 +107,10 @@ class ShowDevices extends Component
             return;
         }
 
-        $device = new Device();
-        $device->forceFill($settings + ['kind' => 'ping', 'name' => $this->pingName, 'os' => '', 'token' => hash('sha256', \Illuminate\Support\Str::random(60))]);
+        $device = new Device;
+        $device->forceFill($settings + ['kind' => 'ping', 'name' => $this->pingName, 'os' => '', 'token' => hash('sha256', Str::random(60))]);
         $device->save();
-        \App\Support\Audit::device($device, 'create', __('Added ping device :ip', ['ip' => $device->ping_address]), ['ip' => $device->ping_address, 'mac' => $device->ping_mac]);
+        Audit::device($device, 'create', __('Added ping device :ip', ['ip' => $device->ping_address]), ['ip' => $device->ping_address, 'mac' => $device->ping_mac]);
 
         $this->reset(['pingName', 'pingAddress', 'pingMac', 'addMode']);
         $this->pingPrefix = 24;

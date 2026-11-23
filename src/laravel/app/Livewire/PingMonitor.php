@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\Device;
 use App\Support\PingUsage;
+use Carbon\CarbonInterface;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -59,7 +60,7 @@ class PingMonitor extends Component
         // Response time: the average of each bucket, and whether a ping went unanswered in it.
         $bucketSeconds = $hours * 3600 / self::BUCKETS;
         $buckets = array_fill(0, self::BUCKETS, ['sum' => 0.0, 'count' => 0, 'down' => false]);
-        $index = fn (\Carbon\CarbonInterface $at) => min(self::BUCKETS - 1, (int) floor(($at->getTimestamp() - $since->getTimestamp()) / $bucketSeconds));
+        $index = fn (CarbonInterface $at) => min(self::BUCKETS - 1, (int) floor(($at->getTimestamp() - $since->getTimestamp()) / $bucketSeconds));
         foreach (PingUsage::checks($device->id, $since) as $check) {
             if (! $check->up && ($i = $index($check->created_at)) >= 0) {
                 $buckets[$i]['down'] = true;

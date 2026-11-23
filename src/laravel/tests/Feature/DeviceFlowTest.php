@@ -9,6 +9,7 @@ use App\Models\Device;
 use App\Models\Enrolment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
@@ -136,7 +137,7 @@ class DeviceFlowTest extends TestCase
         // Many wrong codes (from anywhere) drop the open codes.
         $this->app['cache']->flush();
         for ($i = 0; $i < Enrolment::MAX_FAILURES; $i++) {
-            \Illuminate\Support\Facades\RateLimiter::hit('enrolment-failures', 900);
+            RateLimiter::hit('enrolment-failures', 900);
         }
         $this->postJson('/api/device/register', ['enrolment_code' => 'WRONG'])->assertStatus(422);
         $this->assertSame(0, Enrolment::count());
@@ -164,7 +165,7 @@ class DeviceFlowTest extends TestCase
     public function test_deleting_device_resets_selection(): void
     {
         $this->actingAs(User::factory()->create());
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'token');
         $device->save();
 
@@ -183,7 +184,7 @@ class DeviceFlowTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $devices = collect(['a', 'b'])->map(function ($token) {
-            $device = new Device();
+            $device = new Device;
             $device->token = hash('sha256', $token);
             $device->save();
 

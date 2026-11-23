@@ -13,7 +13,7 @@ class RecordLastLogin
 {
     public function handle(Login $event): void
     {
-        if (!$event->user instanceof User) {
+        if (! $event->user instanceof User) {
             return;
         }
 

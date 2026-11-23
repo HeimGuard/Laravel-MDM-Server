@@ -8,8 +8,10 @@ use App\Models\Script;
 use App\Models\ScriptRun;
 use App\Models\SecurityFinding;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * What needs attention on a device, most severe first, each with the action that fixes it where
@@ -226,7 +228,7 @@ class SmartAlerts
         // Errors from the agent's log (agents 1.13.2+), newest first.
         $errors = $device->recentAgentErrors;
         if ($errors !== []) {
-            $describe = fn ($error) => $error['message'].' · '.trans_choice(':count time|:count times', $error['count']).', '.\Illuminate\Support\Carbon::createFromTimestamp($error['last'], config('app.timezone'))->diffForHumans();
+            $describe = fn ($error) => $error['message'].' · '.trans_choice(':count time|:count times', $error['count']).', '.Carbon::createFromTimestamp($error['last'], config('app.timezone'))->diffForHumans();
             $alerts[] = [
                 'key' => 'agent_errors',
                 'severity' => 'warning',
@@ -325,7 +327,7 @@ class SmartAlerts
                 $script = Script::find($alert['action']['params']['script'] ?? null);
                 $alert['refusal'] = match (true) {
                     $script === null => __('Nothing to do anymore.'),
-                    ! \Illuminate\Support\Facades\Gate::allows('is-system-admin') => __('Only system admins run scripts'),
+                    ! Gate::allows('is-system-admin') => __('Only system admins run scripts'),
                     default => $script->unavailableReason($device),
                 };
             } elseif (($alert['action']['command'] ?? null) === 'wake') {
@@ -439,7 +441,7 @@ class SmartAlerts
         }
         if ($alert['action']['command'] === 'clearAgentErrors') {
             $device->clearAgentErrors();
-            \App\Support\LiveUpdates::device($device->id, 'errors');
+            LiveUpdates::device($device->id, 'errors');
 
             return null;
         }
@@ -449,13 +451,13 @@ class SmartAlerts
                 return __('Nothing to do anymore.');
             }
             $device->forceFill(['ping_mac' => $found['mac']])->save();
-            \App\Support\LiveUpdates::device($device->id, 'settings');
+            LiveUpdates::device($device->id, 'settings');
 
             return null;
         }
         if ($alert['action']['command'] === 'moveAddress') {
             $device->forceFill(['ping_address' => $alert['action']['params']['ip']])->save();
-            \App\Support\LiveUpdates::device($device->id, 'ping');
+            LiveUpdates::device($device->id, 'ping');
 
             return null;
         }

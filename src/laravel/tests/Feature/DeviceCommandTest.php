@@ -12,8 +12,11 @@ use App\Models\User;
 use App\Support\AgentScript;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
+use SteelAnts\LaravelBoilerplate\Models\Activity;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
 
@@ -51,7 +54,7 @@ class DeviceCommandTest extends TestCase
             ->set('friendlyName', 'Office PC')->call('saveFriendlyName')
             ->call('startEditTags')->set('tagsText', 'office')->call('saveTags');
 
-        $entries = \SteelAnts\LaravelBoilerplate\Models\Activity::query()->where('affected_id', $device->id)->orderBy('id')->get();
+        $entries = Activity::query()->where('affected_id', $device->id)->orderBy('id')->get();
         $this->assertSame(['command', 'command', 'cancel', 'rename', 'tags'], $entries->pluck('data.action')->all());
         $this->assertSame([$system->id, $restart->id, $restart->id], $entries->take(3)->pluck('data.command_id')->all());
         $this->assertNull($entries[0]->actor_id);
@@ -375,7 +378,7 @@ class DeviceCommandTest extends TestCase
         $data['packages_updates'][] = ['Id' => '7zip.7zip', 'Version' => '1', 'Avaliable' => '2', 'Source' => 'winget'];
         $device->forceFill(['data' => json_encode($data)])->saveQuietly();
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])->assertSee('2 updates available');
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('device_alert_dismissals')->count());
+        $this->assertSame(0, DB::table('device_alert_dismissals')->count());
     }
 
     public function test_dismissed_agent_update_shows_again_for_a_newer_release(): void
@@ -389,11 +392,11 @@ class DeviceCommandTest extends TestCase
             ->assertDontSee('A newer agent is available');
 
         // The server serves a newer agent: the dismissal was for the older release.
-        \Illuminate\Support\Facades\Cache::put('agent-version-'.filemtime(AgentScript::path()), '99.0.0', 3600);
+        Cache::put('agent-version-'.filemtime(AgentScript::path()), '99.0.0', 3600);
         Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])
             ->assertSee('A newer agent is available')
             ->assertSee('99.0.0');
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('device_alert_dismissals')->count());
+        $this->assertSame(0, DB::table('device_alert_dismissals')->count());
     }
 
     public function test_device_menu_renames_and_has_no_agent_update(): void

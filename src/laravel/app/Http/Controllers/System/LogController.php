@@ -17,13 +17,13 @@ class LogController extends BaseController
 
         $path = storage_path('logs');
 
-        if (!File::exists($path)) {
+        if (! File::exists($path)) {
             File::makeDirectory($path);
         }
 
         foreach (File::allFiles($path) as $file) {
             $items[] = [
-                'fileName'          => $file->getFilename(),
+                'fileName' => $file->getFilename(),
                 'humanReadableSize' => SizeHelper::getHumanReadableSize($file->getSize()),
             ];
         }
@@ -31,23 +31,23 @@ class LogController extends BaseController
         $items = array_reverse($items);
 
         $todayStats = [
-            'ERROR'   => 0,
+            'ERROR' => 0,
             'WARNING' => 0,
-            'INFO'    => 0,
+            'INFO' => 0,
         ];
 
         $todayLog = storage_path('logs/laravel.log');
         if (config('logging.default') == 'daily') {
             $today = date('Y-m-d');
-            $todayLog = storage_path('logs/laravel-' . $today . '.log');
+            $todayLog = storage_path('logs/laravel-'.$today.'.log');
         }
 
         if (File::exists($todayLog)) {
             if (File::size($todayLog) > self::LOG_OPEN_LIMIT) {
                 $todayStats = [
-                    'ERROR'   => '??',
+                    'ERROR' => '??',
                     'WARNING' => '??',
-                    'INFO'    => '??',
+                    'INFO' => '??',
                 ];
             } else {
                 $content = File::get($todayLog);
@@ -58,8 +58,8 @@ class LogController extends BaseController
         }
 
         return view('system.log.index', [
-            'layout'     => config('boilerplate.layouts.system'),
-            'items'      => $items,
+            'layout' => config('boilerplate.layouts.system'),
+            'items' => $items,
             'todayStats' => $todayStats,
         ]);
     }
@@ -68,7 +68,7 @@ class LogController extends BaseController
     {
         $path = $this->resolveLogPath($filename);
 
-        if (!File::exists($path)) {
+        if (! File::exists($path)) {
             abort(404);
         }
 
@@ -76,14 +76,14 @@ class LogController extends BaseController
             return response()->download($path);
         }
 
-        $lines     = File::lines($path)->all();
+        $lines = File::lines($path)->all();
         $lineCount = count($lines);
 
         return view('system.log.detail', [
-            'layout'    => config('boilerplate.layouts.system'),
-            'lines'     => $lines,
+            'layout' => config('boilerplate.layouts.system'),
+            'lines' => $lines,
             'lineCount' => $lineCount,
-            'filename'  => basename($path),
+            'filename' => basename($path),
         ]);
     }
 
@@ -91,17 +91,17 @@ class LogController extends BaseController
     {
         $path = $this->resolveLogPath($filename);
 
-        if (!File::exists($path)) {
+        if (! File::exists($path)) {
             abort(404);
         }
 
         $offset = max(0, (int) $request->input('offset', 0));
 
         $newLines = File::lines($path)->skip($offset)->values();
-        $total    = $offset + $newLines->count();
+        $total = $offset + $newLines->count();
 
         return response()->json([
-            'lines'  => $newLines->all(),
+            'lines' => $newLines->all(),
             'offset' => $total,
         ]);
     }
@@ -132,13 +132,13 @@ class LogController extends BaseController
 
     private function resolveLogPath(string $filename): string
     {
-        return storage_path('logs') . DIRECTORY_SEPARATOR . basename($filename);
+        return storage_path('logs').DIRECTORY_SEPARATOR.basename($filename);
     }
 
     public function clear(Request $request)
     {
         $path = storage_path('logs');
-        $files = glob($path . '/lar*.log');
+        $files = glob($path.'/lar*.log');
 
         foreach ($files as $file) {
             if (file_exists($file)) {

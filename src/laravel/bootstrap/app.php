@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Middleware\DeviceSignature;
+use App\Http\Middleware\RememberPortalUrl;
+use App\Http\Middleware\SetLocale;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,10 +21,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectUsersTo('/devices');
-        $middleware->alias(['device.signature' => \App\Http\Middleware\DeviceSignature::class]);
-        $middleware->web(append: [\App\Http\Middleware\SetLocale::class, \App\Http\Middleware\RememberPortalUrl::class]);
+        $middleware->alias(['device.signature' => DeviceSignature::class]);
+        $middleware->web(append: [SetLocale::class, RememberPortalUrl::class]);
         // Before authentication, so the 401 of an unknown token is signed as well.
-        $middleware->prependToPriorityList(\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class, \App\Http\Middleware\DeviceSignature::class);
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, DeviceSignature::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

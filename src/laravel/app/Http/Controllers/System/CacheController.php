@@ -24,7 +24,7 @@ class CacheController extends BaseController
             $redisConnection = $storage->connection();
             foreach ($redisConnection->command('keys', ['*']) as $full_key) {
                 $cache_items[] = [
-                    'key'       => str_replace($storage->getPrefix(), '', $full_key),
+                    'key' => str_replace($storage->getPrefix(), '', $full_key),
                     'expire_at' => null,
                 ];
             }
@@ -33,15 +33,15 @@ class CacheController extends BaseController
             $items = File::allFiles($cachePath);
             foreach ($items as $file2) {
                 $cache_items[] = [
-                    'key'       => $file2->getFilename(),
+                    'key' => $file2->getFilename(),
                     'expire_at' => Carbon::parse(substr($file2->getContents(), 0, 10))->setTimezone(config('app.timezone')),
                 ];
             }
         } elseif ($cache_driver == 'database') {
-            $items = DB::select('SELECT * FROM ' . config('cache.stores.database.table') . ';');
+            $items = DB::select('SELECT * FROM '.config('cache.stores.database.table').';');
             foreach ($items as $item) {
                 $cache_items[] = [
-                    'key'       => $item->key,
+                    'key' => $item->key,
                     'expire_at' => Carbon::parse($item->expiration)->setTimezone(config('app.timezone')),
                 ];
             }
@@ -51,12 +51,12 @@ class CacheController extends BaseController
 
         // OPcache status
         $opcache_data = [
-            'loaded'              => extension_loaded('opcache') || extension_loaded('Zend OPcache') || function_exists('opcache_get_status'),
-            'enabled'             => false,
-            'memory_used'         => 0,
-            'memory_free'         => 0,
+            'loaded' => extension_loaded('opcache') || extension_loaded('Zend OPcache') || function_exists('opcache_get_status'),
+            'enabled' => false,
+            'memory_used' => 0,
+            'memory_free' => 0,
             'validate_timestamps' => false,
-            'revalidate_freq'     => 0,
+            'revalidate_freq' => 0,
         ];
 
         if ($opcache_data['loaded']) {
@@ -73,10 +73,10 @@ class CacheController extends BaseController
         }
 
         return view('system.cache.index', [
-            'layout'       => config('boilerplate.layouts.system'),
-            'cache_items'  => $cache_items,
+            'layout' => config('boilerplate.layouts.system'),
+            'cache_items' => $cache_items,
             'cache_driver' => $cache_driver,
-            'opcache'      => $opcache_data,
+            'opcache' => $opcache_data,
         ]);
     }
 

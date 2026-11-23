@@ -27,11 +27,13 @@ class DeviceScriptController extends Controller
         foreach ($runs as $run) {
             if ($run->expires_at->isPast()) {
                 $run->update(['status' => 'expired']);
+
                 continue;
             }
             // The script changed after the run was issued: that version cannot be sent anymore.
             if ($run->currentFingerprint() !== $run->fingerprint) {
                 $run->update(['status' => 'superseded']);
+
                 continue;
             }
             // Only the request that changes it from pending sends it (no double delivery).

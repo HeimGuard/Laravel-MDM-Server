@@ -37,7 +37,7 @@ class DeviceRealtimeTest extends TestCase
 
     private function createDevice(string $token): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', $token);
         $device->save();
 

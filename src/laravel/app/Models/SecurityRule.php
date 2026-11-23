@@ -167,7 +167,7 @@ class SecurityRule extends Model
     public function getUrlsAttribute(): array
     {
         return array_map(fn (string $url) => ['url' => $url, 'host' => (string) preg_replace('/^www\./', '', (string) parse_url($url, PHP_URL_HOST))],
-            \App\Support\SecurityRules::urlList($this->definition['urls'] ?? null) ?? []);
+            SecurityRules::urlList($this->definition['urls'] ?? null) ?? []);
     }
 
     public function getIsParserAttribute(): bool

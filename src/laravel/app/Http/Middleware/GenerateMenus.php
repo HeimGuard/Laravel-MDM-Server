@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use SteelAnts\LaravelBoilerplate\Facades\Menu;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -13,7 +14,7 @@ class GenerateMenus
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -44,7 +45,7 @@ class GenerateMenus
             ],
         ];
 
-        if (\Illuminate\Support\Facades\Gate::allows('is-system-admin')) {
+        if (Gate::allows('is-system-admin')) {
             $menuRoutes['Scripts'] = [
                 'fas fa-scroll',
                 'script.index',
@@ -82,7 +83,7 @@ class GenerateMenus
             ],
         ];
 
-        if (file_exists(base_path() . '/routes/api.php')) {
+        if (file_exists(base_path().'/routes/api.php')) {
             $systemRoutes['Api'] = [
                 'fas fa-rocket',
                 'system.api.index',
@@ -91,8 +92,8 @@ class GenerateMenus
 
         // One flat menu (navigation.blade.php): the system pages after the others, for system admins only.
         $menus = [
-            'main-menu'   => $menuRoutes,
-            'system-menu' => \Illuminate\Support\Facades\Gate::allows('is-system-admin') ? $systemRoutes : [],
+            'main-menu' => $menuRoutes,
+            'system-menu' => Gate::allows('is-system-admin') ? $systemRoutes : [],
         ];
 
         foreach ($menus as $menuKey => $MenuItems) {
@@ -102,8 +103,8 @@ class GenerateMenus
                 $route = $route_data[1];
 
                 $menu->add($title, [
-                    'id'    => strtolower($title),
-                    'icon'  => $icon,
+                    'id' => strtolower($title),
+                    'icon' => $icon,
                     'route' => $route,
                 ]);
             }

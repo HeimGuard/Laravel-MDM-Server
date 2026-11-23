@@ -31,15 +31,15 @@ class DataTable extends DataTableComponent
     public function row($row): array
     {
         $affectedJson = json_encode([
-            'id'   => $row->affected->id ?? '',
+            'id' => $row->affected->id ?? '',
             'name' => ($row->affected->title ?? ($row->affected->name ?? ($row->affected->description ?? ''))),
         ], JSON_UNESCAPED_UNICODE);
 
         return [
-            'created_at'  => $row->created_at,
-            'ip_address'  => $row->ip,
-            'note'        => $row->lang_text,
-            'actor_id'    => ($row->actor->username ?? ($row->actor->name ?? __('System'))),
+            'created_at' => $row->created_at,
+            'ip_address' => $row->ip,
+            'note' => $row->lang_text,
+            'actor_id' => ($row->actor->username ?? ($row->actor->name ?? __('System'))),
             'affected_id' => $affectedJson,
         ];
     }
@@ -47,10 +47,10 @@ class DataTable extends DataTableComponent
     public function headers(): array
     {
         return [
-            'created_at'  => __('Created'),
-            'ip_address'  => __('IP Address'),
-            'note'        => __('Note'),
-            'actor_id'    => __('Author'),
+            'created_at' => __('Created'),
+            'ip_address' => __('IP Address'),
+            'note' => __('Note'),
+            'actor_id' => __('Author'),
             'affected_id' => __('Model'),
         ];
     }

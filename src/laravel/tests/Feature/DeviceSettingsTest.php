@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Device;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use Tests\TestCase;
 
@@ -99,7 +100,7 @@ class DeviceSettingsTest extends TestCase
             $this->ping("192.168.1.$i");
         }
         $queries = 0;
-        \Illuminate\Support\Facades\DB::listen(function () use (&$queries) {
+        DB::listen(function () use (&$queries) {
             $queries++;
         });
 

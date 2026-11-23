@@ -8,8 +8,8 @@ use App\Models\PortScanResult;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
-use App\Services\InventoryService;
 use App\Models\SecurityRule;
+use App\Services\InventoryService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -191,6 +191,7 @@ class SecurityScanner
         if ($delta['full']) {
             return true;
         }
+
         return self::unchanged($delta) ? $stored === $delta['state'] : $stored === $delta['base'];
     }
 
@@ -207,7 +208,8 @@ class SecurityScanner
      *
      * @param  array<int, array>  $sources  from normalizeSources
      * @return array<string, array{full: bool, base: ?string, state: string, old: array<int, array>, new: array<int, array>}>
-     *                                                                                                                  what changed per source (the items before and after), for the incremental scan
+     *                                                                                                                        what changed per source (the items before and after), for the incremental scan
+     *
      * @throws SecurityStateMismatch
      */
     public static function applyDeltas(Device $device, array $sources): array
@@ -253,6 +255,7 @@ class SecurityScanner
      * @param  array<int, array>  $sources  from normalizeSources
      * @param  array<int, array>  $events  from SecurityInventory::sanitizeEvents
      * @return array{opened: int, resolved: int}
+     *
      * @throws SecurityStateMismatch
      */
     public static function ingest(Device $device, array $sources, array $events = []): array

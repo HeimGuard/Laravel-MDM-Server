@@ -27,7 +27,7 @@ class Alerts extends Component
 
         foreach ($types as $type) {
             $message = session()->get($type);
-            if (!empty($message)) {
+            if (! empty($message)) {
                 $this->alerts[] = new AlertItem(type: $type, text: $message);
             }
         }
@@ -35,7 +35,7 @@ class Alerts extends Component
         if (session()->has('errors')) {
             $items = session()->get('errors')->toArray();
             foreach ($items as $item) {
-                if (!empty($item['error'])) {
+                if (! empty($item['error'])) {
                     $this->alerts[] = new AlertItem(type: 'error', text: $item['error']);
                 }
             }

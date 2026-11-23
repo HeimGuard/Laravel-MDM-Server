@@ -17,9 +17,9 @@ class Form extends FormComponent
     protected function rules()
     {
         return [
-            'properties.name'     => 'required|max:255',
-            'properties.email'    => 'required|string|email|max:255|unique:users,email' . (!empty($this->user_id) ? ',' . $this->user_id : ''),
-            'properties.password' => (empty($this->user_id) ? 'required' : 'sometimes') . '|string|min:8|max:255|confirmed',
+            'properties.name' => 'required|max:255',
+            'properties.email' => 'required|string|email|max:255|unique:users,email'.(! empty($this->user_id) ? ','.$this->user_id : ''),
+            'properties.password' => (empty($this->user_id) ? 'required' : 'sometimes').'|string|min:8|max:255|confirmed',
         ];
     }
 
@@ -31,21 +31,21 @@ class Form extends FormComponent
 
     public function properties()
     {
-        if (!empty($this->user_id)) {
+        if (! empty($this->user_id)) {
             $user = User::find($this->user_id);
 
             return [
-                'name'                  => $user->name,
-                'email'                 => $user->email,
-                'password'              => '',
+                'name' => $user->name,
+                'email' => $user->email,
+                'password' => '',
                 'password_confirmation' => '',
             ];
         }
 
         return [
-            'name'                  => '',
-            'email'                 => '',
-            'password'              => '',
+            'name' => '',
+            'email' => '',
+            'password' => '',
             'password_confirmation' => '',
         ];
     }
@@ -54,7 +54,7 @@ class Form extends FormComponent
     public function types()
     {
         return [
-            'password'              => 'password',
+            'password' => 'password',
             'password_confirmation' => 'password',
         ];
     }
@@ -63,9 +63,9 @@ class Form extends FormComponent
     public function labels()
     {
         return [
-            'name'                  => __('Name'),
-            'email'                 => __('Email'),
-            'password'              => __('Password'),
+            'name' => __('Name'),
+            'email' => __('Email'),
+            'password' => __('Password'),
             'password_confirmation' => __('Confirm Password'),
         ];
     }
@@ -83,13 +83,13 @@ class Form extends FormComponent
         $data = $this->properties;
         unset($data['password_confirmation']);
 
-        if (!empty($data['password'])) {
+        if (! empty($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         } else {
             unset($data['password']);
         }
 
-        if (!empty($this->user_id)) {
+        if (! empty($this->user_id)) {
             $user = User::find($this->user_id);
             $this->authorize('update', $user);
             $user->update($data);

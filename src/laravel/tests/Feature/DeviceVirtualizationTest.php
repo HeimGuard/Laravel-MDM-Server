@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Livewire\DeviceAlerts;
 use App\Livewire\DeviceDetail;
 use App\Models\Device;
 use App\Models\User;
@@ -16,7 +15,7 @@ class DeviceVirtualizationTest extends TestCase
 
     private function createDevice(?array $virtualization, array $disks): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'token');
         $device->data = json_encode([
             'machine' => ['Hostname' => 'vm1', 'RestartRequired' => false, 'Drives' => [], 'Virtualization' => $virtualization],

@@ -7,9 +7,9 @@ use App\Models\ValueDefinition;
 use App\Models\ValueSample;
 use App\Support\ValueRecorder;
 use App\Support\ValueRetention;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use SteelAnts\LaravelBoilerplate\Models\Setting;
 use SteelAnts\LaravelBoilerplate\Types\SettingDataType;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /** Measured values of a model: a definition (model, key, name) and its history. */

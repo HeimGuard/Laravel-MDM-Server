@@ -54,8 +54,8 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password'          => 'hashed',
-            'last_login_at'     => 'datetime',
+            'password' => 'hashed',
+            'last_login_at' => 'datetime',
         ];
     }
 
@@ -69,7 +69,7 @@ class User extends Authenticatable
     private static function parseSettingsToArray($settingsRaw)
     {
         $settings = [];
-        if (!empty($settingsRaw->value)) {
+        if (! empty($settingsRaw->value)) {
             foreach (json_decode($settingsRaw->value, true) as $driver => $types) {
                 foreach ($types as $type) {
                     $settings[$driver][$type] = true;
@@ -83,7 +83,7 @@ class User extends Authenticatable
     public function getSortPreference(): string
     {
         return once(fn (): string => Cache::remember(sprintf('user-%d-sorting-preference', $this->id), 500, function () {
-            return !empty($this->getSettings('profile.sort')) ? 'desc' : 'asc';
+            return ! empty($this->getSettings('profile.sort')) ? 'desc' : 'asc';
         }));
     }
 

@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\DeviceAlerts;
 use App\Livewire\DeviceDetail;
+use App\Livewire\DeviceSecurity;
 use App\Livewire\Script\DataTable;
 use App\Livewire\Script\Detail;
 use App\Livewire\Script\Form;
@@ -10,12 +12,21 @@ use App\Livewire\Script\Run;
 use App\Livewire\ScriptRun\DataTable as RunDataTable;
 use App\Livewire\ScriptRun\Output as RunOutput;
 use App\Models\Device;
+use App\Models\InventoryDefinition;
 use App\Models\Script;
 use App\Models\ScriptRun;
+use App\Models\SecurityFinding;
+use App\Models\SecurityInventory;
+use App\Models\SecurityRule;
 use App\Models\User;
+use App\Services\AiService;
+use App\Support\PowerShellCheck;
 use App\Support\Signing;
+use App\Support\SmartAlerts;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use SteelAnts\LaravelBoilerplate\Models\Activity;
@@ -28,7 +39,7 @@ class ScriptTest extends TestCase
 
     private function device(string $token = 'secret-token', string $platform = 'linux', bool $signed = true, bool $scriptsEnabled = true): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', $token);
         $device->name = "srv-$token";
         $device->data = json_encode(['machine' => ['Hostname' => "srv-$token", 'Platform' => $platform, 'ScriptsEnabled' => $scriptsEnabled, 'Drives' => []]]);
@@ -137,7 +148,7 @@ class ScriptTest extends TestCase
         $this->signedJson('POST', "/api/device/scripts/runs/{$run->id}", ['status' => 'failed', 'fingerprint' => $manifest['fingerprint'], 'detection_exit' => 1], 'secret-token')
             ->assertOk()->assertExactJson(['status' => 'noncompliant']);
 
-        $alert = collect(\App\Support\SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id);
+        $alert = collect(SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id);
         $this->assertSame('Check needs remediation', $alert['title']);
         $this->assertSame('remediate', $alert['action']['command']);
 
@@ -151,7 +162,7 @@ class ScriptTest extends TestCase
         $this->assertNotSame($run->id, $full->id);
         $this->assertNull($full->mode);
         $this->assertSame($script->fingerprint, $full->fingerprint);
-        $this->assertNull(collect(\App\Support\SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id));
+        $this->assertNull(collect(SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id));
         $payload = $this->signedJson('GET', '/api/device/scripts', [], 'secret-token')->json('runs.0');
         $this->assertSame(hash('sha256', $script->remediation), json_decode($payload['manifest'], true)['remediation_sha256']);
         $this->signedJson('POST', "/api/device/scripts/runs/{$full->id}", ['status' => 'remediated', 'fingerprint' => $script->fingerprint, 'detection_exit' => 1, 'remediation_exit' => 0, 'post_detection_exit' => 0], 'secret-token')->assertOk();
@@ -162,9 +173,9 @@ class ScriptTest extends TestCase
         $this->signedJson('POST', "/api/device/scripts/runs/{$again->id}", ['status' => 'failed', 'fingerprint' => $again->fingerprint, 'detection_exit' => 1], 'secret-token');
         // Users who are not system admins do not run scripts.
         $this->actingAs(User::factory()->create());
-        $this->assertSame('Only system admins run scripts', collect(\App\Support\SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id)['refusal']);
+        $this->assertSame('Only system admins run scripts', collect(SmartAlerts::for($device->fresh()))->firstWhere('key', 'remediate:'.$script->id)['refusal']);
         $this->actingAs($admin);
-        Livewire::test(\App\Livewire\DeviceAlerts::class, ['selectedDeviceId' => $device->id])
+        Livewire::test(DeviceAlerts::class, ['selectedDeviceId' => $device->id])
             ->assertSee('Check needs remediation')
             ->call('runAlert', 'remediate:'.$script->id)
             ->assertHasNoErrors();
@@ -311,17 +322,17 @@ class ScriptTest extends TestCase
         // Only in a comment or a string does not count.
         $this->assertSame('The detection has to end with exit 0 (compliant) and exit 1 (needs remediation), exit 0 is missing.', $error($form("# exit 0\nWrite-Host 'exit 0'\nexit 1"), 'detection'));
         $form("Write-Host \"x\"\nexit 0")->assertHasErrors('detection');
-        $form("if (Test-Path /x) { exit 0 }\nexit 1", "Write-Host \"fix")->assertHasErrors(['remediation'])->assertHasNoErrors('detection');
+        $form("if (Test-Path /x) { exit 0 }\nexit 1", 'Write-Host "fix')->assertHasErrors(['remediation'])->assertHasNoErrors('detection');
         $big = "if (Test-Path /x) { exit 0 }\nexit 1\n# ".str_repeat('x', Script::MAX_CODE_BYTES);
         $this->assertSame('The script has 200.0 kB, at most 200 kB.', $error($form($big), 'detection'));
         // Nothing saved (only the script every installation starts with).
         $this->assertSame(0, Script::query()->where('name', 'Check')->count());
 
-        $form("\$a = @\"\nmultiline \"text\" exit 5\n\"@\nif (Test-Path /x) { exit 0 }\nexit 1", "New-Item /x")->assertHasNoErrors();
+        $form("\$a = @\"\nmultiline \"text\" exit 5\n\"@\nif (Test-Path /x) { exit 0 }\nexit 1", 'New-Item /x')->assertHasNoErrors();
         $this->assertSame(1, Script::query()->where('name', 'Check')->count());
 
         // The whole agent passes the light check.
-        $this->assertSame([], \App\Support\PowerShellCheck::lex(file_get_contents(base_path('../powershell/app.ps1')))['errors']);
+        $this->assertSame([], PowerShellCheck::lex(file_get_contents(base_path('../powershell/app.ps1')))['errors']);
     }
 
     public function test_script_code_is_required(): void
@@ -374,12 +385,12 @@ class ScriptTest extends TestCase
         // Without MDM_AI_PROVIDER the key tells the provider: an OpenAI key is never sent to Anthropic.
         foreach (['sk-ant-api03-x' => 'anthropic', 'sk-proj-x' => 'openai', 'sk-x' => 'openai', 'other-key' => 'anthropic'] as $key => $provider) {
             config(['mdm.ai_provider' => null, 'mdm.ai_api_key' => $key]);
-            $this->assertSame($provider, \App\Services\AiService::provider(), $key);
+            $this->assertSame($provider, AiService::provider(), $key);
         }
         config(['mdm.ai_provider' => '', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions']);
-        $this->assertSame('openai', \App\Services\AiService::provider());
+        $this->assertSame('openai', AiService::provider());
         config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'sk-proj-x', 'mdm.ai_url' => null]);
-        $this->assertSame('anthropic', \App\Services\AiService::provider());
+        $this->assertSame('anthropic', AiService::provider());
 
         // OpenAI, or a server of your own with its API (no key needed then).
         config(['mdm.ai_provider' => 'openai', 'mdm.ai_api_key' => null, 'mdm.ai_url' => 'http://ollama:11434/v1/chat/completions', 'mdm.ai_model' => 'qwen3']);
@@ -390,36 +401,36 @@ class ScriptTest extends TestCase
 
         // Without the address OpenAI needs a key; an unknown provider is off.
         config(['mdm.ai_url' => null]);
-        $this->assertFalse(\App\Services\AiService::available());
+        $this->assertFalse(AiService::available());
         config(['mdm.ai_provider' => 'gemini', 'mdm.ai_api_key' => 'key']);
-        $this->assertFalse(\App\Services\AiService::available());
+        $this->assertFalse(AiService::available());
     }
 
     public function test_a_finding_is_explained_with_ai(): void
     {
         $this->actingAs(User::factory()->create());
         config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
-        \App\Models\SecurityRule::syncBuiltIn();
-        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        SecurityRule::syncBuiltIn();
+        $rule = SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
         $device = $this->device();
-        $finding = \App\Models\SecurityFinding::query()->create([
+        $finding = SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'Firewall is off', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
         // The security inventory: the system (with its CPU architecture) and the settings go along, nothing that names a person, an address or a secret.
-        \App\Models\SecurityInventory::query()->create(['device_id' => $device->id, 'states' => [], 'scanned' => [], 'collected_at' => now()]);
+        SecurityInventory::query()->create(['device_id' => $device->id, 'states' => [], 'scanned' => [], 'collected_at' => now()]);
         foreach ([
             'os' => ['Id' => 'ubuntu', 'Name' => 'Ubuntu 26.04 LTS', 'Version' => '26.04', 'Kernel' => '7.0.0-38-generic', 'Codename' => 'resolute', 'Arch' => 'x86_64'],
             'posture' => ['FirewallEnabled' => false, 'SshRootLogin' => 'no', 'AptUpdateOk' => false, 'AptUpdateErrors' => 'E: https://user:hunter2@repo.example/ 401', 'UnencryptedMounts' => '/home/eve'],
         ] as $key => $data) {
-            \App\Models\InventoryDefinition::query()->create(['inventorable_type' => $device->getMorphClass(), 'inventorable_id' => $device->id, 'key' => $key, 'name' => $key, 'last_data' => $data]);
+            InventoryDefinition::query()->create(['inventorable_type' => $device->getMorphClass(), 'inventorable_id' => $device->id, 'key' => $key, 'name' => $key, 'last_data' => $data]);
         }
         $scripts = Script::query()->count();
         Http::fake(['api.anthropic.com/*' => Http::response(['stop_reason' => 'end_turn', 'content' => [['type' => 'text', 'text' => "Bez firewallu je zařízení otevřené.\n- Zapněte ho."]]])]);
         app()->setLocale('cs');
 
         // Anybody signed in may ask; the answer is plain text in the language of the user, shown under the finding.
-        $component = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('explainWithAi', $finding->id)
+        $component = Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('explainWithAi', $finding->id)
             ->assertSet('remediateError', null)->assertSet("explanations.{$finding->id}", "Bez firewallu je zařízení otevřené.\n- Zapněte ho.")
             ->assertSee('Bez firewallu je zařízení otevřené.')->assertSee(__('Hide explanation'));
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Answer in Czech') && str_contains($request['messages'][0]['content'], 'Firewall is off')
@@ -434,26 +445,26 @@ class ScriptTest extends TestCase
 
         // Asking again hides it; a finding of another device is not explained.
         $component->call('explainWithAi', $finding->id)->assertSet('explanations', []);
-        $other = \App\Models\SecurityFinding::query()->create([
+        $other = SecurityFinding::query()->create([
             'device_id' => $this->device('other-token')->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'other', 'severity' => 'high',
             'message' => 'Elsewhere', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
-        $this->assertThrows(fn () => $component->call('explainWithAi', $other->id), \Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        $this->assertThrows(fn () => $component->call('explainWithAi', $other->id), ModelNotFoundException::class);
         Http::assertSentCount(1);
 
         // Without a key there is no button.
         config(['mdm.ai_api_key' => null]);
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertDontSee(__('Explain with AI'));
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->assertDontSee(__('Explain with AI'));
     }
 
     public function test_a_finding_is_remediated_with_ai(): void
     {
         $this->actingAs($this->admin());
         config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
-        \App\Models\SecurityRule::syncBuiltIn();
-        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        SecurityRule::syncBuiltIn();
+        $rule = SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
         $device = $this->device();
-        $finding = \App\Models\SecurityFinding::query()->create([
+        $finding = SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'Firewall is off', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
@@ -462,7 +473,7 @@ class ScriptTest extends TestCase
             'detection' => "if (-not (Test-Path /x)) { exit 1 }\nexit 0", 'remediation' => 'ufw enable', 'manual_remediation' => false,
         ])]]])]);
 
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)->assertHasNoErrors();
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)->assertHasNoErrors();
 
         $script = Script::query()->where('name', 'Firewall on')->sole();
         $this->assertTrue($script->manual_remediation);
@@ -471,25 +482,25 @@ class ScriptTest extends TestCase
 
         // The operating system and its version of the device go along: the script is written for that system.
         $device->forceFill(['os' => 'Ubuntu 26.04 LTS'])->save();
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "Platform: linux\nOperating system: Ubuntu 26.04 LTS"));
 
         // The links of the detection (advisories, vendor documentation) go along: they name recommended mitigations.
         $rule->update(['definition' => array_merge($rule->definition, ['urls' => ['https://example.org/advisory', 'https://vendor.example/kb']])]);
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], "References of the detection (advisories, vendor documentation):\n- https://example.org/advisory\n- https://vendor.example/kb"));
 
         // The other open findings of the device go along, so one script fixes them together.
-        \App\Models\SecurityFinding::query()->create([
+        SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'second', 'severity' => 'critical',
             'message' => 'php-cli 8.5.4 is outdated', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         Http::assertSent(fn (Request $request) => str_contains($request['messages'][0]['content'], 'Other open findings') && str_contains($request['messages'][0]['content'], 'php-cli 8.5.4 is outdated'));
 
         // Anybody signed in may ask for it; the script waits for a system admin.
         $this->actingAs(User::factory()->create());
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id)
             ->assertNoRedirect()->assertSet('remediateError', null)->assertNotSet('remediateDone', null);
         // Asking again for the findings of a rule updates its script, it does not write another one.
         $this->assertSame(1, Script::query()->where('name', 'Firewall on')->count());
@@ -502,10 +513,10 @@ class ScriptTest extends TestCase
     {
         $this->actingAs($this->admin());
         config(['mdm.ai_provider' => 'anthropic', 'mdm.ai_api_key' => 'test-key', 'mdm.ai_url' => null, 'mdm.ai_model' => null]);
-        \App\Models\SecurityRule::syncBuiltIn();
-        $rule = \App\Models\SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
+        SecurityRule::syncBuiltIn();
+        $rule = SecurityRule::query()->detection()->get()->first(fn ($rule) => ! $rule->isEvent);
         $device = $this->device();
-        $finding = \App\Models\SecurityFinding::query()->create([
+        $finding = SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'test', 'severity' => 'high',
             'message' => 'LXD is affected', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
             'details' => ['Status' => 'no fix available yet', 'Cves' => 'CVE-2025-54289', 'Channel' => '4.0/stable/…'],
@@ -518,7 +529,7 @@ class ScriptTest extends TestCase
         // Two answers one after the other (a later Http::fake would not replace the first one).
         Http::fake(['api.anthropic.com/*' => Http::sequence()->push($answer('LXD CVE-2025-54289 (snap)', 'snap refresh lxd'))
             ->push($answer('LXD (Snap) aktualisieren', 'snap refresh lxd --channel=5.21/stable'))]);
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
         $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame(1, $script->version);
         // The AI is told what the scanner found out (status, CVEs, channel, the rule) and what the detection has to mean.
@@ -529,7 +540,7 @@ class ScriptTest extends TestCase
             && str_contains($request['messages'][0]['content'], 'is not a fix'));
 
         // Another language or another answer of the AI: the same script, its name stays, the code is a new version.
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('remediateWithAi', $finding->id);
 
         $script = Script::query()->where('security_rule_id', $rule->id)->sole();
         $this->assertSame('LXD CVE-2025-54289 (snap)', $script->name);
@@ -613,10 +624,10 @@ class ScriptTest extends TestCase
     public function test_findings_and_the_inventory_are_exported(): void
     {
         $this->actingAs($this->admin());
-        \App\Models\SecurityRule::syncBuiltIn();
-        $rule = \App\Models\SecurityRule::query()->detection()->first();
+        SecurityRule::syncBuiltIn();
+        $rule = SecurityRule::query()->detection()->first();
         $device = $this->device();
-        \App\Models\SecurityFinding::query()->create([
+        SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export', 'severity' => 'high',
             'message' => "Firewall\nis off", 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(),
         ]);
@@ -632,7 +643,7 @@ class ScriptTest extends TestCase
         $this->assertStringContainsString('1 finding(s)', $this->get(route('security.export', ['search' => 'Firewall']))->streamedContent());
         $this->assertStringContainsString('0 finding(s)', $this->get(route('security.export', ['search' => 'nothing like it']))->streamedContent());
         // What somebody acknowledged is quiet: it is not in the counts per severity.
-        \App\Models\SecurityFinding::query()->create([
+        SecurityFinding::query()->create([
             'device_id' => $device->id, 'security_rule_id' => $rule->id, 'fingerprint' => 'export-ack', 'severity' => 'low',
             'message' => 'No firewall', 'occurrences' => 1, 'first_seen_at' => now(), 'last_seen_at' => now(), 'acknowledged_at' => now(),
         ]);
@@ -642,12 +653,12 @@ class ScriptTest extends TestCase
         $this->assertStringNotContainsString('Low: 1', $content);
         $this->get(route('security.export', ['status' => 'bogus']))->assertSessionHasErrors('status');
         $this->get(route('security.export', ['device' => 999999]))->assertSessionHasErrors('device');
-        Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->assertSee('Export Markdown')->assertSee(route('security.export', ['device' => $device->id, 'status' => 'unresolved']));
-        \Illuminate\Support\Facades\Auth::logout();
+        Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->assertSee('Export Markdown')->assertSee(route('security.export', ['device' => $device->id, 'status' => 'unresolved']));
+        Auth::logout();
         $this->get(route('security.export'))->assertRedirect();
         $this->actingAs($this->admin());
 
-        $json = Livewire::test(\App\Livewire\DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
+        $json = Livewire::test(DeviceSecurity::class, ['deviceId' => $device->id])->call('exportInventory')->effects['download'] ?? null;
         $this->assertNotNull($json);
         $data = json_decode(base64_decode($json['content']), true);
         $this->assertSame("Firewall\nis off", $data['findings'][0]['message']);

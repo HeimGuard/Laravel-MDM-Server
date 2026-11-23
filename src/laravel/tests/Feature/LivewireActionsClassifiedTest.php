@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\DeviceCommands;
+use App\Livewire\DeviceSecurity;
+use App\Livewire\SecurityScan\Page;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use ReflectionClass;
@@ -103,15 +106,18 @@ class LivewireActionsClassifiedTest extends TestCase
         foreach ($map as $class => $actions) {
             if (! isset($discovered[$class])) {
                 $violations[] = "$class is in tests/Support/LivewireActions.php but is no Livewire component (or has no public action) anymore: remove it";
+
                 continue;
             }
             foreach ($actions as $action => $level) {
                 if (! in_array($action, $discovered[$class], true)) {
                     $violations[] = "$class::$action is in tests/Support/LivewireActions.php but is no public action anymore: remove it";
+
                     continue;
                 }
                 if (! in_array($level, $levels, true)) {
                     $violations[] = "$class::$action has the unknown level '$level' (ui, user or admin)";
+
                     continue;
                 }
 
@@ -135,10 +141,10 @@ class LivewireActionsClassifiedTest extends TestCase
         // A guard of the scan itself: an empty result would let the test above pass without looking at anything.
         $discovered = $this->discover();
 
-        $this->assertArrayHasKey(\App\Livewire\DeviceCommands::class, $discovered);
-        $this->assertContains('deleteDevice', $discovered[\App\Livewire\DeviceCommands::class]);
-        $this->assertContains('rescan', $discovered[\App\Livewire\SecurityScan\Page::class]);
+        $this->assertArrayHasKey(DeviceCommands::class, $discovered);
+        $this->assertContains('deleteDevice', $discovered[DeviceCommands::class]);
+        $this->assertContains('rescan', $discovered[Page::class]);
         // An action of a trait is found under the component that uses it.
-        $this->assertContains('explainWithAi', $discovered[\App\Livewire\DeviceSecurity::class]);
+        $this->assertContains('explainWithAi', $discovered[DeviceSecurity::class]);
     }
 }

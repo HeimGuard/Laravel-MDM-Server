@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\LivewireActions;
 use Tests\TestCase;
 
@@ -34,7 +35,7 @@ class LivewireAdminActionsForbiddenTest extends TestCase
 
     private function device(): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'secret-token');
         $device->name = 'srv-secret-token';
         $device->data = json_encode(['machine' => ['Hostname' => 'srv-secret-token', 'Platform' => 'linux', 'Drives' => []]]);
@@ -55,7 +56,7 @@ class LivewireAdminActionsForbiddenTest extends TestCase
         }
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('adminActions')]
+    #[DataProvider('adminActions')]
     public function test_a_normal_user_cannot_call_an_admin_action(string $component, string $action): void
     {
         $device = $this->device();

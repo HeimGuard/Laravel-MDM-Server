@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Audit;
 use App\Support\NetworkMap;
 use App\Support\SecurityCves;
 use App\Support\SecurityRules;
@@ -208,7 +209,7 @@ class SecurityFinding extends Model
             'resolved_at' => $this->rule?->isEvent ? now() : $this->resolved_at,
         ]);
         if ($this->device) {
-            \App\Support\Audit::device($this->device, 'acknowledge', __('Finding acknowledged: :finding', ['finding' => $this->title ?? $this->rule?->name ?? '#'.$this->id]), ['finding_id' => $this->id], $user);
+            Audit::device($this->device, 'acknowledge', __('Finding acknowledged: :finding', ['finding' => $this->title ?? $this->rule?->name ?? '#'.$this->id]), ['finding_id' => $this->id], $user);
         }
     }
 
@@ -217,7 +218,7 @@ class SecurityFinding extends Model
     {
         $this->update(['stale_at' => null, 'acknowledged_at' => null, 'acknowledged_by' => null, 'resolved_at' => $this->rule?->isEvent ? null : $this->resolved_at]);
         if ($this->device) {
-            \App\Support\Audit::device($this->device, 'reopen', __('Finding reopened: :finding', ['finding' => $this->title ?? $this->rule?->name ?? '#'.$this->id]), ['finding_id' => $this->id]);
+            Audit::device($this->device, 'reopen', __('Finding reopened: :finding', ['finding' => $this->title ?? $this->rule?->name ?? '#'.$this->id]), ['finding_id' => $this->id]);
         }
     }
 }

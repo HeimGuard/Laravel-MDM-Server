@@ -2,8 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\DeviceDetail;
 use App\Models\Device;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\Concerns\SignsDeviceRequests;
 use Tests\TestCase;
 
@@ -28,7 +31,7 @@ class DeviceLiveStateTest extends TestCase
 
     private function createDevice(): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', 'secret-token');
         $device->save();
 
@@ -169,8 +172,8 @@ class DeviceLiveStateTest extends TestCase
         $this->assertSame(81, $device->batteryLevel);
         $this->assertTrue($device->pluggedIn);
 
-        $this->actingAs(\App\Models\User::factory()->create());
-        \Livewire\Livewire::test(\App\Livewire\DeviceDetail::class, ['selectedDeviceId' => $device->id])
+        $this->actingAs(User::factory()->create());
+        Livewire::test(DeviceDetail::class, ['selectedDeviceId' => $device->id])
             ->assertSee('fa-bolt', false)
             ->assertSee('81 %');
     }

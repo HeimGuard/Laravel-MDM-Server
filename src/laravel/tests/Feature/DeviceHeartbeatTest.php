@@ -5,11 +5,13 @@ namespace Tests\Feature;
 use App\Listeners\RecordDeviceHeartbeat;
 use App\Livewire\DeviceMetrics;
 use App\Models\Device;
+use App\Models\User;
 use App\Models\ValueSample;
 use App\Support\DeviceUsage;
 use App\Support\ValueRetention;
-use App\Models\User;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Reverb\Application;
 use Laravel\Reverb\Contracts\Connection;
 use Laravel\Reverb\Events\MessageReceived;
@@ -19,8 +21,6 @@ use Laravel\Reverb\Protocols\Pusher\Contracts\ChannelManager;
 use Livewire\Livewire;
 use Mockery;
 use PHPUnit\Framework\Attributes\Group;
-use Illuminate\Contracts\Debug\ExceptionHandler;
-use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class DeviceHeartbeatTest extends TestCase
@@ -29,7 +29,7 @@ class DeviceHeartbeatTest extends TestCase
 
     private function createDevice(string $token = 'secret-token'): Device
     {
-        $device = new Device();
+        $device = new Device;
         $device->token = hash('sha256', $token);
         $device->save();
 

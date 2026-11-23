@@ -5,6 +5,8 @@ namespace Database\Seeders;
 use App\Models\Device;
 use App\Models\PortScanResult;
 use App\Support\AgentScript;
+use App\Support\PingUsage;
+use App\Support\ValueRecorder;
 use Illuminate\Database\Seeder;
 
 /**
@@ -99,9 +101,9 @@ class DeviceSeeder extends Seeder
         $moments = [];
         for ($minutes = 24 * 60; $minutes >= 0; $minutes -= 5) {
             $up = $online ? ! ($minutes >= 120 && $minutes < 135) : $minutes > 6 * 60;
-            $moments[] = [now()->subMinutes($minutes), \App\Support\PingUsage::values($up, $up ? round(mt_rand(8, 60) / 10, 1) : null)];
+            $moments[] = [now()->subMinutes($minutes), PingUsage::values($up, $up ? round(mt_rand(8, 60) / 10, 1) : null)];
         }
-        \App\Support\ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
+        ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
 
         $device->forceFill(['last_seen_at' => $online ? now()->addYear() : now()->subHours(6)])->saveQuietly();
 
