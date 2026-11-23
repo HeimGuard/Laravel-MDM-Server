@@ -11,6 +11,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Network map: the card of a switch whose ports are read (TP-Link Easy Smart, Ping settings) shows its ports as buttons coloured by the speed
   of the link, with a ring for bad packets. A click on a port opens a multiselect of the devices of the network that have no port yet, to tick the
   ones plugged into it by a cable; their cards get a tag *port N*.
+  A port shows a dropdown on hover (link, bad packets, packets sent and received, the devices plugged into it), and the ports are in the legend of the map.
 
 ## [1.37.0] - 2026-11-23
 

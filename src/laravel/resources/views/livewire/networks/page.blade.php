@@ -121,6 +121,13 @@
                     @endforeach
                     <span><svg class="me-1" height="6" width="22"><path class="nm-link is-lan is-down" d="M1 3 L 21 3"></path></svg>{{ __('down') }}</span>
                     <span><svg class="me-1" height="6" width="22"><path class="nm-link is-unknown" d="M1 3 L 21 3"></path></svg>{{ __('unknown device') }}</span>
+                    @if ($devices->contains(fn ($node) => ! empty($node['switch'])))
+                        {{-- The ports of a switch whose ports are read (the card of the switch). --}}
+                        <span><span class="nm-port-key is-gig"></span>1000M</span>
+                        <span><span class="nm-port-key is-fast"></span>100M</span>
+                        <span><span class="nm-port-key is-down"></span>{{ __('port without a link') }}</span>
+                        <span><span class="nm-port-key has-errors"></span>{{ __('bad packets') }}</span>
+                    @endif
                     <span class="ms-auto d-none d-md-inline">{{ __('Drag to move, wheel or pinch to zoom.') }}</span>
                 </div>
             </div>

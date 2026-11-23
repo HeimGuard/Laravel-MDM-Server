@@ -129,6 +129,7 @@ export function createNetworkMap(root, data) {
         current = map;
         const nodes = new Map(map.nodes.map((node) => [node.id, node]));
         layer.innerHTML = '';
+        layer.appendChild(tip);
         const elements = new Map();
         for (const node of map.nodes) {
             const el = document.createElement(node.url && !node.switch ? 'a' : 'div');
@@ -515,6 +516,40 @@ export function createNetworkMap(root, data) {
             event.stopPropagation();
         }
     }, true);
+    // The dropdown of a port (on hover): the link, the packets and the devices plugged into it.
+    const tip = document.createElement('div');
+    tip.className = 'nm-port-tip';
+    tip.hidden = true;
+    layer.appendChild(tip);
+    const showTip = (button) => {
+        const card = current.nodes.find((node) => node.switch && String(node.switch.id) === button.dataset.switch)?.switch;
+        const port = card?.ports.find((p) => String(p.port) === button.dataset.port);
+        if (!port) {
+            return;
+        }
+        const row = (label, value) => `<span>${esc(label)}</span><span class="nm-tip-value">${esc(value)}</span>`;
+        const fmt = (value) => (value === null || value === undefined ? '—' : Number(value).toLocaleString('en').replace(/,/g, ' '));
+        tip.innerHTML = `<div class="nm-tip-head"><span class="nm-tip-title">${esc(port.heading)}</span><span class="nm-tip-link">${esc(port.link_name)}</span></div>`
+            + `<div class="nm-tip-grid">${row(card.labels.bad, fmt(port.bad))}${row(card.labels.tx, fmt(port.tx))}${row(card.labels.rx, fmt(port.rx))}</div>`
+            + `<div class="nm-tip-sub">${esc(card.labels.devices)}</div>`
+            + (port.devices.length ? port.devices.map((name) => `<div class="nm-tip-device">${esc(name)}</div>`).join('') : `<div class="nm-tip-none">${esc(card.labels.none)}</div>`)
+            + `<div class="nm-tip-hint">${esc(card.labels.hint)}</div>`;
+        const box = button.getBoundingClientRect();
+        const stageBox = stage.getBoundingClientRect();
+        tip.style.left = `${(box.left - stageBox.left) / view.scale + box.width / 2 / view.scale - 24}px`;
+        tip.style.top = `${(box.bottom - stageBox.top) / view.scale + 8}px`;
+        tip.hidden = false;
+    };
+    layer.addEventListener('pointerover', (event) => {
+        const button = event.target.closest('.nm-port');
+        if (button) {
+            showTip(button);
+        } else {
+            tip.hidden = true;
+        }
+    });
+    layer.addEventListener('pointerleave', () => { tip.hidden = true; });
+
     // A port of a switch: the devices plugged into it (a modal of the page, a multiselect).
     viewport.addEventListener('click', (event) => {
         const port = event.target.closest('.nm-port');

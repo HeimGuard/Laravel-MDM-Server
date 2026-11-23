@@ -307,7 +307,7 @@ label.mdm-tag {
     .nm-head { display: flex; align-items: center; gap: .5rem; color: inherit; text-decoration: none; white-space: nowrap; }
     .nm-ports { display: flex; flex-wrap: wrap; gap: .3rem; }
     .nm-port {
-        min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; border: 2px solid var(--hg-offline); border-radius: .4rem;
+        min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; border: 2px solid var(--hg-offline); border-radius: .75rem;
         background: transparent; color: var(--bs-body-color); font-size: .7rem; font-weight: 600; line-height: 1; cursor: pointer;
         &.is-gig { border-color: var(--hg-ok); }
         &.is-fast { border-color: var(--hg-info); }
@@ -317,6 +317,31 @@ label.mdm-tag {
         &.has-errors { box-shadow: 0 0 0 2px var(--hg-high); }
         &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
     }
+}
+
+// The dropdown of a port (on hover).
+.nm-port-tip {
+    position: absolute; z-index: 5; width: 15rem; padding: .6rem .75rem; pointer-events: none;
+    border: 1px solid var(--hg-line-strong); border-radius: .6rem; background: var(--hg-surface-raised);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .55); font-size: .75rem; line-height: 1.3; white-space: normal;
+    &[hidden] { display: none; }
+    .nm-tip-head { display: flex; align-items: center; gap: .5rem; }
+    .nm-tip-title { flex-grow: 1; font-weight: 600; }
+    .nm-tip-link { padding: 0 .45rem; border-radius: .5rem; background: var(--hg-ok-subtle); color: var(--hg-ok); font-size: .65rem; font-weight: 600; }
+    .nm-tip-grid { display: grid; grid-template-columns: 1fr auto; row-gap: .15rem; margin-top: .45rem; color: var(--bs-secondary-color); }
+    .nm-tip-value { color: var(--bs-body-color); }
+    .nm-tip-sub { margin-top: .5rem; padding-top: .4rem; border-top: 1px solid var(--hg-line); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color); }
+    .nm-tip-device { margin-top: .2rem; font-weight: 600; }
+    .nm-tip-none { margin-top: .2rem; color: var(--bs-secondary-color); }
+    .nm-tip-hint { margin-top: .5rem; color: var(--hg-info); font-size: .68rem; }
+}
+// The ports in the legend of the map.
+.nm-port-key {
+    display: inline-block; width: .85rem; height: .85rem; margin-right: .3rem; vertical-align: -2px; border: 2px solid var(--hg-offline); border-radius: .4rem;
+    &.is-gig { border-color: var(--hg-ok); }
+    &.is-fast { border-color: var(--hg-info); }
+    &.is-down { border-style: dashed; }
+    &.has-errors { border-color: var(--hg-info); box-shadow: 0 0 0 2px var(--hg-high); }
 }
 
 // A network that shows or hides its devices on a click.

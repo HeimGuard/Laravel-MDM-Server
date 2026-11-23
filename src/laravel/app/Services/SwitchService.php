@@ -282,6 +282,7 @@ class SwitchService
             $link = __(self::LINKS[$port['link']] ?? 'Down');
             $ports[] = $port + [
                 'devices' => $on,
+                'link_name' => $link,
                 'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]),
                 'title' => implode(' · ', array_filter([
                     __('Port :port', ['port' => $port['port']]), $link,
@@ -291,6 +292,13 @@ class SwitchService
             ];
         }
 
-        return ['id' => $device->id, 'ports' => $ports, 'empty' => __('Ports not read yet')];
+        return [
+            'id' => $device->id, 'ports' => $ports, 'empty' => __('Ports not read yet'),
+            // The texts of the dropdown of a port (network-map.js).
+            'labels' => [
+                'bad' => __('Bad packets'), 'tx' => __('Sent (TX)'), 'rx' => __('Received (RX)'),
+                'devices' => __('Plugged into the port'), 'none' => __('No device on this port'), 'hint' => __('Click to choose the devices on this port'),
+            ],
+        ];
     }
 }
