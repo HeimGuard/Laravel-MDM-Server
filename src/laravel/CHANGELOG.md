@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.36.2] - 2026-11-23
+
 ### Added
 - Security tab of a device and its Events box: shown for every device that has events or sends syslog (before only with an inventory or a
   ping-only device), with the latest events on top. A syslog message no parser reads has an "Add parser" button (system admins, here and in
@@ -15,8 +17,6 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ### Changed
 - Syslog: a message that no parser reads is now stored as an event of the type "syslog" (Security → Events and the Security tab of the
   device), so you can see what a device sends and write a parser for it. Until now such messages were dropped.
-
-## [1.36.2] - 2026-11-23
 
 ### Fixed
 - Syslog of a ping-only device (a host without the agent) was stored, but never shown: its Security tab now lists the events made of its
