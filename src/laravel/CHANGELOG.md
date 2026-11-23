@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.36.2] - 2026-11-23
+
 ### Fixed
 - Syslog of a ping-only device (a host without the agent) was stored, but never shown: its Security tab now lists the events made of its
   syslog, although it has no inventory.
