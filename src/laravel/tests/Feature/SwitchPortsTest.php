@@ -222,6 +222,67 @@ class SwitchPortsTest extends TestCase
         $this->assertTrue(SwitchService::enabled($fresh));
     }
 
+    private function pingDevice(string $name, string $mac): Device
+    {
+        $device = new Device;
+        $device->forceFill(['kind' => 'ping', 'name' => $name, 'os' => '', 'token' => hash('sha256', $name), 'ping_address' => '192.168.1.'.(20 + strlen($name)), 'ping_prefix' => 24, 'ping_mac' => $mac]);
+        $device->save();
+
+        return $device->fresh();
+    }
+
+    /** The interface table of snmpAnswer() with a MAC table: 2 MAC addresses on port 1 (a trunk), 1 on port 3, one on the VLAN table too. */
+    private function snmpAnswerWithMacs(): string
+    {
+        $c = SwitchService::SNMP_COLUMNS;
+
+        return $this->snmpAnswer()."\n".implode("\n", [
+            $c['bridge_port'].'.1 1', $c['bridge_port'].'.2 2', $c['bridge_port'].'.3 3',
+            $c['fdb'].'.0.17.34.51.68.85 3',
+            $c['fdb_vlan'].'.10.0.17.34.51.68.85 3',
+            $c['fdb'].'.0.17.34.51.68.86 1', $c['fdb'].'.0.17.34.51.68.87 1',
+            // The broadcast address and the entry of the switch itself (port 0) are no device.
+            $c['fdb'].'.255.255.255.255.255.255 1', $c['fdb'].'.0.17.34.51.68.88 0',
+        ]);
+    }
+
+    public function test_a_device_is_plugged_into_the_port_where_its_mac_is_learned(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.38.0');
+        $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
+        $byHand = $this->pingDevice('printer', '00:11:22:33:44:56');
+        $byHand->forceFill(['switch_id' => $switch->id, 'switch_port' => 2])->save();
+
+        $body = $this->snmpAnswerWithMacs();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $body, 'error' => null]]);
+
+        $this->assertSame([3, 'auto'], [$nas->fresh()->switch_port, $nas->fresh()->switch_auto]);
+        $this->assertSame($switch->id, $nas->fresh()->switch_id);
+        // Set by hand: the table does not move it.
+        $this->assertSame(2, $byHand->fresh()->switch_port);
+        $this->assertNull($byHand->fresh()->switch_auto);
+
+        // Taken off the port by hand: not paired again, even when the table changes.
+        SwitchService::unplug($nas->fresh());
+        $this->assertSame('off', $nas->fresh()->switch_auto);
+        SwitchService::pair($switch, [3 => ['00:11:22:33:44:55', '00:11:22:33:44:77']]);
+        $this->assertNull($nas->fresh()->switch_id);
+    }
+
+    public function test_a_trunk_with_many_mac_addresses_is_not_a_place_of_a_device(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
+        $macs = array_map(fn (int $i) => sprintf('00:11:22:33:55:%02X', $i), range(1, 20));
+
+        SwitchService::pair($switch, [1 => ['00:11:22:33:44:55', ...$macs]]);
+
+        $this->assertNull($nas->fresh()->switch_id);
+    }
+
     private function printer(): Device
     {
         $device = new Device;

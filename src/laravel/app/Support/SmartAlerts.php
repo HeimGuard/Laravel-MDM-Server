@@ -486,7 +486,7 @@ class SmartAlerts
             return null;
         }
         if ($alert['action']['command'] === 'unplugPort') {
-            $device->forceFill(['switch_id' => null, 'switch_port' => null])->save();
+            \App\Services\SwitchService::unplug($device);
             LiveUpdates::device($device->id, 'settings');
 
             return null;

@@ -27,6 +27,8 @@ trait HasDeviceSettings
         // Where a device (of any kind) is plugged in by a cable: the switch (a ping-only device) and its port, set by hand.
         'switch_id' => ['lan.switch_device_id', SettingDataType::INT, 'any'],
         'switch_port' => ['lan.switch_port', SettingDataType::INT, 'any'],
+        // How it got there: 'auto' (found in the MAC table of the switch), 'off' (taken off by hand: not paired by the MAC again), none (set by hand).
+        'switch_auto' => ['lan.switch_auto', SettingDataType::STRING, 'any'],
         'switch_type' => ['switch.type', SettingDataType::STRING, 'ping'],
         'switch_user' => ['switch.user', SettingDataType::STRING, 'ping'],
         'switch_password' => ['switch.password', SettingDataType::STRING, 'ping'],

@@ -124,5 +124,14 @@ The same card for a switch that has SNMP. Any switch with SNMP v2c: in **Ping se
   Down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and more *1000M full*, 100 Mb/s *100M full*, less
   *10M full* (the duplex is not read, full is assumed). Bad packets are `ifInErrors` + `ifOutErrors`.
 - The same measured values, card, network map and alerts as for the TP-Link switch. An agent 1.37.0 gets no SNMP probe.
-- Not covered (simple on purpose): SNMP v1/v3, a port without `ifType` 6 (a LAG, a VLAN), the MAC address table (the devices are plugged into the ports by hand).
+- **Devices are plugged into the ports by their MAC address** when the switch has a MAC table (BRIDGE-MIB `dot1dTpFdbPort`, Q-BRIDGE-MIB
+  `dot1qTpFdbPort`, the bridge port turned into the ifIndex with `dot1dBasePortIfIndex`; the agent walks them as three more columns, so no newer
+  agent is needed). `SwitchService::pair` matches the addresses with those of the devices (interfaces, the followed MAC of a ping-only device, the
+  Wake-on-LAN MAC) and sets the switch and the port like by hand, marked `auto` (`lan.switch_auto`).
+  - A device seen by several switches goes to the port with the fewest MAC addresses behind it (the nearest one); when two are equal, to none.
+    A port with more than 16 addresses is a trunk to another switch: nothing is paired with it.
+  - **By hand wins**: a device plugged in by hand (the dropdown of a port) is never moved. One paired by the MAC follows the cable (it moves when
+    its address is learned on another port). One you take off its port is marked `off` and is not paired again.
+  - The tables are kept in the cache for an hour; the devices are looked at again when a table changes, or every 10 minutes.
+- Not covered (simple on purpose): SNMP v1/v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
 

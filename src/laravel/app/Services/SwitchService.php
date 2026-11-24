@@ -37,7 +37,16 @@ class SwitchService
     public const SNMP_COLUMNS = [
         'type' => '1.3.6.1.2.1.2.2.1.3', 'status' => '1.3.6.1.2.1.2.2.1.8', 'speed' => '1.3.6.1.2.1.2.2.1.5', 'fast' => '1.3.6.1.2.1.31.1.1.1.15',
         'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
+        // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
+        // (index = VLAN and the MAC), and the bridge port => ifIndex of BRIDGE-MIB. Not every switch has them.
+        'bridge_port' => '1.3.6.1.2.1.17.1.4.1.2', 'fdb' => '1.3.6.1.2.1.17.4.3.1.2', 'fdb_vlan' => '1.3.6.1.2.1.17.7.1.2.2.1.2',
     ];
+
+    /** The columns of the interface table (one row per ifIndex). */
+    private const SNMP_INTERFACE_COLUMNS = ['type' => 1, 'status' => 1, 'speed' => 1, 'fast' => 1, 'rx' => 1, 'rx_bad' => 1, 'tx' => 1, 'tx_bad' => 1];
+
+    /** A port that has more MAC addresses behind it than this is a trunk to another switch: the devices are not paired with it. */
+    private const MAX_MACS_ON_PORT = 16;
 
     /** link_status of the page of TP-Link: the code is stored, the name is shown. */
     public const LINKS = [0 => 'Down', 1 => 'Auto', 2 => '10M half', 3 => '10M full', 4 => '100M half', 5 => '100M full', 6 => '1000M full'];
@@ -164,17 +173,10 @@ class SwitchService
      */
     public static function parseSnmp(string $body): ?array
     {
-        $columns = array_flip(self::SNMP_COLUMNS);
         $interfaces = [];
-        foreach (preg_split('/\R/', $body) as $line) {
-            if (! preg_match('/^(1(?:\.\d+)+) (\d+)$/', trim($line), $match)) {
-                continue;
-            }
-            $dot = strrpos($match[1], '.');
-            $column = $columns[substr($match[1], 0, $dot)] ?? null;
-            $index = (int) substr($match[1], $dot + 1);
-            if ($column !== null && $index > 0) {
-                $interfaces[$index][$column] = (int) $match[2];
+        foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && ctype_digit($index) && (int) $index > 0) {
+                $interfaces[(int) $index][$column] = $value;
             }
         }
         ksort($interfaces);
@@ -196,6 +198,64 @@ class SwitchService
         }
 
         return $rows === [] ? null : $rows;
+    }
+
+    /**
+     * The lines `oid value` of an SNMP walk as [column name, the rest of the OID (the index), value].
+     *
+     * @return \Generator<int, array{0: string, 1: string, 2: int}>
+     */
+    private static function snmpLines(string $body): \Generator
+    {
+        $columns = array_flip(self::SNMP_COLUMNS);
+        foreach (preg_split('/\R/', $body) as $line) {
+            if (! preg_match('/^(1(?:\.\d+)+) (\d+)$/', trim($line), $match)) {
+                continue;
+            }
+            foreach ($columns as $oid => $name) {
+                if (str_starts_with($match[1], $oid.'.')) {
+                    yield [$name, substr($match[1], strlen($oid) + 1), (int) $match[2]];
+
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * The MAC addresses a switch has learned on each port of an SNMP walk, by the number of the port (ifIndex): the table of BRIDGE-MIB
+     * and of Q-BRIDGE-MIB, the bridge port turned into the ifIndex. Only the ports in $ports; the MAC addresses that are no unicast address
+     * are left out.
+     *
+     * @param  array<int, array{port: int}>  $ports
+     * @return array<int, array<int, string>>
+     */
+    public static function snmpMacs(string $body, array $ports): array
+    {
+        $bridge = [];
+        $learned = [];
+        foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if ($column === 'bridge_port' && ctype_digit($index)) {
+                $bridge[(int) $index] = $value;
+            } elseif ($column === 'fdb' || $column === 'fdb_vlan') {
+                $arcs = array_map('intval', explode('.', $index));
+                $arcs = array_slice($arcs, -6);
+                if (count($arcs) === 6 && max($arcs) <= 255 && $value > 0) {
+                    $learned[] = [implode(':', array_map(fn (int $arc) => sprintf('%02X', $arc), $arcs)), $value];
+                }
+            }
+        }
+        $known = array_flip(array_column($ports, 'port'));
+        $byPort = [];
+        foreach ($learned as [$mac, $bridgePort]) {
+            $port = $bridge[$bridgePort] ?? $bridgePort;
+            $mac = \App\Models\NetworkNeighbour::normalizeMac($mac);
+            if ($mac !== null && isset($known[$port])) {
+                $byPort[$port][$mac] = $mac;
+            }
+        }
+
+        return array_map('array_values', $byPort);
     }
 
     /**
@@ -224,6 +284,9 @@ class SwitchService
             }
             Cache::put(self::loginKey($device), true, self::LOGIN_SECONDS);
             self::store($device, $ports);
+            if ((string) $device->switch_type === 'snmp') {
+                self::pair($device, self::snmpMacs($probe['body'], $ports));
+            }
             $taken++;
         }
 
@@ -273,6 +336,85 @@ class SwitchService
         return array_values($ports);
     }
 
+    private static function macsKey(Device|int $switch): string
+    {
+        return 'switch-macs.'.($switch instanceof Device ? $switch->id : $switch);
+    }
+
+    /** The MAC addresses of a device: its interfaces, the followed one of a ping-only device, the one of its Wake-on-LAN settings. */
+    private static function macsOf(Device $device): array
+    {
+        $interfaces = $device->isPingOnly ? [] : $device->networks;
+        $macs = [];
+        foreach ([$device->ping_mac, $device->wake_mac, ...array_column($interfaces, 'Mac')] as $mac) {
+            if ($mac = \App\Models\NetworkNeighbour::normalizeMac($mac)) {
+                $macs[$mac] = $mac;
+            }
+        }
+
+        return array_values($macs);
+    }
+
+    /**
+     * Plugs the devices into the ports where their MAC address is learned (a switch with a MAC table, read over SNMP): the switch
+     * and the port are set like by hand, marked `auto`. A device seen by several switches goes to the port with the fewest MAC addresses
+     * behind it (the nearest one; a trunk to another switch has many), and none when two are equal. Not touched: a device plugged in by
+     * hand and one taken off a port by hand (`off`). The tables are kept in the cache for an hour (the pairing needs the tables of all
+     * switches) and the devices are looked at again when one changes, or every 10 minutes.
+     *
+     * @param  array<int, array<int, string>>  $byPort  the MAC addresses by port of this switch
+     */
+    public static function pair(Device $switch, array $byPort): int
+    {
+        Cache::put(self::macsKey($switch), $byPort, 3600);
+        $hash = md5(json_encode($byPort));
+        if (Cache::get('switch-macs-hash.'.$switch->id) === $hash) {
+            return 0;
+        }
+        Cache::put('switch-macs-hash.'.$switch->id, $hash, 600);
+
+        // Where each MAC address is seen: [switch id, port, how many MAC addresses are on that port].
+        $seen = [];
+        foreach (Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', ['snmp'])->pluck('id') as $id) {
+            foreach (Cache::get(self::macsKey((int) $id), []) as $port => $macs) {
+                foreach ($macs as $mac) {
+                    $seen[$mac][] = ['switch' => (int) $id, 'port' => (int) $port, 'count' => count($macs)];
+                }
+            }
+        }
+        $changed = 0;
+        foreach (Device::all() as $device) {
+            if ($device->switch_auto === 'off' || ($device->switch_id !== null && $device->switch_auto !== 'auto')) {
+                continue;
+            }
+            $places = collect(self::macsOf($device))->flatMap(fn (string $mac) => $seen[$mac] ?? [])
+                ->reject(fn (array $place) => $place['switch'] === $device->id || $place['count'] > self::MAX_MACS_ON_PORT)
+                ->sortBy('count')->values();
+            $best = $places->first();
+            if ($best === null || ($places->count() > 1 && $places[1]['count'] === $best['count'] && ($places[1]['switch'] !== $best['switch'] || $places[1]['port'] !== $best['port']))) {
+                continue;
+            }
+            if ($device->switch_id === $best['switch'] && $device->switch_port === $best['port']) {
+                continue;
+            }
+            $before = $device->switch_id;
+            $device->forceFill(['switch_id' => $best['switch'], 'switch_port' => $best['port'], 'switch_auto' => 'auto'])->save();
+            foreach (array_unique(array_filter([$before, $best['switch']])) as $id) {
+                LiveUpdates::device($id, 'switch');
+            }
+            LiveUpdates::device($device->id, 'settings');
+            $changed++;
+        }
+
+        return $changed;
+    }
+
+    /** Takes a device off its port by hand: one that was paired by the MAC address is not paired again (`off`). */
+    public static function unplug(Device $device): void
+    {
+        $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => $device->switch_auto === 'auto' ? 'off' : null])->save();
+    }
+
     /**
      * The devices that can be plugged into a port of the switch: the ones of its network (the network map) that have no port
      * yet, and the ones already on this port.
@@ -317,7 +459,12 @@ class SwitchService
             if ($device === null || $wanted === $candidate['selected']) {
                 continue;
             }
-            $device->forceFill(['switch_id' => $wanted ? $switch->id : null, 'switch_port' => $wanted ? $port : null])->save();
+            if ($wanted) {
+                // By hand now: the MAC table does not move it any more.
+                $device->forceFill(['switch_id' => $switch->id, 'switch_port' => $port, 'switch_auto' => null])->save();
+            } else {
+                self::unplug($device);
+            }
             $changed++;
         }
         if ($changed > 0) {
@@ -331,7 +478,8 @@ class SwitchService
     public static function forget(Device $switch): void
     {
         Device::query()->whereSettingIn('lan.switch_device_id', [$switch->id])->get()
-            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null])->save());
+            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => null])->save());
+        Cache::forget(self::macsKey($switch));
     }
 
     /**
