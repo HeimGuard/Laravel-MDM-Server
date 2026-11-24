@@ -114,6 +114,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/networks', Page::class)->name('networks');
     Route::get('/networks/{network}', Show::class)->name('networks.show');
     Route::get('/snmp', App\Livewire\Snmp\Page::class)->name('snmp');
+    Route::get('/tplink', App\Livewire\Tplink\Page::class)->name('tplink');
     Route::get('/notifications', App\Livewire\Notifications\Page::class)->name('notifications');
     Route::get('/security', App\Livewire\SecurityScan\Page::class)->name('security');
     Route::get('/security/export', [SecurityExportController::class, 'findings'])->name('security.export');

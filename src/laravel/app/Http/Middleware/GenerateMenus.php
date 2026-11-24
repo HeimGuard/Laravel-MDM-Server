@@ -50,6 +50,14 @@ class GenerateMenus
             ],
         ];
 
+        // The TP-Link integration is offered only where a device has a TP-Link MAC address (or one is read already).
+        if (\App\Services\SwitchService::tplinkOffered()) {
+            $menuRoutes['TP-Link'] = [
+                'fas fa-ethernet',
+                'tplink',
+            ];
+        }
+
         if (Gate::allows('is-system-admin')) {
             $menuRoutes['Scripts'] = [
                 'fas fa-scroll',

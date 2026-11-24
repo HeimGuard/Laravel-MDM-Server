@@ -8,6 +8,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Added
+- **TP-Link** in its own item of the menu (offered only for the devices whose MAC address is one of TP-Link, and shown only while there is one): the user name and the password of a Easy Smart switch are entered there, no more in the Ping settings.
 - **SNMP** (agents 1.39.0+): a new item in the menu (the icon of syslog) where you enter only the address and the **SNMP community** of a device, or the community of a ping-only device that exists (v1 and v2c, the agent tries both); the portal finds out the rest:
   the version, what the device is (name and description on its card), its ports (link and speed, bad packets, packets sent and received, on the card, the network map and in the
   alerts) and, when it has the MAC table, **which device is plugged into which port** (automatically, by the MAC address: what is set by hand stays, a device taken off a

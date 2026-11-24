@@ -36,7 +36,7 @@
    device or the network (not all devices of a LAN are in the VPN). Ping-only devices are in the
    network of their address; their agent shows how many it pings.
 
-**A switch** whose ports are read (a ping-only device with a switch set in its Ping settings, see
+**A switch** whose ports are read (a ping-only device read over SNMP or from its web page, see
 [Devices](devices.md#switch-without-snmp-ports-agents-1370)) is a card of its own among the devices of its network: its ports are buttons,
 coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link) with a ring for bad packets, and
 a dropdown on hover shows the link, the bad packets, the packets sent and received and the devices plugged into them. The devices plugged into

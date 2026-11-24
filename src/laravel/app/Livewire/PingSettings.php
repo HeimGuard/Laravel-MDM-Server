@@ -24,18 +24,6 @@ class PingSettings extends Component
     /** The agent that pings it ('' for one in its network): for a device in another subnet. */
     public string $via = '';
 
-    /** A switch without SNMP whose ports the agent reads (SwitchService): the kind ('' none), the user and the password (blank keeps the stored one). */
-    public string $switchType = '';
-
-    public string $switchUser = '';
-
-    public string $switchPassword = '';
-
-    public bool $switchHasPassword = false;
-
-    /** The device is read over SNMP (set on the SNMP page). */
-    public bool $snmp = false;
-
     public function mount(int $deviceId): void
     {
         $device = Device::query()->where('kind', 'ping')->findOrFail($deviceId);
@@ -44,11 +32,6 @@ class PingSettings extends Component
         $this->prefix = $device->ping_prefix ?? 24;
         $this->mac = (string) $device->ping_mac;
         $this->via = (string) ($device->ping_via_id ?? '');
-        $snmp = (string) $device->switch_type === \App\Services\SwitchService::SNMP;
-        $this->snmp = $snmp;
-        $this->switchType = $snmp ? '' : (string) $device->switch_type;
-        $this->switchUser = (string) $device->switch_user;
-        $this->switchHasPassword = ! $snmp && (string) $device->switch_password !== '';
     }
 
     public function save(): void
@@ -68,24 +51,18 @@ class PingSettings extends Component
             return;
         }
         $settings['ping_via_id'] = $via?->id;
-        $switch = $this->switchSettings($device);
-        if ($switch === null) {
-            return;
-        }
         // Another address: the old answers say nothing about it.
         $addressChanged = $settings['ping_address'] !== $device->ping_address;
         if ($addressChanged) {
             $settings += ['last_seen_at' => null];
         }
-        $device->forceFill($settings + $switch);
-        $switchChanged = array_intersect_key($device->getDirty(), ['switch_type' => 1, 'switch_user' => 1, 'switch_password' => 1]) !== [];
+        $device->forceFill($settings);
         $changes = array_intersect_key($device->getDirty(), array_flip(['ping_address', 'ping_prefix', 'ping_mac', 'ping_via_id']));
         $device->save();
         if ($addressChanged) {
             PingUsage::forgetCurrent($device->id);
         }
-        if ($changes !== [] || $switchChanged) {
-            // The password is never in the audit.
+        if ($changes !== []) {
             Audit::device($device, 'settings', __('Ping settings changed'), ['changes' => $changes]);
         }
         LiveUpdates::device($device->id, 'settings');
@@ -94,43 +71,9 @@ class PingSettings extends Component
         $this->dispatch('closeModal');
     }
 
-    /**
-     * The settings of the switch (null and an error when they are not valid): a kind chosen by hand (user and password, the password stays
-     * when the field is blank), otherwise what SNMP set (the SNMP page) or none. The password is stored encrypted.
-     *
-     * @return array<string, ?string>|null
-     */
-    private function switchSettings(Device $device): ?array
-    {
-        $none = ['switch_type' => null, 'switch_user' => null, 'switch_password' => null];
-        if ($this->switchType === '') {
-            // SNMP is set on its own page (Livewire\Snmp\Page): it stays as it is.
-            return (string) $device->switch_type === \App\Services\SwitchService::SNMP
-                ? ['switch_type' => $device->switch_type, 'switch_user' => null, 'switch_password' => $device->switch_password] : $none;
-        }
-        $user = trim($this->switchUser);
-        $stored = (string) $device->switch_type === $this->switchType ? (string) $device->switch_password : '';
-        $password = $this->switchPassword !== '' ? $this->switchPassword : null;
-        $valid = isset(\App\Services\SwitchService::TYPES[$this->switchType]) && $user !== '' && mb_strlen($user) <= 64
-            && ($password !== null || $stored !== '')
-            && ($password === null || (mb_strlen($password) <= 100 && ! preg_match('/[\x00-\x1f]/', $password)));
-        if (! $valid) {
-            $this->addError('switchUser', __('Enter the user name and the password of the switch.'));
-
-            return null;
-        }
-
-        return [
-            'switch_type' => $this->switchType,
-            'switch_user' => $user,
-            'switch_password' => $password !== null ? \App\Services\SwitchService::storePassword($password) : $stored,
-        ];
-    }
-
     public function render()
     {
         return view('livewire.ping-settings', [
-            'switchTypes' => \App\Services\SwitchService::TYPES,
             // Agents that can ping (1.10.0+, signing).
             'agents' => Device::query()->where('kind', 'agent')->whereNotNull('public_key')->get()
                 ->filter(fn (Device $agent) => version_compare((string) $agent->agent_version, Device::PING_VERSION, '>='))

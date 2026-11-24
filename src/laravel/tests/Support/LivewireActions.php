@@ -89,6 +89,11 @@ final class LivewireActions
                 'getOptions' => $ui,
                 'submit' => $admin,
             ],
+            L\Tplink\Page::class => [
+                'add' => $user,
+                'save' => $user,
+                'remove' => $user,
+            ],
             L\Snmp\Page::class => [
                 'add' => $user,
                 'save' => $user,

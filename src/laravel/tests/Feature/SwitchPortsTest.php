@@ -101,29 +101,53 @@ class SwitchPortsTest extends TestCase
         $this->assertSame(0, SwitchService::record($relay, [['id' => 999999, 'status' => 200, 'body' => self::PAGE]]));
     }
 
-    public function test_the_settings_of_the_switch_are_saved_with_the_password_encrypted(): void
+    public function test_the_tplink_page_offers_only_the_devices_with_a_tplink_mac_address(): void
     {
         $this->actingAs(User::factory()->create());
-        $switch = $this->switchDevice(false);
+        $other = $this->pingDevice('printer', '00:11:22:33:44:55');
+        // The menu item is not there while no device has a TP-Link MAC address.
+        $this->get(route('snmp'))->assertOk()->assertDontSee(route('tplink'), false);
+        $archer = $this->pingDevice('archer', '50:C7:BF:AA:BB:CC');
 
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])
-            ->set('switchType', 'tplink')
-            ->call('save')
-            ->assertHasErrors('switchUser')
-            ->set('switchUser', 'admin')
-            ->set('switchPassword', 's3cret')
-            ->call('save')
+        $this->get(route('snmp'))->assertSee(route('tplink'), false);
+        $this->assertTrue(SwitchService::isTpLink($archer));
+        $this->assertFalse(SwitchService::isTpLink($other));
+        $this->assertSame([$archer->id], SwitchService::tplinkCandidates()->pluck('id')->all());
+        // Another device is not accepted, whatever is sent.
+        Livewire::test(\App\Livewire\Tplink\Page::class)->set('device', (string) $other->id)->set('user', 'admin')->set('password', 's3cret')->call('add')->assertHasErrors('device');
+        $this->assertNull($other->fresh()->switch_type);
+    }
+
+    public function test_a_tplink_switch_is_saved_with_the_password_encrypted_and_removed_on_its_page(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $archer = $this->pingDevice('archer', '50:C7:BF:AA:BB:CC');
+
+        $page = Livewire::test(\App\Livewire\Tplink\Page::class)->set('device', (string) $archer->id)
+            ->call('add')
+            ->assertHasErrors('user')
+            ->set('user', 'admin')
+            ->set('password', 's3cret')
+            ->call('add')
             ->assertHasNoErrors();
 
-        $fresh = $switch->fresh();
+        $fresh = $archer->fresh();
         $this->assertSame(['tplink', 'admin'], [$fresh->switch_type, $fresh->switch_user]);
         $this->assertNotSame('s3cret', $fresh->switch_password);
         $this->assertTrue(SwitchService::enabled($fresh));
-        // A blank password keeps the stored one; no kind removes the settings.
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->call('save')->assertHasNoErrors();
-        $this->assertTrue(SwitchService::enabled($switch->fresh()));
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('switchType', '')->call('save');
-        $this->assertFalse(SwitchService::enabled($switch->fresh()));
+        $this->assertSame([], SwitchService::tplinkCandidates()->all());
+        // A blank password keeps the stored one; a new user name is saved.
+        $stored = $fresh->switch_password;
+        $page->set('users.'.$archer->id, 'root')->call('save', $archer->id)->assertHasNoErrors();
+        $this->assertSame(['root', $stored], [$archer->fresh()->switch_user, $archer->fresh()->switch_password]);
+        $page->set('passwords.'.$archer->id, 'n3w')->call('save', $archer->id);
+        $this->assertNotSame($stored, $archer->fresh()->switch_password);
+        // The Ping settings leave the switch alone.
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $archer->id])->call('save')->assertHasNoErrors();
+        $this->assertTrue(SwitchService::enabled($archer->fresh()));
+        $page->call('remove', $archer->id);
+        $this->assertFalse(SwitchService::enabled($archer->fresh()));
+        $this->assertNotNull(Device::find($archer->id));
     }
 
     private function snmpSwitch(string $community = 'public'): Device
@@ -278,8 +302,8 @@ class SwitchPortsTest extends TestCase
         // The same community is not encrypted again.
         $page->call('save', $nas->id);
         $this->assertSame($stored, $nas->fresh()->switch_password);
-        // The Ping settings keep SNMP when they are saved without a switch kind.
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $nas->id])->assertSet('switchType', '')->call('save')->assertHasNoErrors();
+        // The Ping settings leave SNMP alone.
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $nas->id])->call('save')->assertHasNoErrors();
         $this->assertTrue(SwitchService::enabled($nas->fresh()));
         // Empty: off, the device stays.
         $page->set('communities.'.$nas->id, '')->call('save', $nas->id);

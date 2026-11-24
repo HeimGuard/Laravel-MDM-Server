@@ -31,6 +31,9 @@ class SwitchService
     /** Agents from this version read a device over SNMP (v1 and v2c, strings in the answer). */
     public const SNMP_VERSION = '1.39.0';
 
+    /** The kind of switch read from its web page (the setting switch.type). */
+    public const TPLINK = 'tplink';
+
     /** The kind of switch set by the community alone (the value of the setting switch.type). */
     public const SNMP = 'snmp';
 
@@ -187,6 +190,44 @@ class SwitchService
         ])->save();
         Cache::forget(self::versionKey($device));
         Cache::forget(self::macsKey($device));
+    }
+
+    /** A ping-only device whose MAC address is one of TP-Link (the vendor of its prefix): the web page of Easy Smart switches is offered for it only. */
+    public static function isTpLink(Device $device): bool
+    {
+        return $device->isPingOnly && preg_match('/tp-?link/i', (string) \App\Support\MacVendor::lookup($device->ping_mac)) === 1;
+    }
+
+    /** The devices read from the web page of a TP-Link switch. */
+    public static function tplinkDevices(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::TPLINK])->get()
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** The ping-only devices with a TP-Link MAC address that are read neither over SNMP nor from a web page yet. */
+    public static function tplinkCandidates(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->get()->filter(fn (Device $device) => (string) $device->switch_type === '' && self::isTpLink($device))
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** Whether the TP-Link page is offered: there is a device with a TP-Link MAC address, or one already read. */
+    public static function tplinkOffered(): bool
+    {
+        return self::tplinkDevices()->isNotEmpty() || self::tplinkCandidates()->isNotEmpty();
+    }
+
+    /** Sets the user and the password of a TP-Link switch (the password is kept when null), or turns it off (no user). */
+    public static function setTpLink(Device $device, ?string $user, ?string $password): void
+    {
+        $keep = (string) $device->switch_type === self::TPLINK ? $device->switch_password : null;
+        $device->forceFill([
+            'switch_type' => $user === null ? null : self::TPLINK,
+            'switch_user' => $user,
+            'switch_password' => $user === null ? null : ($password !== null ? self::storePassword($password) : $keep),
+        ])->save();
+        Cache::forget(self::loginKey($device));
     }
 
     /** What the device said about itself, null before the first answer: name, descr, version. */

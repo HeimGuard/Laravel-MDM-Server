@@ -92,8 +92,11 @@ address, the prefix of its network (`/24`) and optionally the MAC address for Wa
 ### Switch without SNMP: ports (agents 1.37.0+)
 
 A ping-only device can be a **switch** whose ports the portal shows although it has no SNMP (TP-Link Easy Smart, the way
-[check_tplink](https://github.com/Clete2/check_tplink) reads them). In **Ping settings** choose the kind of switch and enter its
-user name and password.
+[check_tplink](https://github.com/Clete2/check_tplink) reads them). It has its own item in the menu, **TP-Link** (`fas fa-ethernet`, page
+`/tplink`, `Livewire\Tplink\Page`), offered only for a ping-only device whose **MAC address is one of TP-Link** (the vendor of its prefix,
+`SwitchService::isTpLink`): the menu item is there only while such a device exists or one is read already. Choose the device and enter the
+user name and password of the switch; the list of the page changes them (a blank password keeps the stored one) or stops reading the switch
+(**Remove**, the device stays). The Ping settings of the device do not have it any more. One way per device: SNMP or the web page.
 
 - **The agent is the ingress proxy of the server into its network.** The agent that pings the device gets a `probe` with its
   target: the HTTP requests (steps) to make to that device, the same ones the web interface makes (`GET /PortStatisticsRpm.htm`,
@@ -117,7 +120,7 @@ The same card for any device with SNMP v1 or v2c. It has its own item in the men
 `Livewire\Snmp\Page`): enter only the address and the read-only **SNMP community** of a device, or the community of a ping-only device that
 exists (a new device gets the prefix 24 and the MAC that network discovery sees at its address); the portal finds out the rest itself. The
 list of the page shows what each device says about itself, its ports and the community to change (empty or **Remove** turns SNMP off, the
-device stays). The Ping settings of the device only link to it; the **Switch without SNMP** there (TP-Link) is the other way, one at a time.
+device stays). The Ping settings of the device do not have it; the web page of a TP-Link switch (above) is the other way, one at a time.
 
 - **Discovery:** the agent walks the standard columns and the server reads what the device is from the answer. The OIDs are the same on every
   make: SNMPv2-MIB (`sysDescr`, `sysName`, RFC 3418), IF-MIB (the interfaces, RFC 2863), BRIDGE-MIB and Q-BRIDGE-MIB (the MAC table, RFC 4188 / 4363);
