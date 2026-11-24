@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.40.2] - 2026-11-24
+
 ### Changed
 - Network map: the devices plugged into the ports of the gateway hang under its card in one row centred under it (a switch with its devices brings them under it) and are in the frame of the network,
   which has more room inside. They no longer have a long cable across the map.
