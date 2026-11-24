@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.40.1'
+$AgentVersion = '1.40.2'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -5355,7 +5355,8 @@ function ConvertTo-BerOid {
     [long[]]$arcs = @($Oid.Split('.') | ForEach-Object { [long]$_ })
     [System.Collections.Generic.List[byte]]$out = New-Object 'System.Collections.Generic.List[byte]'
     $out.Add([byte](40 * $arcs[0] + $arcs[1]))
-    foreach ([long]$arc in @($arcs | Select-Object -Skip 2)) {
+    foreach ($arcItem in @($arcs | Select-Object -Skip 2)) {
+        [long]$arc = $arcItem
         [System.Collections.Generic.List[byte]]$stack = New-Object 'System.Collections.Generic.List[byte]'
         $stack.Add([byte]($arc -band 0x7F))
         $arc = $arc -shr 7
@@ -5494,7 +5495,8 @@ function Invoke-SnmpWalk {
                 [hashtable]$answer = ConvertFrom-SnmpResponse -Bytes $reply -Version $Version
                 if ($answer.Id -ne $requestId) { continue }
                 if ($answer.Items.Count -eq 0) { break }
-                foreach ([hashtable]$item in $answer.Items) {
+                foreach ($entry in $answer.Items) {
+                    [hashtable]$item = $entry
                     if ($item.End -or -not $item.Oid.StartsWith("$column.")) { $finished = $true; break }
                     if ($item.Value -ne '') { $lines.Add("$($item.Oid) $($item.Value)") }
                     $current = $item.Oid
@@ -5531,7 +5533,8 @@ function Invoke-LanProbe {
             # The version is found out: the one that worked last (the server says) first, then the other; the answer says which one.
             [int[]]$versions = if ($probe.snmp.PSObject.Properties['version'] -and "$($probe.snmp.version)" -eq '0') { @(0, 1) } else { @(1, 0) }
             [datetime]$deadline = (Get-Date).AddSeconds(12)
-            foreach ([int]$version in $versions) {
+            foreach ($tryVersion in $versions) {
+                [int]$version = $tryVersion
                 try {
                     $result.body = Invoke-SnmpWalk -Address $Target.Address -Port $snmpPort -Community "$($secret.community)" -Columns $probe.snmp.columns -Deadline $deadline -Version $version
                     $result.status = 200

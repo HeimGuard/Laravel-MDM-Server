@@ -7,6 +7,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- Agent 1.40.2: the update to 1.40.1 was refused ("the downloaded agent is not valid"): three `foreach` variables of the SNMP code were typed, which PowerShell does not parse.
+
 ## [1.40.1] - 2026-11-24
 
 ### Added
