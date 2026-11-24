@@ -20,8 +20,11 @@
 3. **Gateways**: the default gateway of the interfaces (agents 1.15.0+, with its MAC from the
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
-   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The devices
-   plugged into its ports do not hang under the gateway yet: they stay in the grid of the network with the tag *port N*.
+   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The network of such a gateway has no
+   node of its own: the gateway stands for it and the devices hang from it, in a dashed frame with the name of the network and the number of its devices on the bottom edge (a click on it closes the network: it is the node of
+   the network again, and a click on the node opens it); a device with a cable from a port of the gateway has only the cable (no link of the network), in a column of its
+   own at the edge of the frame; the devices plugged into
+   its ports stay in the grid (with the tag *port N*) and are linked from the port.
 4. **Networks**: the IPv4 subnets of the interfaces, LAN, Wi-Fi, LAN + Wi-Fi or mobile. A network
    is told apart by the MAC of its gateway (every device in it sees the same router), so one LAN is
    one network whatever address its devices reach the server from, and two homes with
@@ -50,7 +53,7 @@ link, for an offline device or with reduced motion set). A network with such a s
 (a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand, or by the MAC table of an SNMP switch (see [Devices](devices.md#snmp-agents-1390); what you set by hand is not moved) (a switch like the TP-Link
 Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
 `lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.
-The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10
+The pointer on a cable does the same as on its port. A network with devices that are offline says how many (its node, or its frame and name, are orange). The map is saved as a picture with the arrow under the zoom buttons: a PNG of its real size, every network open (`html-to-image`). The pointer on a port lights its cable and the devices it leads to (the rest of the map is dimmed) while its dropdown is open. The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10
 minutes): *The port it is plugged into has no link* when the device is offline (check the cable and the power) and, when it still answers
 pings, with *Did you move the cable?* and the action **Remove the port** (`unplugPort`).
 

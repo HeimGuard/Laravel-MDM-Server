@@ -12,6 +12,7 @@
         "@fortawesome/fontawesome-free": "^5.15.4",
         "@popperjs/core": "^2.11.6",
         "bootstrap": "^5.3",
+        "html-to-image": "^1.11.13",
         "jquery": "^3.6.1",
         "laravel-echo": "^2.5.0",
         "laravel-vite-plugin": "^1.0.0",

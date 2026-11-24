@@ -69,6 +69,8 @@ Rules for the look:
 
 ## Tests
 
+- Demo data for the pages: `php artisan db:seed` (`DeviceSeeder`: agents and ping-only hosts; `NetworkMapSeeder`: the router Turris as the gateway with
+  its SNMP ports, three switches, the devices plugged into their ports). Run again, they replace their own devices (`seed-` tokens).
 - `cd src/laravel && php artisan test` (PHPUnit, SQLite in memory); CI (`.github/workflows/docker.yml`, PHP 8.4)
   runs them on every push and pull request and builds the image only when they pass.
 - **`php artisan test` ignores `--exclude-group` / `--group`**: to filter by group call `vendor/bin/phpunit` directly.

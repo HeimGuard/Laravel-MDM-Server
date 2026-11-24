@@ -3,6 +3,7 @@
 // by dragging and zoomed with the wheel, two fingers or the buttons. update() takes new data from a
 // live update and keeps the view where it is.
 import dagre from '@dagrejs/dagre';
+import { toPng } from 'html-to-image';
 
 // How many ranks a link spans: networks line up whether or not a gateway is known, VPNs (over the
 // internet) at the level of the networks.
@@ -86,6 +87,7 @@ export function createNetworkMap(root, data) {
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="in" title="Zoom in"><i class="fas fa-plus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="out" title="Zoom out"><i class="fas fa-minus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="fit" title="Fit"><i class="fas fa-expand"></i></button>'
+        + '<button class="btn btn-light btn-sm" type="button" data-zoom="export" title="Download the map as an image (full size, everything open)"><i class="fas fa-download"></i></button>'
         + '</div>';
     const viewport = root.querySelector('.nm-viewport');
     const stage = root.querySelector('.nm-stage');
@@ -129,11 +131,13 @@ export function createNetworkMap(root, data) {
         current = map;
         const nodes = new Map(map.nodes.map((node) => [node.id, node]));
         layer.innerHTML = '';
+        layer.classList.remove('is-focus');
+        svg.classList.remove('is-focus');
         layer.appendChild(tip);
         const elements = new Map();
         for (const node of map.nodes) {
             const el = document.createElement(node.url && !node.switch ? 'a' : 'div');
-            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}${node.switch ? ' is-switch' : ''}`;
+            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}${node.switch ? ' is-switch' : ''}${node.kind === 'network' && node.offline > 0 ? ' has-offline' : ''}`;
             el.dataset.id = node.id;
             if (node.url && !node.switch) {
                 el.href = node.url;
@@ -167,9 +171,19 @@ export function createNetworkMap(root, data) {
                 members.set(main.get(node.id), [...(members.get(main.get(node.id)) || []), node.id]);
             }
         }
+        // A network whose gateway is a router with its ports on the card (SNMP): while it is open the gateway stands for it (no node of its
+        // own, the devices hang from the gateway in a frame that has what the node had and closes the network like the node), closed it is
+        // the node again.
+        const standIn = new Map();
+        for (const edge of map.edges) {
+            if (nodes.get(edge.from)?.kind === 'gateway' && nodes.get(edge.from).switch && nodes.get(edge.to)?.kind === 'network') {
+                standIn.set(edge.to, edge.from);
+            }
+        }
         // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
         const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
-        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
+        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : standIn.has(network) || (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
+        const collapsed = new Map([...standIn].filter(([network]) => isOpen(network)));
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
@@ -180,6 +194,14 @@ export function createNetworkMap(root, data) {
             if (node.plug && nodes.get(node.plug.switch)?.switch && main.has(node.id) && main.get(node.id) === main.get(node.plug.switch)) {
                 plugged.set(node.plug.switch, [...(plugged.get(node.plug.switch) || []), { id: node.id, port: Number(node.plug.port) }]);
                 pluggedIds.add(node.id);
+            }
+        }
+        // A device with a cable from a port of a switch that is not in its grid (the gateway) has no link of the network: its cable is its link, it
+        // goes after the others in its column and the bar of the column does not reach it.
+        const cabled = new Set();
+        for (const node of map.nodes) {
+            if (node.plug && nodes.get(node.plug.switch)?.switch && main.has(node.id) && !pluggedIds.has(node.id)) {
+                cabled.add(node.id);
             }
         }
         // The cell of a switch in the grid: its card and the row of its devices under it (room for the links between).
@@ -217,7 +239,7 @@ export function createNetworkMap(root, data) {
                 const points = levels.has(route)
                     ? [[route.start.x, route.start.y], [route.start.x, base + LEVEL * levels.get(route)], [route.x, base + LEVEL * levels.get(route)], [route.x, to.top]]
                     : [[route.start.x, route.start.y], [route.x, to.top]];
-                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" d="${curve(points)}"></path>`);
+                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path>`);
             }
         };
         const routesOf = (id) => (plugged.get(id) || []);
@@ -262,7 +284,9 @@ export function createNetworkMap(root, data) {
             // A switch with devices under it is a block of its own (the card and its devices in a row under it) next to the grid, on a link of
             // the network like the columns; the others fill the grid.
             const composites = all.filter((id) => routesOf(id).length > 0);
-            const plain = all.filter((id) => !composites.includes(id));
+            // (a switch with devices of its own under it that is itself plugged into the gateway stays a block of its own, without the link of the network)
+            const cabledAll = all.filter((id) => cabled.has(id) && !composites.includes(id));
+            const plain = all.filter((id) => !composites.includes(id) && !cabled.has(id));
             const first = plain.filter((id) => shared.has(id));
             const rest = plain.filter((id) => !shared.has(id));
             const cols = plain.length ? Math.min(plain.length, 6, Math.max(3, Math.round(Math.sqrt(plain.length * 1.8)))) : 0;
@@ -281,19 +305,37 @@ export function createNetworkMap(root, data) {
                     }
                 }
             }
+            // The devices with a cable from a port: a column of their own each at the edge, on the side of their port (the left half of the ports
+            // left), in the top row, so their cable comes straight down into them and passes behind no other card.
+            const portOf = (id) => Number(nodes.get(id).plug.port);
+            const leftHalf = (id) => {
+                const ports = nodes.get(nodes.get(id).plug.switch).switch.ports;
+
+                return ports.findIndex((port) => port.port === portOf(id)) < ports.length / 2;
+            };
+            const cabledLeft = cabledAll.filter(leftHalf).sort((p, q) => portOf(p) - portOf(q));
+            const cabledRight = cabledAll.filter((id) => !leftHalf(id)).sort((p, q) => portOf(p) - portOf(q));
+            for (const place of cell.values()) {
+                place.col += cabledLeft.length;
+            }
+            cabledLeft.forEach((id, i) => cell.set(id, { row: 0, col: i }));
+            cabledRight.forEach((id, i) => cell.set(id, { row: 0, col: cabledLeft.length + cols + i }));
+            const allCols = cabledLeft.length + cols + cabledRight.length;
             const usedRows = cell.size ? Math.max(...[...cell.values()].map((c) => c.row)) + 1 : 0;
             const ids = [...cell.keys()];
-            const colWidth = Array.from({ length: cols }, (_, c) => Math.max(0, ...ids.filter((id) => cell.get(id).col === c).map((id) => elements.get(id).offsetWidth)));
+            const colWidth = Array.from({ length: allCols }, (_, c) => Math.max(0, ...ids.filter((id) => cell.get(id).col === c).map((id) => elements.get(id).offsetWidth)));
             const rowHeight = Array.from({ length: usedRows }, (_, r) => Math.max(0, ...ids.filter((id) => cell.get(id).row === r).map((id) => elements.get(id).offsetHeight)));
-            const columns = cols ? colWidth.reduce((a, b) => a + b, 0) + GAP.x * (cols - 1) : 0;
+            const columns = allCols ? colWidth.reduce((a, b) => a + b, 0) + GAP.x * (allCols - 1) : 0;
             const plainHeight = usedRows ? rowHeight.reduce((a, b) => a + b, 0) + GAP.y * (usedRows - 1) : 0;
             const blocks = composites.map((id) => cellSize(id));
             const width = columns + (columns > 0 && blocks.length ? GAP.x * 2 : 0) + blocks.reduce((sum, block) => sum + block.width, 0) + GAP.x * Math.max(0, blocks.length - 1);
             const height = Math.max(plainHeight, ...blocks.map((block) => block.height));
-            grids.set(network, { id: `grid:${network}`, ids, cell, cols, rows: usedRows, colWidth, rowHeight, width, height, columns, wing: composites });
+            grids.set(network, { id: `grid:${network}`, ids, cell, cols: allCols, rows: usedRows, colWidth, rowHeight, width, height, columns, wing: composites });
             composites.forEach((id) => inGrid.add(id));
             ids.forEach((id) => inGrid.add(id));
         }
+        // The node of a network the gateway stands for is not drawn.
+        collapsed.forEach((gateway, network) => hidden.add(network));
         // The other networks of the devices that are shown in a grid.
         const sideLinks = map.edges.filter((edge) => inGrid.has(edge.to) && edge.from !== main.get(edge.to));
         for (const id of hidden) {
@@ -327,7 +369,7 @@ export function createNetworkMap(root, data) {
         for (const [network, grid] of grids) {
             graph.setNode(grid.id, { width: grid.width, height: grid.height });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
-            graph.setEdge(network, grid.id, { minlen: 1, weight: 2 });
+            graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
         for (const edge of map.edges) {
             if (nodes.has(edge.from) && nodes.has(edge.to) && placed(edge.to) && placed(edge.from)) {
@@ -396,6 +438,13 @@ export function createNetworkMap(root, data) {
             el.style.top = `${y - height / 2}px`;
             box.set(id, { x, top: y - height / 2, bottom: y + height / 2, left: x - width / 2, right: x + width / 2 });
         }
+        // The links of a network the gateway stands for start at the bottom of the gateway.
+        for (const [network, gateway] of collapsed) {
+            const at = box.get(gateway);
+            if (at) {
+                box.set(network, { x: at.x, top: at.bottom, bottom: at.bottom, left: at.x, right: at.x });
+            }
+        }
         const bars = [];
         const routes = [];
         const gridBox = new Map();
@@ -420,13 +469,14 @@ export function createNetworkMap(root, data) {
             const parent = box.get(network);
             for (let c = 0; c < grid.cols; c++) {
                 const column = grid.ids.filter((id) => grid.cell.get(id).col === c).sort((p, q) => grid.cell.get(p).row - grid.cell.get(q).row);
-                if (column.length === 0) {
+                const linked = column.filter((id) => !cabled.has(id));
+                if (linked.length === 0) {
                     continue;
                 }
-                const head = box.get(column[0]);
+                const head = box.get(linked[0]);
                 routes.push({ bundle: network, a: parent, b: head, cls, title: '' });
-                if (column.length > 1) {
-                    bars.push(`<path class="${cls} is-spine" d="M${head.x} ${head.bottom} V${box.get(column[column.length - 1]).top}"></path>`);
+                if (linked.length > 1) {
+                    bars.push(`<path class="${cls} is-spine" d="M${head.x} ${head.bottom} V${box.get(linked[linked.length - 1]).top}"></path>`);
                 }
             }
             // The blocks of the switches beside the columns, each on a link of the network (the card at the top, its devices in a row under it).
@@ -439,7 +489,9 @@ export function createNetworkMap(root, data) {
                 el.style.top = `${top}px`;
                 box.set(id, { x: elLeft + el.offsetWidth / 2, top, bottom: top + el.offsetHeight, left: elLeft, right: elLeft + el.offsetWidth });
                 portLinks(id, el, elLeft, top, blockLeft + (block.width - block.rowWidth) / 2);
-                routes.push({ bundle: network, a: parent, b: box.get(id), cls, title: '' });
+                if (!cabled.has(id)) {
+                    routes.push({ bundle: network, a: parent, b: box.get(id), cls, title: '' });
+                }
                 blockLeft += block.width + GAP.x;
             }
         }
@@ -522,7 +574,65 @@ export function createNetworkMap(root, data) {
         const drawSide = () => {
             sideLayer.innerHTML = sideLinks.map((edge) => side(edge, hover.has(edge.from) || hover.has(edge.to))).join('');
         };
-        svg.innerHTML = `<g>${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
+        // The devices of a network the gateway stands for are in a frame with its name (at the bottom, where no link comes in).
+        const frames = [];
+        const FRAME = 12;
+        for (const network of collapsed.keys()) {
+            const grid = grids.get(network);
+            const at = gridBox.get(network);
+            if (!grid || !at) {
+                continue;
+            }
+            const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
+            const offline = nodes.get(network).offline > 0 ? ' has-offline' : '';
+            frames.push(`<rect class="nm-frame is-${kind}${offline}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
+            const label = document.createElement('div');
+            label.className = `nm-frame-label is-toggle is-open is-${kind}${nodes.get(network).offline > 0 ? ' has-offline' : ''}`;
+            label.dataset.id = network;
+            label.title = 'Hide the devices';
+            label.style.left = `${at.left - FRAME + 14}px`;
+            label.style.top = `${at.top + grid.height + FRAME}px`;
+            label.innerHTML = `<i class="fas fa-chevron-down nm-chev"></i><b>${esc(nodes.get(network).label)}</b>${nodes.get(network).sub ? ` · ${esc(nodes.get(network).sub)}` : ''}`;
+            layer.appendChild(label);
+        }
+        // A device plugged into a port of a switch that is not in its grid (the gateway of the network: its card hangs above the node of the
+        // network): a link from the port, down and across above the node of the network, round it and into the top of the device.
+        const remote = [];
+        for (const node of map.nodes) {
+            const owner = node.plug ? nodes.get(node.plug.switch) : null;
+            const grid = gridBox.get(main.get(node.id));
+            if (owner?.switch && grid && box.has(node.id) && box.has(owner.id) && !pluggedIds.has(node.id)) {
+                const card = owner.switch;
+                const el = elements.get(owner.id);
+                const at = box.get(owner.id);
+                const button = el.querySelector(`.nm-port[data-port="${Number(node.plug.port)}"]`);
+                const start = button
+                    ? { x: at.left + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: at.top + el.clientTop + button.offsetTop + button.offsetHeight }
+                    : { x: at.x, y: at.bottom };
+                const dev = box.get(node.id);
+                const net = box.get(main.get(node.id));
+                // Into the top of the device beside its middle (where the link of the network comes in), round the node of the network, not through it
+                // (a network the gateway stands for has no node).
+                const entryX = dev.x + 14;
+                const lane = net && net.right > net.left && entryX > net.left - 16 && entryX < net.right + 16 ? (dev.x < net.x ? net.left - 16 : net.right + 16) : entryX;
+                remote.push({ node, at: { ...at, owner: owner.id }, net, start, dev, entryX, lane, grid, port: card.ports.find((p) => p.port === Number(node.plug.port)) });
+            }
+        }
+        // The bars across run at their own heights (the ones that go farthest the lowest), so none crosses another.
+        const goingRight = remote.filter((r) => r.lane - r.start.x >= 0.5).sort((p, q) => p.start.x - q.start.x || p.node.plug.port - q.node.plug.port);
+        const goingLeft = remote.filter((r) => r.start.x - r.lane >= 0.5).sort((p, q) => q.start.x - p.start.x || q.node.plug.port - p.node.plug.port);
+        goingRight.forEach((r, i) => { r.level = goingRight.length - 1 - i; });
+        goingLeft.forEach((r, i) => { r.level = goingLeft.length - 1 - i; });
+        for (const r of remote) {
+            // Above the bar of the network (32 under the node), or above the node of the network.
+            const across = Math.min(r.at.bottom + 10 + LEVEL * (r.level || 0), r.net && r.net.right > r.net.left ? r.net.top - 12 : r.at.bottom + 26);
+            const entry = r.dev.top - r.grid.top < 1 ? r.grid.top - 20 : r.dev.top - GAP.y / 2;
+            const raw = [[r.start.x, r.start.y], [r.start.x, across], [r.lane, across], [r.lane, entry], [r.entryX, entry], [r.entryX, r.dev.top]];
+            // No point twice in a row (the corner of a link of no length would not be drawn).
+            const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
+            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
+        }
+        svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');
         drawSide();
         layer.onpointerover = (event) => {
@@ -607,7 +717,29 @@ export function createNetworkMap(root, data) {
     tip.className = 'nm-port-tip';
     tip.hidden = true;
     layer.appendChild(tip);
+    // The pointer on a port: its cable and the devices it leads to are lit, the rest of the map is dimmed.
+    const light = (button) => {
+        const owner = current.nodes.find((node) => node.switch && String(node.switch.id) === button.dataset.switch)?.id;
+        const port = Number(button.dataset.port);
+        const lit = new Set([owner]);
+        for (const node of current.nodes) {
+            if (node.plug && node.plug.switch === owner && Number(node.plug.port) === port) {
+                lit.add(node.id);
+            }
+        }
+        svg.querySelectorAll('path[data-owner]').forEach((path) => path.classList.toggle('is-lit', path.dataset.owner === owner && Number(path.dataset.port) === port));
+        layer.querySelectorAll('.nm-node').forEach((el) => el.classList.toggle('is-lit', lit.has(el.dataset.id)));
+        layer.classList.add('is-focus');
+        svg.classList.add('is-focus');
+    };
+    const unlight = () => {
+        svg.querySelectorAll('.is-lit').forEach((path) => path.classList.remove('is-lit'));
+        layer.querySelectorAll('.nm-node.is-lit').forEach((el) => el.classList.remove('is-lit'));
+        layer.classList.remove('is-focus');
+        svg.classList.remove('is-focus');
+    };
     const showTip = (button) => {
+        light(button);
         const card = current.nodes.find((node) => node.switch && String(node.switch.id) === button.dataset.switch)?.switch;
         const port = card?.ports.find((p) => String(p.port) === button.dataset.port);
         if (!port) {
@@ -629,7 +761,7 @@ export function createNetworkMap(root, data) {
     // It stays while the pointer is on the port or on the dropdown (the way from one to the other takes a moment): the devices in it are links.
     let hideTimer = null;
     const cancelHide = () => { clearTimeout(hideTimer); hideTimer = null; };
-    const hideSoon = () => { cancelHide(); hideTimer = setTimeout(() => { tip.hidden = true; }, 250); };
+    const hideSoon = () => { cancelHide(); hideTimer = setTimeout(() => { tip.hidden = true; unlight(); }, 250); };
     tip.addEventListener('pointerenter', cancelHide);
     tip.addEventListener('pointerleave', hideSoon);
     tip.addEventListener('pointerdown', (event) => event.stopPropagation());
@@ -643,14 +775,83 @@ export function createNetworkMap(root, data) {
         }
     });
     layer.addEventListener('pointerleave', hideSoon);
+    // The pointer on a cable: the same dropdown as on its port (the link, the packets, the devices) and the same highlight.
+    svg.addEventListener('pointerover', (event) => {
+        const cable = event.target.closest('.nm-link-hit');
+        const card = cable ? current.nodes.find((node) => node.id === cable.dataset.owner)?.switch : null;
+        const button = card ? layer.querySelector(`.nm-port[data-switch="${card.id}"][data-port="${cable.dataset.port}"]`) : null;
+        if (button) {
+            cancelHide();
+            showTip(button);
+        }
+    });
+    svg.addEventListener('pointerout', (event) => {
+        if (event.target.closest('.nm-link-hit')) {
+            hideSoon();
+        }
+    });
     const openPort = (source) => window.Livewire?.dispatch('openModal', { livewireComponents: 'networks.switch-port', title: source.dataset.heading, parameters: { deviceId: Number(source.dataset.switch), port: Number(source.dataset.port) } });
     tip.addEventListener('click', (event) => {
         const action = event.target.closest('.nm-tip-action');
         if (action) {
             tip.hidden = true;
+            unlight();
             openPort(action);
         }
     });
+
+    // The map as a picture (PNG) of its real size, not of what the window shows: every network open, the view as it is for the picture and as it
+    // was before it (the networks the user closed are closed again). At most 16000 px a side (more is more than a browser draws).
+    let exporting = false;
+    const exportImage = async () => {
+        if (exporting || !current) {
+            return;
+        }
+        exporting = true;
+        const button = root.querySelector('[data-zoom="export"]');
+        button?.setAttribute('disabled', '');
+        const before = new Map(chosen);
+        tip.hidden = true;
+        unlight();
+        try {
+            for (const node of current.nodes) {
+                if (node.kind === 'network') {
+                    chosen.set(node.id, true);
+                }
+            }
+            render(current);
+            // The links and frames are SVG: the picture does not take their styles from the stylesheet, so they are set on the elements (the dashes
+            // are still, no animation).
+            svg.querySelectorAll('.nm-link-hit').forEach((element) => element.remove());
+            svg.querySelectorAll('path, rect').forEach((element) => {
+                const computed = getComputedStyle(element);
+                for (const property of ['fill', 'fill-opacity', 'stroke', 'stroke-opacity', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'opacity']) {
+                    element.style.setProperty(property, computed.getPropertyValue(property));
+                }
+                element.style.animation = 'none';
+                element.style.filter = 'none';
+            });
+            const ratio = Math.min(2, 16000 / Math.max(size.width, size.height));
+            const url = await toPng(stage, {
+                width: size.width, height: size.height, pixelRatio: ratio,
+                backgroundColor: getComputedStyle(document.body).backgroundColor,
+                style: { transform: 'none', left: '0px', top: '0px' },
+                filter: (node) => !node.classList?.contains('nm-port-tip'),
+            });
+            const link = document.createElement('a');
+            link.download = `network-map-${new Date().toISOString().slice(0, 10)}.png`;
+            link.href = url;
+            link.click();
+        } catch (error) {
+            console.error('The picture of the map was not made', error);
+        } finally {
+            chosen.clear();
+            before.forEach((open, network) => chosen.set(network, open));
+            render(current);
+            button?.removeAttribute('disabled');
+            exporting = false;
+        }
+    };
 
     // A port of a switch: the devices plugged into it (a modal of the page, a multiselect).
     viewport.addEventListener('click', (event) => {
@@ -660,7 +861,7 @@ export function createNetworkMap(root, data) {
         }
     });
     viewport.addEventListener('click', (event) => {
-        const network = event.target.closest('.nm-node.is-toggle');
+        const network = event.target.closest('.nm-node.is-toggle, .nm-frame-label.is-toggle');
         if (network && !moved) {
             toggle(network.dataset.id);
         }
@@ -676,6 +877,7 @@ export function createNetworkMap(root, data) {
         if (action === 'in') zoomAt(1.25, rect.width / 2, rect.height / 2);
         if (action === 'out') zoomAt(0.8, rect.width / 2, rect.height / 2);
         if (action === 'fit') fit(true);
+        if (action === 'export') exportImage();
     });
 
     render(data);

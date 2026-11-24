@@ -4,6 +4,7 @@
     ":action (:count devices)": ":action (:count zařízení)",
     ":action on :count devices?": ":action na :count zařízeních?",
     ":command failed": ":command selhal",
+    ":count offline": ":count offline",
     ":count PowerShell modules": ":count modulů PowerShellu",
     ":count alert firing|:count alerts firing": ":count aktivní upozornění|:count aktivní upozornění|:count aktivních upozornění",
     ":count applications": ":count aplikací",

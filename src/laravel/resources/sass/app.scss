@@ -240,7 +240,8 @@ label.mdm-tag {
     .nm-viewport:active { cursor: grabbing; }
     .nm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
     .nm-links { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
-    .nm-nodes { position: absolute; inset: 0; }
+    // The layer of the cards covers the whole canvas: it lets the pointer through to the cables under it (their hit areas), only the cards take it.
+    .nm-nodes { position: absolute; inset: 0; pointer-events: none; > * { pointer-events: auto; } }
     .nm-tools { position: absolute; right: .75rem; bottom: .75rem; display: flex; flex-direction: column; gap: .35rem; }
     .nm-tools .btn { width: 2rem; height: 2rem; padding: 0; }
 }
@@ -303,6 +304,10 @@ label.mdm-tag {
     align-items: stretch;
     gap: .4rem;
     white-space: normal;
+    // Its own width, the ports in one row (26 of them, then they wrap: a switch of 48 ports has two rows): measured before the stage has a width,
+    // the ports of a card without it wrap one under another and the card is taller than it is later, which left a gap under it where its links start.
+    width: max-content;
+    max-width: 52rem;
 
     .nm-head { display: flex; align-items: center; gap: .5rem; color: inherit; text-decoration: none; white-space: nowrap; }
     .nm-ports { display: flex; flex-wrap: wrap; gap: .3rem; }
@@ -318,6 +323,31 @@ label.mdm-tag {
         &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
     }
 }
+
+// The frame round the devices of a network the gateway stands for (its name on the bottom edge).
+.nm-frame { fill: rgba(74, 163, 223, .04); stroke: var(--bs-info); stroke-opacity: .55; stroke-width: 1.5; stroke-dasharray: 7 5; }
+.nm-frame.is-wifi { stroke: #8a6cff; fill: rgba(138, 108, 255, .04); }
+.nm-frame.is-vpn { stroke: #17a2b8; }
+.nm-frame-label {
+    position: absolute; transform: translateY(-50%); padding: .1rem .55rem; border: 1px solid var(--bs-info); border-radius: .6rem;
+    background: var(--hg-surface); color: var(--bs-info-text-emphasis); font-size: .7rem; line-height: 1.3; white-space: nowrap; cursor: pointer;
+    .nm-chev { margin-right: .35rem; font-size: .6rem; }
+    &:hover { border-color: var(--bs-primary); }
+    &.is-wifi { border-color: #8a6cff; color: #8a6cff; }
+}
+
+// A network with devices that are offline: the node, the frame and its name are orange.
+.nm-node.is-network.has-offline { border-color: var(--hg-high); }
+.nm-frame.has-offline { stroke: var(--hg-high); fill: rgba(240, 138, 36, .04); }
+.nm-frame-label.has-offline { border-color: var(--hg-high); color: var(--hg-high); }
+// The hit area of a cable (the pointer on it opens the dropdown of its port).
+.nm-links .nm-link-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+
+// The pointer on a port (network-map.js): its cable and the devices it leads to are lit, the rest of the map is dimmed.
+.nm-nodes.is-focus .nm-node:not(.is-lit) { opacity: .35; }
+.nm-nodes.is-focus .nm-node.is-lit { border-color: var(--bs-primary); box-shadow: 0 0 0 2px rgba(var(--hg-ok-rgb), .45), 0 0 14px rgba(var(--hg-ok-rgb), .35); opacity: 1; }
+.nm-links.is-focus .nm-link { opacity: .12; }
+.nm-links.is-focus .nm-link.is-lit { opacity: 1; stroke-width: 3.6; filter: drop-shadow(0 0 3px rgba(var(--hg-ok-rgb), .7)); }
 
 // The movement of the links of the ports (the dashes are 12 long with the gap).
 @keyframes nm-flow { to { stroke-dashoffset: -12; } }

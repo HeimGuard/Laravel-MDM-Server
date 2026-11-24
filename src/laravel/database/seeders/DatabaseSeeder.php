@@ -10,5 +10,6 @@ class DatabaseSeeder extends Seeder
     {
         // No users: the first one is created on the setup page (/setup).
         $this->call(DeviceSeeder::class);
+        $this->call(NetworkMapSeeder::class);
     }
 }
