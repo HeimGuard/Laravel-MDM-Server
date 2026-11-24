@@ -60,7 +60,7 @@ the agent treats as "given up, expected"). States of the web: `queued` (waiting 
 | `runScripts` | none (untracked: only a trigger) | nothing; runs report through `/device/scripts/runs/{id}` | Scripts pages |
 | `sync` | none | `running` 5 / 60 / 90, `succeeded` "Synced" | command bar, data refreshed |
 | `wake` | `macs` (8), `broadcasts` (4), `device`, `title` | `running` "Magic packet sent ... waiting"; the server completes it when the woken device reports | command bar |
-| `pingNow` | `device` | `succeeded` / `failed` with the answer time; the ping result goes to `/device/pings` | ping-only device page |
+| `pingNow` | `device` | `succeeded` / `failed` with the answer time; the ping result goes to `/device/pings`, with `probes[]` when the target has a `probe` (agents 1.40.0+: read at once, the message says how it went; `failed` when the reading failed) | ping-only device page |
 | `scanNetwork` | `cidr` of an interface of the agent, /22 or smaller | `running` progress with "N answered", `running` 95, `succeeded` after the report with the ARP table | Network map |
 | `scanPorts` | `ip` (+ `ports` or `all`) in a network of the agent | `running` progress with "N open", `succeeded` after `/device/port-scan` | Host ports on the network map, findings |
 

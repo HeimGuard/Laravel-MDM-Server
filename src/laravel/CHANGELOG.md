@@ -12,6 +12,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   tries both); the portal finds out the rest: the version, what the device is (name and description in the window), its ports (link and speed, bad packets, packets sent and
   received, on the card, the network map and in the alerts) and, when it has the MAC table, **which device is plugged into which port** (automatically, by the MAC address: what is
   set by hand stays, a device taken off a port is not paired again, a trunk to another switch is skipped).
+- **Sync** of a ping-only device (agents 1.40.0+) also reads its SNMP / TP-Link switch values at once, without waiting for the minute between two readings, and the message under the device card says how it went (`SNMP v2c answered`, or why the reading failed).
 - **TP-Link** in the menu of the device too, next to Ping settings, only for a device with a TP-Link MAC address: the user name and the password of an Easy Smart switch are entered
   there, no more in the Ping settings.
 - Remediation script **Enable Wake-on-LAN (Windows)** (every installation starts with it, manual remediation): detects wired network cards whose
