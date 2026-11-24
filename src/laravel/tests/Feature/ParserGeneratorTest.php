@@ -72,7 +72,10 @@ class ParserGeneratorTest extends TestCase
 
     public function test_the_form_of_a_syslog_message_asks_the_ai_and_keeps_the_template_when_it_cannot(): void
     {
-        $this->actingAs(User::factory()->create());
+        // A system admin by its id: on PostgreSQL the first user is not id 1 (the sequence is not reset between tests).
+        $admin = User::factory()->create();
+        config(['boilerplate.system_admins' => [(string) $admin->id]]);
+        $this->actingAs($admin);
         $device = new Device;
         $device->forceFill(['kind' => 'ping', 'name' => 'nas', 'os' => '', 'token' => hash('sha256', 'nas'), 'ping_address' => '192.168.1.20', 'ping_prefix' => 24])->save();
         Syslog::ingest([['ip' => '192.168.1.20', 'time' => '2026-11-23T10:00:00+00:00', 'host' => 'nas', 'facility' => 'auth', 'severity' => 'info', 'app' => 'Connection', 'pid' => '-', 'msg' => ' '.self::MESSAGE]]);

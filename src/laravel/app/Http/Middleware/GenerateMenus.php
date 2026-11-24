@@ -35,6 +35,11 @@ class GenerateMenus
                 'fas fa-project-diagram',
                 'networks',
             ],
+            // The same icon as syslog on a device (the stream of messages a device sends).
+            'SNMP' => [
+                'fas fa-stream',
+                'snmp',
+            ],
             'Security' => [
                 'fas fa-shield-alt',
                 'security',
@@ -44,6 +49,14 @@ class GenerateMenus
                 'notifications',
             ],
         ];
+
+        // The TP-Link integration is offered only where a device has a TP-Link MAC address (or one is read already).
+        if (\App\Services\SwitchService::tplinkOffered()) {
+            $menuRoutes['TP-Link'] = [
+                'fas fa-ethernet',
+                'tplink',
+            ];
+        }
 
         if (Gate::allows('is-system-admin')) {
             $menuRoutes['Scripts'] = [

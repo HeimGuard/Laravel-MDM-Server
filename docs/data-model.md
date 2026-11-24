@@ -80,7 +80,7 @@ disappeared has a sample with `data = null` and `last_data = null`.
 | Values | Inventory |
 |---|---|
 | `valuable_type`, `valuable_id` | `inventorable_type`, `inventorable_id` |
-| `key` (`disk.used_pct`) | `key` (`service`, `container`, `process`, `port`, `open_port`, `user`, `startup`, `software`, `update`, `os`, `posture`) |
+| `key` (`disk.used_pct`) | `key` (`service`, `container`, `process`, `port`, `open_port`, `user`, `startup`, `software`, `update`, `os`, `posture`, `snmp` (`system`: what an SNMP device says about itself)) |
 | `name` (`C:`) | `name` (`nginx`, `tcp\|0.0.0.0\|443`, `alice`) |
 | `last_value`, `last_at` | `last_data`, `last_hash`, `last_at` |
 | `value_samples`: `value` | `inventory_samples`: `data`, `hash` |

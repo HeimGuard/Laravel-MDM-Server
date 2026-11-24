@@ -36,7 +36,7 @@
    device or the network (not all devices of a LAN are in the VPN). Ping-only devices are in the
    network of their address; their agent shows how many it pings.
 
-**A switch** whose ports are read (a ping-only device with a switch set in its Ping settings, see
+**A switch** whose ports are read (a ping-only device read over SNMP or from its web page, see
 [Devices](devices.md#switch-without-snmp-ports-agents-1370)) is a card of its own among the devices of its network: its ports are buttons,
 coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link) with a ring for bad packets, and
 a dropdown on hover shows the link, the bad packets, the packets sent and received and the devices plugged into them. The devices plugged into
@@ -44,7 +44,7 @@ a port hang under the card of the switch in a row of their own (the card in the 
 right-angled link with rounded corners from its port, in the colour of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed
 without a link); the dashes of the link run from the port to the device, the faster the faster the link (1000, 100, 10 Mb/s; none without a
 link, for an offline device or with reduced motion set). A network with such a switch is open at first. A click on a port opens the devices of the network that have no port yet
-(a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand (a switch like the TP-Link
+(a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand, or by the MAC table of an SNMP switch (see [Devices](devices.md#snmp-agents-1390); what you set by hand is not moved) (a switch like the TP-Link
 Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
 `lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.
 The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10

@@ -1,7 +1,10 @@
-{{-- The ports of a switch without SNMP, read by the agent of its network (App\Services\SwitchService). --}}
+{{-- The ports of a switch (without SNMP, or with it: found out by the agent of its network), App\Services\SwitchService. --}}
 @php
     $ports = \App\Services\SwitchService::enabled($device) ? \App\Services\SwitchService::ports($device) : null;
     // The devices plugged into the ports by hand (the network map), by the port.
+    $snmp = (string) $device->switch_type === \App\Services\SwitchService::SNMP;
+    // What an SNMP device says about itself (name, description) and the version that answered.
+    $info = $snmp ? \App\Services\SwitchService::info($device) : null;
     $plugged = $ports === null ? collect() : \App\Models\Device::query()->whereSettingIn('lan.switch_device_id', [$device->id])->get()->groupBy(fn ($other) => $other->switch_port);
 @endphp
 @if (\App\Services\SwitchService::enabled($device))
@@ -13,7 +16,12 @@
                     <span class="small text-body-secondary">{{ __(':up of :total connected', ['up' => collect($ports)->where('link', '>=', 2)->count(), 'total' => count($ports)]) }}</span>
                 @endif
             </div>
-            @if ($ports === null)
+            @if ($info !== null)
+                <div class="small text-body-secondary mb-2" title="{{ $info['descr'] }}">SNMP {{ $info['version'] }}@if ($info['name']) · {{ $info['name'] }}@endif @if ($info['descr']) · {{ \Illuminate\Support\Str::limit($info['descr'], 120) }}@endif</div>
+            @endif
+            @if ($ports === null && $snmp)
+                <div class="small text-body-secondary">{{ __('No ports read yet: the agent of its network asks for them every minute (agents :version or newer), check the community and that the device answers SNMP from its network if it stays empty.', ['version' => \App\Services\SwitchService::SNMP_VERSION]) }}</div>
+            @elseif ($ports === null)
                 <div class="small text-body-secondary">{{ __('No ports read yet: the agent of its network reads them every minute (agents :version or newer), check the user name and the password if it stays empty.', ['version' => \App\Services\SwitchService::VERSION]) }}</div>
             @else
                 <div class="table-responsive">

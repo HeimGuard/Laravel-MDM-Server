@@ -13,10 +13,12 @@ use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 /**
- * The ports of a switch without SNMP (TP-Link Easy Smart, the way check_tplink reads them): the server decides which pages
- * of its web interface are requested and reads the answers; the agent of its network only makes the requests (the ingress
- * proxy of Device::pingTargetsFor, agents 1.37.0+) and never interprets them. The password is stored encrypted (APP_KEY),
- * and goes to the agent encrypted with the public key of that agent, so only it can read it.
+ * The ports of a switch: the server decides what is requested and reads the answers; the agent of its network only makes
+ * the requests (the ingress proxy of Device::pingTargetsFor, agents 1.37.0+) and never interprets them. Two kinds: a switch
+ * without SNMP (TP-Link Easy Smart, the pages of its web interface, the way check_tplink reads them) and any device with
+ * SNMP v1 or v2c (agents 1.39.0+): the user gives only the community, the rest is found out from the answers (the version,
+ * what the device is, the interface table, the MAC table), all of it in standard MIBs. The password (the community of SNMP)
+ * is stored encrypted (APP_KEY), and goes to the agent encrypted with the public key of that agent, so only it can read it.
  *
  * The ports are measured values of the ping-only device: switch.port.link (code of LINKS, name = the port), switch.port.bad
  * (bad packets, TX + RX), switch.port.tx / switch.port.rx (good packets, at most every 10 minutes), switch.ports.up.
@@ -26,8 +28,40 @@ class SwitchService
     /** Agents from this version make the requests of a probe. */
     public const VERSION = '1.37.0';
 
-    /** The kinds of switch the portal reads (the value of the setting switch.type). */
+    /** Agents from this version read a device over SNMP (v1 and v2c, strings in the answer). */
+    public const SNMP_VERSION = '1.39.0';
+
+    /** The kind of switch read from its web page (the setting switch.type). */
+    public const TPLINK = 'tplink';
+
+    /** The kind of switch set by the community alone (the value of the setting switch.type). */
+    public const SNMP = 'snmp';
+
+    /** The kinds of switch the portal reads from a web page, chosen by hand (the value of the setting switch.type). */
     public const TYPES = ['tplink' => 'TP-Link Easy Smart'];
+
+    /** The SNMP versions the agent tries: the code it reports is the one of the protocol (0 = v1, 1 = v2c). */
+    public const SNMP_VERSIONS = [0 => '1', 1 => '2c'];
+
+    /**
+     * The columns the agent walks and returns as lines `oid value` (a string as `oid x:hex`); the server reads them (parseSnmp,
+     * snmpMacs, system). All of them are standard: SNMPv2-MIB (RFC 3418) the system, IF-MIB (RFC 2863) the interfaces,
+     * BRIDGE-MIB (RFC 4188) and Q-BRIDGE-MIB (RFC 4363) the MAC table, so they are the same on every make.
+     */
+    public const SNMP_COLUMNS = [
+        'sys_descr' => '1.3.6.1.2.1.1.1', 'sys_name' => '1.3.6.1.2.1.1.5',
+        'type' => '1.3.6.1.2.1.2.2.1.3', 'status' => '1.3.6.1.2.1.2.2.1.8', 'speed' => '1.3.6.1.2.1.2.2.1.5', 'fast' => '1.3.6.1.2.1.31.1.1.1.15',
+        'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
+        // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
+        // (index = VLAN and the MAC), and the bridge port => ifIndex of BRIDGE-MIB. Not every switch has them.
+        'bridge_port' => '1.3.6.1.2.1.17.1.4.1.2', 'fdb' => '1.3.6.1.2.1.17.4.3.1.2', 'fdb_vlan' => '1.3.6.1.2.1.17.7.1.2.2.1.2',
+    ];
+
+    /** The columns of the interface table (one row per ifIndex). */
+    private const SNMP_INTERFACE_COLUMNS = ['type' => 1, 'status' => 1, 'speed' => 1, 'fast' => 1, 'rx' => 1, 'rx_bad' => 1, 'tx' => 1, 'tx_bad' => 1];
+
+    /** A port that has more MAC addresses behind it than this is a trunk to another switch: the devices are not paired with it. */
+    private const MAX_MACS_ON_PORT = 16;
 
     /** link_status of the page of TP-Link: the code is stored, the name is shown. */
     public const LINKS = [0 => 'Down', 1 => 'Auto', 2 => '10M half', 3 => '10M full', 4 => '100M half', 5 => '100M full', 6 => '1000M full'];
@@ -44,7 +78,10 @@ class SwitchService
 
     public static function enabled(Device $device): bool
     {
-        return $device->isPingOnly && isset(self::TYPES[(string) $device->switch_type]) && (string) $device->switch_user !== '' && (string) $device->switch_password !== '';
+        $type = (string) $device->switch_type;
+
+        // SNMP has a community (the password) and no user.
+        return $device->isPingOnly && ($type === self::SNMP || (isset(self::TYPES[$type]) && (string) $device->switch_user !== '')) && (string) $device->switch_password !== '';
     }
 
     public static function storePassword(string $password): string
@@ -52,7 +89,8 @@ class SwitchService
         return Crypt::encryptString($password);
     }
 
-    private static function password(Device $device): ?string
+    /** The password of the switch, or the community of SNMP (null when it cannot be read). */
+    public static function password(Device $device): ?string
     {
         try {
             return Crypt::decryptString((string) $device->switch_password);
@@ -62,24 +100,29 @@ class SwitchService
     }
 
     /**
-     * The requests an agent makes to the switch, or null when it cannot (an older agent, no key, nothing set): the login only
-     * when the last answer had no ports or after LOGIN_SECONDS, otherwise just the page.
+     * The requests an agent makes to the switch, or null when it cannot (an older agent, no key, nothing set). TP-Link: the login
+     * only when the last answer had no ports or after LOGIN_SECONDS, otherwise just the page. SNMP: the columns to walk and the
+     * community (sealed for that agent), every time (UDP has no login).
      *
-     * @return array{port: int, steps: array<int, array<string, string>>}|null
+     * @return array{port: int, steps?: array<int, array<string, string>>, snmp?: array{secret: string, columns: array<int, string>, version?: int}}|null
      */
     public static function probe(Device $device, Device $relay): ?array
     {
-        if (! self::enabled($device) || ! $relay->public_key || version_compare((string) $relay->agent_version, self::VERSION, '<')) {
+        $snmp = (string) $device->switch_type === self::SNMP;
+        if (! self::enabled($device) || ! $relay->public_key || version_compare((string) $relay->agent_version, $snmp ? self::SNMP_VERSION : self::VERSION, '<')) {
             return null;
+        }
+        if ($snmp) {
+            $secret = self::seal($relay, ['community' => self::password($device)]);
+
+            // The version that answered last goes first (the agent tries the other one when it does not answer).
+            $version = Cache::get(self::versionKey($device));
+
+            return $secret === null ? null : ['port' => 161, 'snmp' => ['secret' => $secret, 'columns' => array_values(self::SNMP_COLUMNS)] + ($version === null ? [] : ['version' => $version])];
         }
         $steps = [['method' => 'GET', 'path' => self::PAGE]];
         if (! Cache::has(self::loginKey($device))) {
-            $pem = Signing::publicKeyPem((array) $relay->public_key);
-            $password = self::password($device);
-            $secret = null;
-            if ($pem !== null && $password !== null && openssl_public_encrypt(json_encode(['username' => (string) $device->switch_user, 'password' => $password]), $encrypted, $pem, OPENSSL_PKCS1_OAEP_PADDING)) {
-                $secret = base64_encode($encrypted);
-            }
+            $secret = self::seal($relay, ['username' => (string) $device->switch_user, 'password' => self::password($device)]);
             if ($secret === null) {
                 return null;
             }
@@ -90,9 +133,107 @@ class SwitchService
         return ['port' => 80, 'steps' => $steps];
     }
 
+    /** Fields (strings) encrypted with the public key of the agent (RSA-OAEP), null when it cannot be done. */
+    private static function seal(Device $relay, array $fields): ?string
+    {
+        $pem = Signing::publicKeyPem((array) $relay->public_key);
+        if ($pem === null || in_array(null, $fields, true) || ! openssl_public_encrypt(json_encode($fields), $encrypted, $pem, OPENSSL_PKCS1_OAEP_PADDING)) {
+            return null;
+        }
+
+        return base64_encode($encrypted);
+    }
+
+    private static function versionKey(Device $device): string
+    {
+        return 'snmp-version.'.$device->id;
+    }
+
     private static function loginKey(Device $device): string
     {
         return 'switch-login.'.$device->id;
+    }
+
+    /**
+     * What the walk found out about a device: the version that answered (remembered, the agent tries it first) and what the device says
+     * about itself (the inventory `snmp` / `system`: name, description, version, only the changes).
+     */
+    private static function discovered(Device $device, string $body, mixed $version): void
+    {
+        $version = is_int($version) && isset(self::SNMP_VERSIONS[$version]) ? $version : null;
+        if ($version !== null) {
+            Cache::put(self::versionKey($device), $version, 86400);
+        }
+        $info = self::system($body);
+        $version ??= Cache::get(self::versionKey($device));
+        if ($version === null && $info['name'] === null && $info['descr'] === null) {
+            return;
+        }
+        $device->recordInventory('snmp', 'system', $info + ['version' => $version === null ? null : self::SNMP_VERSIONS[$version]]);
+        LiveUpdates::device($device->id, 'switch');
+    }
+
+    /** The devices read over SNMP. */
+    public static function snmpDevices(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::SNMP])->get()
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** Sets the community of a ping-only device (SNMP on), or removes it (null: SNMP off). The old answers say nothing about the new one. */
+    public static function setCommunity(Device $device, ?string $community): void
+    {
+        $device->forceFill([
+            'switch_type' => $community === null ? null : self::SNMP,
+            'switch_user' => null,
+            'switch_password' => $community === null ? null : self::storePassword($community),
+        ])->save();
+        Cache::forget(self::versionKey($device));
+        Cache::forget(self::macsKey($device));
+    }
+
+    /** A ping-only device whose MAC address is one of TP-Link (the vendor of its prefix): the web page of Easy Smart switches is offered for it only. */
+    public static function isTpLink(Device $device): bool
+    {
+        return $device->isPingOnly && preg_match('/tp-?link/i', (string) \App\Support\MacVendor::lookup($device->ping_mac)) === 1;
+    }
+
+    /** The devices read from the web page of a TP-Link switch. */
+    public static function tplinkDevices(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::TPLINK])->get()
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** The ping-only devices with a TP-Link MAC address that are read neither over SNMP nor from a web page yet. */
+    public static function tplinkCandidates(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->get()->filter(fn (Device $device) => (string) $device->switch_type === '' && self::isTpLink($device))
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** Whether the TP-Link page is offered: there is a device with a TP-Link MAC address, or one already read. */
+    public static function tplinkOffered(): bool
+    {
+        return self::tplinkDevices()->isNotEmpty() || self::tplinkCandidates()->isNotEmpty();
+    }
+
+    /** Sets the user and the password of a TP-Link switch (the password is kept when null), or turns it off (no user). */
+    public static function setTpLink(Device $device, ?string $user, ?string $password): void
+    {
+        $keep = (string) $device->switch_type === self::TPLINK ? $device->switch_password : null;
+        $device->forceFill([
+            'switch_type' => $user === null ? null : self::TPLINK,
+            'switch_user' => $user,
+            'switch_password' => $user === null ? null : ($password !== null ? self::storePassword($password) : $keep),
+        ])->save();
+        Cache::forget(self::loginKey($device));
+    }
+
+    /** What the device said about itself, null before the first answer: name, descr, version. */
+    public static function info(Device $device): ?array
+    {
+        return $device->latestInventory('snmp', 'system');
     }
 
     /**
@@ -129,6 +270,121 @@ class SwitchService
     }
 
     /**
+     * The ports in the answer of an SNMP walk (lines `oid value` of the columns of SNMP_COLUMNS): the Ethernet interfaces
+     * (ifType 6), the port is the ifIndex. Down unless ifOperStatus is up; the link code is the speed (ifHighSpeed, else ifSpeed):
+     * 1000 Mb/s and more 1000M full, 100 Mb/s 100M full, less 10M full (the duplex is not read, full is assumed). Null when there
+     * are no Ethernet interfaces in it.
+     *
+     * @return array<int, array{port: int, enabled: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>|null
+     */
+    public static function parseSnmp(string $body): ?array
+    {
+        $interfaces = [];
+        foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && is_int($value) && ctype_digit($index) && (int) $index > 0) {
+                $interfaces[(int) $index][$column] = $value;
+            }
+        }
+        ksort($interfaces);
+        $rows = [];
+        foreach ($interfaces as $index => $values) {
+            if (($values['type'] ?? null) !== 6 || count($rows) >= self::MAX_PORTS) {
+                continue;
+            }
+            $mbit = $values['fast'] ?? intdiv($values['speed'] ?? 0, 1000000);
+            $rows[] = [
+                'port' => $index,
+                'enabled' => true,
+                'link' => ($values['status'] ?? 2) !== 1 ? 0 : ($mbit >= 1000 ? 6 : ($mbit >= 100 ? 5 : 3)),
+                'tx' => $values['tx'] ?? 0,
+                'tx_bad' => $values['tx_bad'] ?? 0,
+                'rx' => $values['rx'] ?? 0,
+                'rx_bad' => $values['rx_bad'] ?? 0,
+            ];
+        }
+
+        return $rows === [] ? null : $rows;
+    }
+
+    /**
+     * The lines `oid value` of an SNMP walk as [column name, the rest of the OID (the index), value]: a number is an int, a string
+     * (`x:hex` in the answer) its bytes.
+     *
+     * @return \Generator<int, array{0: string, 1: string, 2: int|string}>
+     */
+    private static function snmpLines(string $body): \Generator
+    {
+        $columns = array_flip(self::SNMP_COLUMNS);
+        foreach (preg_split('/\R/', $body) as $line) {
+            if (! preg_match('/^(1(?:\.\d+)+) (\d+|x:(?:[0-9a-f]{2})*)$/', trim($line), $match)) {
+                continue;
+            }
+            foreach ($columns as $oid => $name) {
+                if (str_starts_with($match[1], $oid.'.')) {
+                    yield [$name, substr($match[1], strlen($oid) + 1), str_starts_with($match[2], 'x:') ? (string) hex2bin(substr($match[2], 2)) : (int) $match[2]];
+
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * What the device says about itself (the system group): its name and description, null for what it did not say. Control
+     * characters are removed, the text is cut.
+     *
+     * @return array{name: ?string, descr: ?string}
+     */
+    public static function system(string $body): array
+    {
+        $info = ['name' => null, 'descr' => null];
+        foreach (self::snmpLines($body) as [$column, , $value]) {
+            if (is_string($value) && in_array($column, ['sys_name', 'sys_descr'], true)) {
+                $text = trim((string) preg_replace('/[\x00-\x20\x7f]+/', ' ', mb_convert_encoding($value, 'UTF-8', 'UTF-8')));
+                $info[$column === 'sys_name' ? 'name' : 'descr'] ??= $text === '' ? null : mb_substr($text, 0, 255);
+            }
+        }
+
+        return $info;
+    }
+
+    /**
+     * The MAC addresses a switch has learned on each port of an SNMP walk, by the number of the port (ifIndex): the table of BRIDGE-MIB
+     * and of Q-BRIDGE-MIB, the bridge port turned into the ifIndex. Only the ports in $ports; the MAC addresses that are no unicast address
+     * are left out.
+     *
+     * @param  array<int, array{port: int}>  $ports
+     * @return array<int, array<int, string>>
+     */
+    public static function snmpMacs(string $body, array $ports): array
+    {
+        $bridge = [];
+        $learned = [];
+        foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if ($column === 'bridge_port' && is_int($value) && ctype_digit($index)) {
+                $bridge[(int) $index] = $value;
+            } elseif ($column === 'fdb' || $column === 'fdb_vlan') {
+                $arcs = array_map('intval', explode('.', $index));
+                $arcs = array_slice($arcs, -6);
+                if (is_int($value) && count($arcs) === 6 && max($arcs) <= 255 && $value > 0) {
+                    $learned[] = [implode(':', array_map(fn (int $arc) => sprintf('%02X', $arc), $arcs)), $value];
+                }
+            }
+        }
+        $known = array_flip(array_column($ports, 'port'));
+        $byPort = [];
+        foreach ($learned as [$mac, $bridgePort]) {
+            $port = $bridge[$bridgePort] ?? $bridgePort;
+            $mac = \App\Models\NetworkNeighbour::normalizeMac($mac);
+            if ($mac !== null && isset($known[$port])) {
+                $byPort[$port][$mac] = $mac;
+            }
+        }
+
+        return array_map('array_values', $byPort);
+    }
+
+    /**
      * What the agent got from the probes ([{id, status, body, error}]): only for the devices it was asked about. Returns how
      * many ended in ports.
      */
@@ -145,15 +401,25 @@ class SwitchService
                 continue;
             }
             $device = Device::query()->where('kind', 'ping')->find($id);
-            $ports = $device !== null && is_string($probe['body'] ?? null) ? self::parse($probe['body']) : null;
+            $body = $device !== null && is_string($probe['body'] ?? null) ? $probe['body'] : null;
+            $snmp = $device !== null && (string) $device->switch_type === self::SNMP;
+            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body) : self::parse($body));
+            if ($snmp && $body !== null) {
+                self::discovered($device, $body, $probe['version'] ?? null);
+            }
             if ($ports === null) {
                 // The next request logs in again.
                 Cache::forget(self::loginKey($device ?? new Device(['id' => $id])));
 
                 continue;
             }
-            Cache::put(self::loginKey($device), true, self::LOGIN_SECONDS);
+            if (! $snmp) {
+                Cache::put(self::loginKey($device), true, self::LOGIN_SECONDS);
+            }
             self::store($device, $ports);
+            if ($snmp) {
+                self::pair($device, self::snmpMacs($body, $ports));
+            }
             $taken++;
         }
 
@@ -203,6 +469,85 @@ class SwitchService
         return array_values($ports);
     }
 
+    private static function macsKey(Device|int $switch): string
+    {
+        return 'switch-macs.'.($switch instanceof Device ? $switch->id : $switch);
+    }
+
+    /** The MAC addresses of a device: its interfaces, the followed one of a ping-only device, the one of its Wake-on-LAN settings. */
+    private static function macsOf(Device $device): array
+    {
+        $interfaces = $device->isPingOnly ? [] : $device->networks;
+        $macs = [];
+        foreach ([$device->ping_mac, $device->wake_mac, ...array_column($interfaces, 'Mac')] as $mac) {
+            if ($mac = \App\Models\NetworkNeighbour::normalizeMac($mac)) {
+                $macs[$mac] = $mac;
+            }
+        }
+
+        return array_values($macs);
+    }
+
+    /**
+     * Plugs the devices into the ports where their MAC address is learned (a switch with a MAC table, read over SNMP): the switch
+     * and the port are set like by hand, marked `auto`. A device seen by several switches goes to the port with the fewest MAC addresses
+     * behind it (the nearest one; a trunk to another switch has many), and none when two are equal. Not touched: a device plugged in by
+     * hand and one taken off a port by hand (`off`). The tables are kept in the cache for an hour (the pairing needs the tables of all
+     * switches) and the devices are looked at again when one changes, or every 10 minutes.
+     *
+     * @param  array<int, array<int, string>>  $byPort  the MAC addresses by port of this switch
+     */
+    public static function pair(Device $switch, array $byPort): int
+    {
+        Cache::put(self::macsKey($switch), $byPort, 3600);
+        $hash = md5(json_encode($byPort));
+        if (Cache::get('switch-macs-hash.'.$switch->id) === $hash) {
+            return 0;
+        }
+        Cache::put('switch-macs-hash.'.$switch->id, $hash, 600);
+
+        // Where each MAC address is seen: [switch id, port, how many MAC addresses are on that port].
+        $seen = [];
+        foreach (Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::SNMP])->pluck('id') as $id) {
+            foreach (Cache::get(self::macsKey((int) $id), []) as $port => $macs) {
+                foreach ($macs as $mac) {
+                    $seen[$mac][] = ['switch' => (int) $id, 'port' => (int) $port, 'count' => count($macs)];
+                }
+            }
+        }
+        $changed = 0;
+        foreach (Device::all() as $device) {
+            if ($device->switch_auto === 'off' || ($device->switch_id !== null && $device->switch_auto !== 'auto')) {
+                continue;
+            }
+            $places = collect(self::macsOf($device))->flatMap(fn (string $mac) => $seen[$mac] ?? [])
+                ->reject(fn (array $place) => $place['switch'] === $device->id || $place['count'] > self::MAX_MACS_ON_PORT)
+                ->sortBy('count')->values();
+            $best = $places->first();
+            if ($best === null || ($places->count() > 1 && $places[1]['count'] === $best['count'] && ($places[1]['switch'] !== $best['switch'] || $places[1]['port'] !== $best['port']))) {
+                continue;
+            }
+            if ($device->switch_id === $best['switch'] && $device->switch_port === $best['port']) {
+                continue;
+            }
+            $before = $device->switch_id;
+            $device->forceFill(['switch_id' => $best['switch'], 'switch_port' => $best['port'], 'switch_auto' => 'auto'])->save();
+            foreach (array_unique(array_filter([$before, $best['switch']])) as $id) {
+                LiveUpdates::device($id, 'switch');
+            }
+            LiveUpdates::device($device->id, 'settings');
+            $changed++;
+        }
+
+        return $changed;
+    }
+
+    /** Takes a device off its port by hand: one that was paired by the MAC address is not paired again (`off`). */
+    public static function unplug(Device $device): void
+    {
+        $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => $device->switch_auto === 'auto' ? 'off' : null])->save();
+    }
+
     /**
      * The devices that can be plugged into a port of the switch: the ones of its network (the network map) that have no port
      * yet, and the ones already on this port.
@@ -247,7 +592,12 @@ class SwitchService
             if ($device === null || $wanted === $candidate['selected']) {
                 continue;
             }
-            $device->forceFill(['switch_id' => $wanted ? $switch->id : null, 'switch_port' => $wanted ? $port : null])->save();
+            if ($wanted) {
+                // By hand now: the MAC table does not move it any more.
+                $device->forceFill(['switch_id' => $switch->id, 'switch_port' => $port, 'switch_auto' => null])->save();
+            } else {
+                self::unplug($device);
+            }
             $changed++;
         }
         if ($changed > 0) {
@@ -261,7 +611,8 @@ class SwitchService
     public static function forget(Device $switch): void
     {
         Device::query()->whereSettingIn('lan.switch_device_id', [$switch->id])->get()
-            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null])->save());
+            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => null])->save());
+        Cache::forget(self::macsKey($switch));
     }
 
     /**

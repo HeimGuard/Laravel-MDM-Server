@@ -23,10 +23,12 @@ trait HasDeviceSettings
         'ping_prefix' => ['lan.prefix', SettingDataType::INT, 'ping'],
         'ping_mac' => ['lan.mac', SettingDataType::STRING, 'ping'],
         'ping_via_id' => ['lan.via_device_id', SettingDataType::INT, 'ping'],
-        // A switch without SNMP the agent reads the ports of (App\Services\SwitchService): the kind, the user and the password (encrypted).
+        // A switch the agent reads the ports of (App\Services\SwitchService; the TP-Link and SNMP pages): the kind (tplink, snmp), the user and the password or the community (encrypted).
         // Where a device (of any kind) is plugged in by a cable: the switch (a ping-only device) and its port, set by hand.
         'switch_id' => ['lan.switch_device_id', SettingDataType::INT, 'any'],
         'switch_port' => ['lan.switch_port', SettingDataType::INT, 'any'],
+        // How it got there: 'auto' (found in the MAC table of the switch), 'off' (taken off by hand: not paired by the MAC again), none (set by hand).
+        'switch_auto' => ['lan.switch_auto', SettingDataType::STRING, 'any'],
         'switch_type' => ['switch.type', SettingDataType::STRING, 'ping'],
         'switch_user' => ['switch.user', SettingDataType::STRING, 'ping'],
         'switch_password' => ['switch.password', SettingDataType::STRING, 'ping'],
