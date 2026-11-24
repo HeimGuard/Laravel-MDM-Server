@@ -445,6 +445,14 @@ export function createNetworkMap(root, data) {
             }
         }
 
+        // The devices of a network the gateway stands for are centred under the gateway (the link of the network runs down the middle).
+        for (const [network, gateway] of collapsed) {
+            const at = graph.node(gateway);
+            const grid = grids.get(network);
+            if (at && grid && graph.node(grid.id)) {
+                graph.node(grid.id).x = at.x;
+            }
+        }
         // The view as big as what is drawn (room on the left for a link running beside a grid).
         let minX = Infinity;
         let maxX = -Infinity;
@@ -511,10 +519,6 @@ export function createNetworkMap(root, data) {
         for (const row of hung) {
             portLinks(row.id, row.el, row.elLeft, row.elTop, 0, row.centres);
         }
-        for (const trunk of trunks) {
-            const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(trunk.network).network) ? nodes.get(trunk.network).network : 'lan';
-            bars.push(`<path class="nm-link is-${kind}${nodes.get(trunk.network).state === 'up' ? '' : ' is-down'}" d="M${trunk.x} ${trunk.from} V${trunk.to}"></path>`);
-        }
         const gridBox = new Map();
         for (const [network, grid] of grids) {
             const { x, y } = graph.node(grid.id);
@@ -535,6 +539,22 @@ export function createNetworkMap(root, data) {
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
             const cls = `nm-link is-${kind}${nodes.get(network).state === 'up' ? '' : ' is-down'}`;
             const parent = box.get(network);
+            // The link of a network the gateway stands for comes down onto the card nearest to the middle when it is (nearly) under it, not with a jog.
+            if (collapsed.has(network)) {
+                const heads = [];
+                for (let c = 0; c < grid.cols; c++) {
+                    const first = grid.ids.filter((id) => grid.cell.get(id).col === c && !cabled.has(id)).sort((p, q) => grid.cell.get(p).row - grid.cell.get(q).row)[0];
+                    if (first) {
+                        heads.push(box.get(first).x);
+                    }
+                }
+                const nearest = heads.sort((p, q) => Math.abs(p - parent.x) - Math.abs(q - parent.x))[0];
+                if (nearest !== undefined && Math.abs(nearest - parent.x) <= 12) {
+                    parent.x = nearest;
+                    parent.left = nearest;
+                    parent.right = nearest;
+                }
+            }
             for (let c = 0; c < grid.cols; c++) {
                 const column = grid.ids.filter((id) => grid.cell.get(id).col === c).sort((p, q) => grid.cell.get(p).row - grid.cell.get(q).row);
                 const linked = column.filter((id) => !cabled.has(id));
@@ -564,6 +584,12 @@ export function createNetworkMap(root, data) {
             }
         }
 
+        // The link from a gateway down under the devices hung from it to the network.
+        for (const trunk of trunks) {
+            const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(trunk.network).network) ? nodes.get(trunk.network).network : 'lan';
+            const x = box.get(trunk.network).x;
+            bars.push(`<path class="nm-link is-${kind}${nodes.get(trunk.network).state === 'up' ? '' : ' is-down'}" d="M${x} ${trunk.from} V${trunk.to}"></path>`);
+        }
         // Links from the bottom of the upper node to the top of the lower one; down ones faint.
         for (const edge of map.edges) {
             if (placed(edge.to) && placed(edge.from) && box.has(edge.from) && box.has(edge.to)) {
