@@ -89,16 +89,6 @@ final class LivewireActions
                 'getOptions' => $ui,
                 'submit' => $admin,
             ],
-            L\Tplink\Page::class => [
-                'add' => $user,
-                'save' => $user,
-                'remove' => $user,
-            ],
-            L\Snmp\Page::class => [
-                'add' => $user,
-                'save' => $user,
-                'remove' => $user,
-            ],
             L\Networks\Page::class => [
                 'scan' => $user,
                 'scanAll' => $user,
@@ -142,6 +132,12 @@ final class LivewireActions
                 'deviceChanged' => $ui,
             ],
             L\PingSettings::class => [
+                'save' => $user,
+            ],
+            L\SnmpSettings::class => [
+                'save' => $user,
+            ],
+            L\TplinkSettings::class => [
                 'save' => $user,
             ],
             L\Script\DataTable::class => [

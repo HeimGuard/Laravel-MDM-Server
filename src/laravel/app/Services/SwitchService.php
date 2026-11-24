@@ -173,13 +173,6 @@ class SwitchService
         LiveUpdates::device($device->id, 'switch');
     }
 
-    /** The devices read over SNMP. */
-    public static function snmpDevices(): \Illuminate\Support\Collection
-    {
-        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::SNMP])->get()
-            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
-    }
-
     /** Sets the community of a ping-only device (SNMP on), or removes it (null: SNMP off). The old answers say nothing about the new one. */
     public static function setCommunity(Device $device, ?string $community): void
     {
@@ -196,26 +189,6 @@ class SwitchService
     public static function isTpLink(Device $device): bool
     {
         return $device->isPingOnly && preg_match('/tp-?link/i', (string) \App\Support\MacVendor::lookup($device->ping_mac)) === 1;
-    }
-
-    /** The devices read from the web page of a TP-Link switch. */
-    public static function tplinkDevices(): \Illuminate\Support\Collection
-    {
-        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::TPLINK])->get()
-            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
-    }
-
-    /** The ping-only devices with a TP-Link MAC address that are read neither over SNMP nor from a web page yet. */
-    public static function tplinkCandidates(): \Illuminate\Support\Collection
-    {
-        return Device::query()->where('kind', 'ping')->get()->filter(fn (Device $device) => (string) $device->switch_type === '' && self::isTpLink($device))
-            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
-    }
-
-    /** Whether the TP-Link page is offered: there is a device with a TP-Link MAC address, or one already read. */
-    public static function tplinkOffered(): bool
-    {
-        return self::tplinkDevices()->isNotEmpty() || self::tplinkCandidates()->isNotEmpty();
     }
 
     /** Sets the user and the password of a TP-Link switch (the password is kept when null), or turns it off (no user). */

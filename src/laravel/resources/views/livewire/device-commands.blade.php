@@ -97,6 +97,21 @@
                             <i class="dropdown-ico fas fa-network-wired fa-fw"></i>{{ __('Ping settings') }}
                         </button>
                     </li>
+                    <li>
+                        <button class="dropdown-item" type="button"
+                            x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'snmp-settings', title: @js(__('SNMP of :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
+                            <i class="dropdown-ico fas fa-stream fa-fw"></i>{{ __('SNMP') }}
+                        </button>
+                    </li>
+                    {{-- The web login of a TP-Link switch: only for a TP-Link MAC address (or one read this way already). --}}
+                    @if (\App\Services\SwitchService::isTpLink($selectedDevice) || (string) $selectedDevice->switch_type === \App\Services\SwitchService::TPLINK)
+                        <li>
+                            <button class="dropdown-item" type="button"
+                                x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'tplink-settings', title: @js(__('TP-Link of :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
+                                <i class="dropdown-ico fas fa-ethernet fa-fw"></i>{{ __('TP-Link') }}
+                            </button>
+                        </li>
+                    @endif
                 @endif
                 @if ($canWake && ! $selectedDevice->isPingOnly)
                     <li>
