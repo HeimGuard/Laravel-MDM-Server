@@ -192,6 +192,14 @@ export function createNetworkMap(root, data) {
                 pluggedIds.add(node.id);
             }
         }
+        // A device with a cable from a port of a switch that is not in its grid (the gateway) has no link of the network: its cable is its link, it
+        // goes after the others in its column and the bar of the column does not reach it.
+        const cabled = new Set();
+        for (const node of map.nodes) {
+            if (node.plug && nodes.get(node.plug.switch)?.switch && main.has(node.id) && !pluggedIds.has(node.id)) {
+                cabled.add(node.id);
+            }
+        }
         // The cell of a switch in the grid: its card and the row of its devices under it (room for the links between).
         const LEVEL = 8;
         const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
@@ -272,7 +280,9 @@ export function createNetworkMap(root, data) {
             // A switch with devices under it is a block of its own (the card and its devices in a row under it) next to the grid, on a link of
             // the network like the columns; the others fill the grid.
             const composites = all.filter((id) => routesOf(id).length > 0);
-            const plain = all.filter((id) => !composites.includes(id));
+            // (a switch with devices of its own under it that is itself plugged into the gateway stays a block of its own, without the link of the network)
+            const cabledAll = all.filter((id) => cabled.has(id) && !composites.includes(id));
+            const plain = all.filter((id) => !composites.includes(id) && !cabled.has(id));
             const first = plain.filter((id) => shared.has(id));
             const rest = plain.filter((id) => !shared.has(id));
             const cols = plain.length ? Math.min(plain.length, 6, Math.max(3, Math.round(Math.sqrt(plain.length * 1.8)))) : 0;
@@ -291,16 +301,32 @@ export function createNetworkMap(root, data) {
                     }
                 }
             }
+            // The devices with a cable from a port: a column of their own each at the edge, on the side of their port (the left half of the ports
+            // left), in the top row, so their cable comes straight down into them and passes behind no other card.
+            const portOf = (id) => Number(nodes.get(id).plug.port);
+            const leftHalf = (id) => {
+                const ports = nodes.get(nodes.get(id).plug.switch).switch.ports;
+
+                return ports.findIndex((port) => port.port === portOf(id)) < ports.length / 2;
+            };
+            const cabledLeft = cabledAll.filter(leftHalf).sort((p, q) => portOf(p) - portOf(q));
+            const cabledRight = cabledAll.filter((id) => !leftHalf(id)).sort((p, q) => portOf(p) - portOf(q));
+            for (const place of cell.values()) {
+                place.col += cabledLeft.length;
+            }
+            cabledLeft.forEach((id, i) => cell.set(id, { row: 0, col: i }));
+            cabledRight.forEach((id, i) => cell.set(id, { row: 0, col: cabledLeft.length + cols + i }));
+            const allCols = cabledLeft.length + cols + cabledRight.length;
             const usedRows = cell.size ? Math.max(...[...cell.values()].map((c) => c.row)) + 1 : 0;
             const ids = [...cell.keys()];
-            const colWidth = Array.from({ length: cols }, (_, c) => Math.max(0, ...ids.filter((id) => cell.get(id).col === c).map((id) => elements.get(id).offsetWidth)));
+            const colWidth = Array.from({ length: allCols }, (_, c) => Math.max(0, ...ids.filter((id) => cell.get(id).col === c).map((id) => elements.get(id).offsetWidth)));
             const rowHeight = Array.from({ length: usedRows }, (_, r) => Math.max(0, ...ids.filter((id) => cell.get(id).row === r).map((id) => elements.get(id).offsetHeight)));
-            const columns = cols ? colWidth.reduce((a, b) => a + b, 0) + GAP.x * (cols - 1) : 0;
+            const columns = allCols ? colWidth.reduce((a, b) => a + b, 0) + GAP.x * (allCols - 1) : 0;
             const plainHeight = usedRows ? rowHeight.reduce((a, b) => a + b, 0) + GAP.y * (usedRows - 1) : 0;
             const blocks = composites.map((id) => cellSize(id));
             const width = columns + (columns > 0 && blocks.length ? GAP.x * 2 : 0) + blocks.reduce((sum, block) => sum + block.width, 0) + GAP.x * Math.max(0, blocks.length - 1);
             const height = Math.max(plainHeight, ...blocks.map((block) => block.height));
-            grids.set(network, { id: `grid:${network}`, ids, cell, cols, rows: usedRows, colWidth, rowHeight, width, height, columns, wing: composites });
+            grids.set(network, { id: `grid:${network}`, ids, cell, cols: allCols, rows: usedRows, colWidth, rowHeight, width, height, columns, wing: composites });
             composites.forEach((id) => inGrid.add(id));
             ids.forEach((id) => inGrid.add(id));
         }
@@ -439,13 +465,14 @@ export function createNetworkMap(root, data) {
             const parent = box.get(network);
             for (let c = 0; c < grid.cols; c++) {
                 const column = grid.ids.filter((id) => grid.cell.get(id).col === c).sort((p, q) => grid.cell.get(p).row - grid.cell.get(q).row);
-                if (column.length === 0) {
+                const linked = column.filter((id) => !cabled.has(id));
+                if (linked.length === 0) {
                     continue;
                 }
-                const head = box.get(column[0]);
+                const head = box.get(linked[0]);
                 routes.push({ bundle: network, a: parent, b: head, cls, title: '' });
-                if (column.length > 1) {
-                    bars.push(`<path class="${cls} is-spine" d="M${head.x} ${head.bottom} V${box.get(column[column.length - 1]).top}"></path>`);
+                if (linked.length > 1) {
+                    bars.push(`<path class="${cls} is-spine" d="M${head.x} ${head.bottom} V${box.get(linked[linked.length - 1]).top}"></path>`);
                 }
             }
             // The blocks of the switches beside the columns, each on a link of the network (the card at the top, its devices in a row under it).
@@ -458,7 +485,9 @@ export function createNetworkMap(root, data) {
                 el.style.top = `${top}px`;
                 box.set(id, { x: elLeft + el.offsetWidth / 2, top, bottom: top + el.offsetHeight, left: elLeft, right: elLeft + el.offsetWidth });
                 portLinks(id, el, elLeft, top, blockLeft + (block.width - block.rowWidth) / 2);
-                routes.push({ bundle: network, a: parent, b: box.get(id), cls, title: '' });
+                if (!cabled.has(id)) {
+                    routes.push({ bundle: network, a: parent, b: box.get(id), cls, title: '' });
+                }
                 blockLeft += block.width + GAP.x;
             }
         }

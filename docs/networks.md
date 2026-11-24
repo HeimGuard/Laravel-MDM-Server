@@ -22,7 +22,8 @@
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
    see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The network of such a gateway has no
    node of its own: the gateway stands for it and the devices hang from it, in a dashed frame with the name of the network and the number of its devices on the bottom edge (a click on it closes the network: it is the node of
-   the network again, and a click on the node opens it); the devices plugged into
+   the network again, and a click on the node opens it); a device with a cable from a port of the gateway has only the cable (no link of the network), in a column of its
+   own at the edge of the frame; the devices plugged into
    its ports stay in the grid (with the tag *port N*) and are linked from the port.
 4. **Networks**: the IPv4 subnets of the interfaces, LAN, Wi-Fi, LAN + Wi-Fi or mobile. A network
    is told apart by the MAC of its gateway (every device in it sees the same router), so one LAN is
