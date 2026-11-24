@@ -335,6 +335,12 @@ label.mdm-tag {
     &.is-wifi { border-color: #8a6cff; color: #8a6cff; }
 }
 
+// The pointer on a port (network-map.js): its cable and the devices it leads to are lit, the rest of the map is dimmed.
+.nm-nodes.is-focus .nm-node:not(.is-lit) { opacity: .35; }
+.nm-nodes.is-focus .nm-node.is-lit { border-color: var(--bs-primary); box-shadow: 0 0 0 2px rgba(var(--hg-ok-rgb), .45), 0 0 14px rgba(var(--hg-ok-rgb), .35); opacity: 1; }
+.nm-links.is-focus .nm-link { opacity: .12; }
+.nm-links.is-focus .nm-link.is-lit { opacity: 1; stroke-width: 3.6; filter: drop-shadow(0 0 3px rgba(var(--hg-ok-rgb), .7)); }
+
 // The movement of the links of the ports (the dashes are 12 long with the gap).
 @keyframes nm-flow { to { stroke-dashoffset: -12; } }
 

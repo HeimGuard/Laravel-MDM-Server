@@ -129,6 +129,8 @@ export function createNetworkMap(root, data) {
         current = map;
         const nodes = new Map(map.nodes.map((node) => [node.id, node]));
         layer.innerHTML = '';
+        layer.classList.remove('is-focus');
+        svg.classList.remove('is-focus');
         layer.appendChild(tip);
         const elements = new Map();
         for (const node of map.nodes) {
@@ -235,7 +237,7 @@ export function createNetworkMap(root, data) {
                 const points = levels.has(route)
                     ? [[route.start.x, route.start.y], [route.start.x, base + LEVEL * levels.get(route)], [route.x, base + LEVEL * levels.get(route)], [route.x, to.top]]
                     : [[route.start.x, route.start.y], [route.x, to.top]];
-                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" d="${curve(points)}"></path>`);
+                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path>`);
             }
         };
         const routesOf = (id) => (plugged.get(id) || []);
@@ -610,7 +612,7 @@ export function createNetworkMap(root, data) {
                 // (a network the gateway stands for has no node).
                 const entryX = dev.x + 14;
                 const lane = net && net.right > net.left && entryX > net.left - 16 && entryX < net.right + 16 ? (dev.x < net.x ? net.left - 16 : net.right + 16) : entryX;
-                remote.push({ node, at, net, start, dev, entryX, lane, grid, port: card.ports.find((p) => p.port === Number(node.plug.port)) });
+                remote.push({ node, at: { ...at, owner: owner.id }, net, start, dev, entryX, lane, grid, port: card.ports.find((p) => p.port === Number(node.plug.port)) });
             }
         }
         // The bars across run at their own heights (the ones that go farthest the lowest), so none crosses another.
@@ -625,7 +627,7 @@ export function createNetworkMap(root, data) {
             const raw = [[r.start.x, r.start.y], [r.start.x, across], [r.lane, across], [r.lane, entry], [r.entryX, entry], [r.entryX, r.dev.top]];
             // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
-            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" d="${curve(points)}"></path>`);
+            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
         }
         svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');
@@ -712,7 +714,29 @@ export function createNetworkMap(root, data) {
     tip.className = 'nm-port-tip';
     tip.hidden = true;
     layer.appendChild(tip);
+    // The pointer on a port: its cable and the devices it leads to are lit, the rest of the map is dimmed.
+    const light = (button) => {
+        const owner = current.nodes.find((node) => node.switch && String(node.switch.id) === button.dataset.switch)?.id;
+        const port = Number(button.dataset.port);
+        const lit = new Set([owner]);
+        for (const node of current.nodes) {
+            if (node.plug && node.plug.switch === owner && Number(node.plug.port) === port) {
+                lit.add(node.id);
+            }
+        }
+        svg.querySelectorAll('path[data-owner]').forEach((path) => path.classList.toggle('is-lit', path.dataset.owner === owner && Number(path.dataset.port) === port));
+        layer.querySelectorAll('.nm-node').forEach((el) => el.classList.toggle('is-lit', lit.has(el.dataset.id)));
+        layer.classList.add('is-focus');
+        svg.classList.add('is-focus');
+    };
+    const unlight = () => {
+        svg.querySelectorAll('.is-lit').forEach((path) => path.classList.remove('is-lit'));
+        layer.querySelectorAll('.nm-node.is-lit').forEach((el) => el.classList.remove('is-lit'));
+        layer.classList.remove('is-focus');
+        svg.classList.remove('is-focus');
+    };
     const showTip = (button) => {
+        light(button);
         const card = current.nodes.find((node) => node.switch && String(node.switch.id) === button.dataset.switch)?.switch;
         const port = card?.ports.find((p) => String(p.port) === button.dataset.port);
         if (!port) {
@@ -734,7 +758,7 @@ export function createNetworkMap(root, data) {
     // It stays while the pointer is on the port or on the dropdown (the way from one to the other takes a moment): the devices in it are links.
     let hideTimer = null;
     const cancelHide = () => { clearTimeout(hideTimer); hideTimer = null; };
-    const hideSoon = () => { cancelHide(); hideTimer = setTimeout(() => { tip.hidden = true; }, 250); };
+    const hideSoon = () => { cancelHide(); hideTimer = setTimeout(() => { tip.hidden = true; unlight(); }, 250); };
     tip.addEventListener('pointerenter', cancelHide);
     tip.addEventListener('pointerleave', hideSoon);
     tip.addEventListener('pointerdown', (event) => event.stopPropagation());
@@ -753,6 +777,7 @@ export function createNetworkMap(root, data) {
         const action = event.target.closest('.nm-tip-action');
         if (action) {
             tip.hidden = true;
+            unlight();
             openPort(action);
         }
     });

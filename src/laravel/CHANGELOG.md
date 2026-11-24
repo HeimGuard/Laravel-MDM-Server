@@ -7,6 +7,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Network map: the pointer on a port of a switch (or of the gateway) lights its cable and the devices it leads to and dims the rest of the map.
+
 ### Fixed
 - Network map: a router that is the gateway and whose ports are read (SNMP, TP-Link) has its ports on the gateway card, like a switch among the devices (they were only on the
   card of its page). A click on a port opens the devices of the network to plug into it, and the devices plugged into its ports are linked from the port. The network of such a gateway has
