@@ -10,7 +10,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ### Fixed
 - Network map: a router that is the gateway and whose ports are read (SNMP, TP-Link) has its ports on the gateway card, like a switch among the devices (they were only on the
   card of its page). A click on a port opens the devices of the network to plug into it, and the devices plugged into its ports are linked from the port. The network of such a gateway has
-  no node of its own: the gateway stands for it and the devices hang from it, in a frame with the name of the network and the number of its devices. The card of a switch no longer leaves a gap under it where its links start (its ports wrapped one under another while it was measured).
+  no node of its own: the gateway stands for it and the devices hang from it, in a dashed frame with the name of the network and the number of its devices; a click on the name of the frame closes the network (it is the node of the network again, a
+  click on it opens it). The card of a switch no longer leaves a gap under it where its links start (its ports wrapped one under another while it was measured).
 - Agent 1.40.2: the update to 1.40.1 was refused ("the downloaded agent is not valid"): three `foreach` variables of the SNMP code were typed, which PowerShell does not parse.
 
 ## [1.40.1] - 2026-11-24

@@ -167,17 +167,19 @@ export function createNetworkMap(root, data) {
                 members.set(main.get(node.id), [...(members.get(main.get(node.id)) || []), node.id]);
             }
         }
-        // A network whose gateway is a router with its ports on the card (SNMP) has no node of its own: the gateway stands for it, the devices
-        // hang from the gateway (its name is under the gateway). Always open.
-        const collapsed = new Map();
+        // A network whose gateway is a router with its ports on the card (SNMP): while it is open the gateway stands for it (no node of its
+        // own, the devices hang from the gateway in a frame that has what the node had and closes the network like the node), closed it is
+        // the node again.
+        const standIn = new Map();
         for (const edge of map.edges) {
             if (nodes.get(edge.from)?.kind === 'gateway' && nodes.get(edge.from).switch && nodes.get(edge.to)?.kind === 'network') {
-                collapsed.set(edge.to, edge.from);
+                standIn.set(edge.to, edge.from);
             }
         }
         // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
         const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
-        const isOpen = (network) => (collapsed.has(network) ? true : chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
+        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : standIn.has(network) || (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
+        const collapsed = new Map([...standIn].filter(([network]) => isOpen(network)));
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
@@ -551,10 +553,12 @@ export function createNetworkMap(root, data) {
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
             frames.push(`<rect class="nm-frame is-${kind}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
             const label = document.createElement('div');
-            label.className = `nm-frame-label is-${kind}`;
+            label.className = `nm-frame-label is-toggle is-open is-${kind}`;
+            label.dataset.id = network;
+            label.title = 'Hide the devices';
             label.style.left = `${at.left - FRAME + 14}px`;
             label.style.top = `${at.top + grid.height + FRAME}px`;
-            label.innerHTML = `<b>${esc(nodes.get(network).label)}</b>${nodes.get(network).sub ? ` · ${esc(nodes.get(network).sub)}` : ''}`;
+            label.innerHTML = `<i class="fas fa-chevron-down nm-chev"></i><b>${esc(nodes.get(network).label)}</b>${nodes.get(network).sub ? ` · ${esc(nodes.get(network).sub)}` : ''}`;
             layer.appendChild(label);
         }
         // A device plugged into a port of a switch that is not in its grid (the gateway of the network: its card hangs above the node of the
@@ -732,7 +736,7 @@ export function createNetworkMap(root, data) {
         }
     });
     viewport.addEventListener('click', (event) => {
-        const network = event.target.closest('.nm-node.is-toggle');
+        const network = event.target.closest('.nm-node.is-toggle, .nm-frame-label.is-toggle');
         if (network && !moved) {
             toggle(network.dataset.id);
         }
