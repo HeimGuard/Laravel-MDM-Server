@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.40.1] - 2026-11-24
+
 ### Added
 - **SNMP** (agents 1.39.0+): a new item in the menu of a ping-only device, next to Ping settings (the icon of syslog), where you enter only the **SNMP community** (v1 and v2c, the agent
   tries both); the portal finds out the rest: the version, what the device is (name and description in the window), its ports (link and speed, bad packets, packets sent and
@@ -30,6 +32,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
   speed of the link (the dashes run from the port to the device: 1000 Mb/s fast, 100 Mb/s slower, 10 Mb/s slowest; none without a link).
 
 ### Fixed
+- SNMP (agents 1.40.1+): reading a device failed at once with `Cannot convert the "System.Collections.Hashtable" value ... to type "System.Int32"` (a variable of the answer
+  had the name of the version parameter, and PowerShell does not tell the case).
 - Network map: the dropdown of a port of a switch stays while the pointer moves onto it (it vanished at once), the devices in it are links and
   it has a button for the devices on the port.
 - Network map: a router that is the gateway of a network and also a device of the portal (a ping-only router) is one node, the gateway, not
