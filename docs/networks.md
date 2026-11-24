@@ -21,7 +21,7 @@
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
    see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The devices
-   plugged into its ports do not hang under the gateway yet: they stay in the grid of the network with the tag *port N*.
+   plugged into its ports stay in the grid of the network (with the tag *port N*) and are linked from the port, round the node of the network.
 4. **Networks**: the IPv4 subnets of the interfaces, LAN, Wi-Fi, LAN + Wi-Fi or mobile. A network
    is told apart by the MAC of its gateway (every device in it sees the same router), so one LAN is
    one network whatever address its devices reach the server from, and two homes with

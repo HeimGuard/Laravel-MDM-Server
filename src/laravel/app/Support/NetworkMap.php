@@ -392,7 +392,8 @@ class NetworkMap
                 extra: ['isolated' => $isolated, 'ping' => $device->isPingOnly, 'switch' => $switch,
                     'title' => $into !== null && $device->switch_port !== null ? __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]) : null,
                     // The card of that switch lays it out under the port (network-map.js).
-                    'plug' => $into !== null && $device->switch_port !== null ? ['switch' => 'device:'.$into->id, 'port' => $device->switch_port] : null,
+                    // (a router that is the gateway: its card is the node of the gateway)
+                    'plug' => $into !== null && $device->switch_port !== null ? ['switch' => array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id, 'port' => $device->switch_port] : null,
                     // Laid out with the site of its own network (not of a VPN).
                     'group' => $memberOf->pluck('site')->filter()->first() ?? ($siteOf[$device->id] ?? null)]);
             foreach ($memberOf as $key => $network) {

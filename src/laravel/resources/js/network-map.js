@@ -522,6 +522,41 @@ export function createNetworkMap(root, data) {
         const drawSide = () => {
             sideLayer.innerHTML = sideLinks.map((edge) => side(edge, hover.has(edge.from) || hover.has(edge.to))).join('');
         };
+        // A device plugged into a port of a switch that is not in its grid (the gateway of the network: its card hangs above the node of the
+        // network): a link from the port, down and across above the node of the network, round it and into the top of the device.
+        const remote = [];
+        for (const node of map.nodes) {
+            const owner = node.plug ? nodes.get(node.plug.switch) : null;
+            const grid = gridBox.get(main.get(node.id));
+            if (owner?.switch && grid && box.has(node.id) && box.has(owner.id) && !pluggedIds.has(node.id)) {
+                const card = owner.switch;
+                const el = elements.get(owner.id);
+                const at = box.get(owner.id);
+                const button = el.querySelector(`.nm-port[data-port="${Number(node.plug.port)}"]`);
+                const start = button
+                    ? { x: at.left + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: at.top + el.clientTop + button.offsetTop + button.offsetHeight }
+                    : { x: at.x, y: at.bottom };
+                const dev = box.get(node.id);
+                const net = box.get(main.get(node.id));
+                // Into the top of the device beside its middle (where the link of the network comes in), round the node of the network, not through it.
+                const entryX = dev.x + 14;
+                const lane = net && entryX > net.left - 16 && entryX < net.right + 16 ? (dev.x < net.x ? net.left - 16 : net.right + 16) : entryX;
+                remote.push({ node, at, net, start, dev, entryX, lane, grid, port: card.ports.find((p) => p.port === Number(node.plug.port)) });
+            }
+        }
+        // The bars across run at their own heights (the ones that go farthest the lowest), so none crosses another.
+        const goingRight = remote.filter((r) => r.lane - r.start.x >= 0.5).sort((p, q) => p.start.x - q.start.x || p.node.plug.port - q.node.plug.port);
+        const goingLeft = remote.filter((r) => r.start.x - r.lane >= 0.5).sort((p, q) => q.start.x - p.start.x || q.node.plug.port - p.node.plug.port);
+        goingRight.forEach((r, i) => { r.level = goingRight.length - 1 - i; });
+        goingLeft.forEach((r, i) => { r.level = goingLeft.length - 1 - i; });
+        for (const r of remote) {
+            const across = Math.min(r.at.bottom + 10 + LEVEL * (r.level || 0), (r.net ? r.net.top : r.dev.top) - 12);
+            const entry = r.dev.top - r.grid.top < 1 ? r.grid.top - 20 : r.dev.top - GAP.y / 2;
+            const raw = [[r.start.x, r.start.y], [r.start.x, across], [r.lane, across], [r.lane, entry], [r.entryX, entry], [r.entryX, r.dev.top]];
+            // No point twice in a row (the corner of a link of no length would not be drawn).
+            const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
+            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" d="${curve(points)}"></path>`);
+        }
         svg.innerHTML = `<g>${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');
         drawSide();
