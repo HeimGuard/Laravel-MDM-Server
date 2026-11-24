@@ -82,6 +82,9 @@ address, the prefix of its network (`/24`) and optionally the MAC address for Wa
 - **Sync** in its menu pings it now: the agent that pings it (1.12.0+) gets a `pingNow` command,
   pings the address it was given for it (2 s timeout) and reports the answer, e.g. `192.168.1.50
   answered in 2 ms`, shown under the device card.
+  **Sync also reads it now** (agents 1.40.0+): when the server wants something read from the device (SNMP, the web page of a TP-Link switch), the agent does it
+  at once, without waiting for the minute between two readings, and the message of the command says how it went: `SNMP v2c answered`, or `reading it failed: no
+  answer from the device (the community, the version, or SNMP is not allowed from this agent)` (the command then fails, the message is under the device card).
 - The detail has a monitor in the style of [Uptime Kuma](https://github.com/louislam/uptime-kuma):
   the last 50 pings as a bar (green answered, red not), the response now and on average, the
   uptime of the last 24 hours and 30 days, and the response time over 1 h, 24 h, 7 d or 30 d with

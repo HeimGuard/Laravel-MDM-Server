@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.39.0'
+$AgentVersion = '1.40.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -5488,7 +5488,9 @@ function Invoke-SnmpWalk {
                 $packet = New-SnmpRequest -Version $Version -Community $Community -RequestId $requestId -Oid $current -Repetitions 20
                 [void]$client.Send($packet, $packet.Length)
                 $remote = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
-                $answer = ConvertFrom-SnmpResponse -Bytes ([byte[]]$client.Receive([ref]$remote)) -Version $Version
+                try { $reply = [byte[]]$client.Receive([ref]$remote) }
+                catch [System.Net.Sockets.SocketException] { throw 'no answer from the device (the community, the version, or SNMP is not allowed from this agent)' }
+                $answer = ConvertFrom-SnmpResponse -Bytes $reply -Version $Version
                 if ($answer.Id -ne $requestId) { continue }
                 if ($answer.Items.Count -eq 0) { break }
                 foreach ($item in $answer.Items) {
@@ -7350,9 +7352,32 @@ function Invoke-DeviceCommand {
             $up = [bool]$reply.Up
             $via = if ($reply.Via) { " via $($reply.Via)" } else { '' }
             $result = @{ id = $target.Id; up = $up; rtt = $(if ($up) { $reply.Rtt } else { $null }); at = Get-UnixTime }
-            try { Invoke-MdmApi -Method Post -Path 'device/pings' -Token $script:AgentToken -Body @{ results = @($result) } | Out-Null } catch { Write-AgentLog "Ping result not sent: $($_.Exception.Message)" -ErrorRecord $_ }
-            if ($up) {
-                [void](Send-CommandStatus -Id $Id -Status succeeded -Message "$($target.Address) answered in $($reply.Rtt) ms$via")
+            $body = @{ results = @($result) }
+            # What the server wants read from it (SNMP, the web page of a switch; agents 1.40.0+) is read now, without waiting for
+            # the minute between two readings; what came of it goes to the message.
+            $note = ''
+            $readFailed = $false
+            if ($up -and $target.Probe) {
+                if ($null -eq $script:ProbeAt) { $script:ProbeAt = @{} }
+                $script:ProbeAt["$($target.Id)"] = Get-UnixTime
+                $read = Invoke-LanProbe -Target $target
+                $body['probes'] = @($read)
+                if ($read.error -or $null -eq $read.body) {
+                    $readFailed = $true
+                    $note = "reading it failed: $(if ($read.error) { $read.error } else { 'no answer' })"
+                }
+                elseif ($target.Probe.PSObject.Properties['snmp'] -and $target.Probe.snmp) {
+                    $note = "SNMP $(if ($read.version -eq 0) { 'v1' } else { 'v2c' }) answered"
+                }
+                else {
+                    $note = "its web page answered (HTTP $($read.status))"
+                }
+            }
+            try { Invoke-MdmApi -Method Post -Path 'device/pings' -Token $script:AgentToken -Body $body | Out-Null } catch { Write-AgentLog "Ping result not sent: $($_.Exception.Message)" -ErrorRecord $_ }
+            if ($up -and $readFailed) {
+                [void](Send-CommandStatus -Id $Id -Status failed -Message "$($target.Address) answered in $($reply.Rtt) ms$via, but $note")
+            } elseif ($up) {
+                [void](Send-CommandStatus -Id $Id -Status succeeded -Message "$($target.Address) answered in $($reply.Rtt) ms$via$(if ($note) { "; $note" })")
             } else {
                 [void](Send-CommandStatus -Id $Id -Status failed -Message "$($target.Address) did not answer within 2 s$via")
             }
