@@ -126,6 +126,102 @@ class SwitchPortsTest extends TestCase
         $this->assertFalse(SwitchService::enabled($switch->fresh()));
     }
 
+    private function snmpSwitch(string $community = 'public'): Device
+    {
+        $device = new Device;
+        $device->forceFill(['kind' => 'ping', 'name' => 'snmp-switch', 'os' => '', 'token' => hash('sha256', 'snmp'), 'ping_address' => '192.168.1.9', 'ping_prefix' => 24,
+            'switch_type' => 'snmp', 'switch_password' => SwitchService::storePassword($community)]);
+        $device->save();
+
+        return $device->fresh();
+    }
+
+    private function snmpAnswer(): string
+    {
+        $lines = [];
+        // ifIndex 1: 1000 Mb/s up, 2: down, 3: 100 Mb/s up, 4: a VLAN (type 53), 5: 10 Gb/s up with ifHighSpeed missing speed.
+        foreach ([1 => [6, 1, 1000], 2 => [6, 2, 0], 3 => [6, 1, 100], 4 => [53, 1, 0]] as $index => [$type, $status, $mbit]) {
+            $lines[] = SwitchService::SNMP_COLUMNS['type'].".$index $type";
+            $lines[] = SwitchService::SNMP_COLUMNS['status'].".$index $status";
+            $lines[] = SwitchService::SNMP_COLUMNS['fast'].".$index $mbit";
+            $lines[] = SwitchService::SNMP_COLUMNS['rx'].".$index ".($index * 10);
+            $lines[] = SwitchService::SNMP_COLUMNS['tx'].".$index ".($index * 20);
+            $lines[] = SwitchService::SNMP_COLUMNS['rx_bad'].".$index $index";
+            $lines[] = SwitchService::SNMP_COLUMNS['tx_bad'].".$index 1";
+        }
+        $lines[] = SwitchService::SNMP_COLUMNS['type'].'.5 6';
+        $lines[] = SwitchService::SNMP_COLUMNS['status'].'.5 1';
+        $lines[] = SwitchService::SNMP_COLUMNS['speed'].'.5 100000000';
+
+        return implode("\n", $lines);
+    }
+
+    public function test_the_snmp_table_is_read_into_ports(): void
+    {
+        $ports = SwitchService::parseSnmp($this->snmpAnswer());
+
+        // The VLAN is no port; the port is the ifIndex.
+        $this->assertSame([1, 2, 3, 5], array_column($ports, 'port'));
+        $this->assertSame([6, 0, 5, 5], array_column($ports, 'link'));
+        $this->assertSame([10, 20, 1, 1], [$ports[0]['rx'], $ports[0]['tx'], $ports[0]['rx_bad'], $ports[0]['tx_bad']]);
+        $this->assertNull(SwitchService::parseSnmp(''));
+        $this->assertNull(SwitchService::parseSnmp("1.3.6.1.2.1.2.2.1.3.1 53\nnot a line"));
+    }
+
+    public function test_an_snmp_switch_gets_the_columns_and_the_community_for_its_own_key_only(): void
+    {
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.38.0');
+
+        $this->assertTrue(SwitchService::enabled($switch));
+        $probe = SwitchService::probe($switch, $relay);
+
+        $this->assertSame(161, $probe['port']);
+        $this->assertArrayNotHasKey('steps', $probe);
+        $this->assertSame(array_values(SwitchService::SNMP_COLUMNS), $probe['snmp']['columns']);
+        $this->assertStringNotContainsString('public', json_encode($probe));
+        $this->assertTrue(openssl_private_decrypt(base64_decode($probe['snmp']['secret']), $plain, $this->deviceKey(), OPENSSL_PKCS1_OAEP_PADDING));
+        $this->assertSame(['community' => 'public'], json_decode($plain, true));
+        // An agent that has HTTP probes only (1.37.0) cannot.
+        $this->assertNull(SwitchService::probe($switch, $this->relay('1.37.0', 'http-only')));
+    }
+
+    public function test_the_snmp_ports_the_agent_read_are_stored(): void
+    {
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.38.0');
+
+        $taken = SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $this->snmpAnswer(), 'error' => null]]);
+
+        $this->assertSame(1, $taken);
+        $ports = SwitchService::ports($switch);
+        $this->assertSame([1, 2, 3, 5], array_column($ports, 'port'));
+        $this->assertSame([6, 0, 5], array_slice(array_column($ports, 'link'), 0, 3));
+        $this->assertSame(3.0, $switch->latestValue('switch.ports.up'));
+        // No answer: nothing is stored.
+        $this->assertSame(0, SwitchService::record($relay, [['id' => $switch->id, 'status' => 0, 'body' => null, 'error' => 'timeout']]));
+    }
+
+    public function test_the_snmp_community_is_saved_without_a_user(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice(false);
+
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])
+            ->set('switchType', 'snmp')
+            ->call('save')
+            ->assertHasErrors('switchUser')
+            ->set('switchPassword', 'public')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $fresh = $switch->fresh();
+        $this->assertSame('snmp', $fresh->switch_type);
+        $this->assertTrue(blank($fresh->switch_user));
+        $this->assertNotSame('public', $fresh->switch_password);
+        $this->assertTrue(SwitchService::enabled($fresh));
+    }
+
     private function printer(): Device
     {
         $device = new Device;

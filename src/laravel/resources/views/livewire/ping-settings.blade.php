@@ -34,9 +34,20 @@
                     <option value="{{ $type }}">{{ $label }}</option>
                 @endforeach
             </select>
-            <div class="form-text">{{ __('A switch without SNMP: the agent that pings it reads the ports from its web page (agents :version or newer).', ['version' => \App\Services\SwitchService::VERSION]) }}</div>
+            @if ($switchType === 'snmp')
+                <div class="form-text">{{ __('The agent that pings it asks the switch for its ports over SNMP v2c, UDP port 161 (agents :version or newer).', ['version' => \App\Services\SwitchService::SNMP_VERSION]) }}</div>
+            @else
+                <div class="form-text">{{ __('A switch without SNMP: the agent that pings it reads the ports from its web page (agents :version or newer).', ['version' => \App\Services\SwitchService::VERSION]) }}</div>
+            @endif
         </div>
-        @if ($switchType !== '')
+        @if ($switchType === 'snmp')
+            <div class="col-12">
+                <label class="form-label" for="ping-settings-switch-password">{{ __('SNMP community') }}</label>
+                <input autocomplete="new-password" class="form-control @error('switchUser') is-invalid @enderror" id="ping-settings-switch-password" placeholder="{{ $switchHasPassword ? __('Leave empty to keep it') : '' }}" type="password" wire:model="switchPassword">
+            </div>
+            @error('switchUser') <div class="col-12 small text-danger">{{ $message }}</div> @enderror
+            <div class="col-12 small text-body-secondary">{{ __('The community is stored encrypted and sent to the agent encrypted with its own key, so only that agent can read it. Use a read-only community.') }}</div>
+        @elseif ($switchType !== '')
             <div class="col-6">
                 <label class="form-label" for="ping-settings-switch-user">{{ __('User name') }}</label>
                 <input autocomplete="off" class="form-control @error('switchUser') is-invalid @enderror" id="ping-settings-switch-user" type="text" wire:model="switchUser">

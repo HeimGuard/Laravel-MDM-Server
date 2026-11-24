@@ -100,20 +100,21 @@ class PingSettings extends Component
         if ($this->switchType === '') {
             return ['switch_type' => null, 'switch_user' => null, 'switch_password' => null];
         }
-        $user = trim($this->switchUser);
+        $snmp = $this->switchType === 'snmp';
+        $user = $snmp ? '' : trim($this->switchUser);
         $password = $this->switchPassword !== '' ? $this->switchPassword : null;
-        $valid = isset(\App\Services\SwitchService::TYPES[$this->switchType]) && $user !== '' && mb_strlen($user) <= 64
+        $valid = isset(\App\Services\SwitchService::TYPES[$this->switchType]) && ($snmp || ($user !== '' && mb_strlen($user) <= 64))
             && ($password !== null || (string) $device->switch_password !== '')
             && ($password === null || (mb_strlen($password) <= 100 && ! preg_match('/[\x00-\x1f]/', $password)));
         if (! $valid) {
-            $this->addError('switchUser', __('Enter the user name and the password of the switch.'));
+            $this->addError('switchUser', $snmp ? __('Enter the SNMP community.') : __('Enter the user name and the password of the switch.'));
 
             return null;
         }
 
         return [
             'switch_type' => $this->switchType,
-            'switch_user' => $user,
+            'switch_user' => $snmp ? null : $user,
             'switch_password' => $password !== null ? \App\Services\SwitchService::storePassword($password) : $device->switch_password,
         ];
     }

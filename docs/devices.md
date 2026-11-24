@@ -110,3 +110,19 @@ user name and password.
   and `switch.port.rx` (good packets, at most every 10 minutes), `switch.ports.up`), kept as long as `history_days`. The device
   detail has a card with the ports (link and speed, bad packets, packets sent and received); after the number of a port the devices plugged into it are badges that link to them.
 - An agent older than 1.37.0 ignores the `probe`: the ping works, the ports stay empty.
+
+#### SNMP (agents 1.38.0+)
+
+The same card for a switch that has SNMP. Any switch with SNMP v2c: in **Ping settings** choose **SNMP v2c** and enter the read-only **community** (no user name).
+
+- The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[]}}`. The agent (`Invoke-SnmpWalk`) walks each column of the
+  IF-MIB table with GETBULK (20 values per request) and returns the numbers as lines `oid value` in `body`. It reads nothing else: only
+  the columns the server names (`SwitchService::SNMP_COLUMNS`: `ifType`, `ifOperStatus`, `ifSpeed`, `ifHighSpeed`, `ifInUcastPkts`,
+  `ifInErrors`, `ifOutUcastPkts`, `ifOutErrors`), no SET, 10 columns, 2000 lines, 8 seconds, only the device it was given. The community is
+  sealed for that agent like the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login).
+- The server reads the lines (`SwitchService::parseSnmp`): the Ethernet interfaces (`ifType` 6) are the ports, **the port is the ifIndex**.
+  Down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and more *1000M full*, 100 Mb/s *100M full*, less
+  *10M full* (the duplex is not read, full is assumed). Bad packets are `ifInErrors` + `ifOutErrors`.
+- The same measured values, card, network map and alerts as for the TP-Link switch. An agent 1.37.0 gets no SNMP probe.
+- Not covered (simple on purpose): SNMP v1/v3, a port without `ifType` 6 (a LAG, a VLAN), the MAC address table (the devices are plugged into the ports by hand).
+
