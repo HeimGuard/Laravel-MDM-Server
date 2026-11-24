@@ -194,6 +194,14 @@ export function createNetworkMap(root, data) {
         }
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
+        // A gateway with several networks: the devices plugged into its ports hang under it for one of them only (the one with the most devices),
+        // the others have a cable from the port like a device of another network.
+        const primary = new Map();
+        for (const [network, above] of collapsed) {
+            if (!primary.has(above) || (members.get(network) || []).length > (members.get(primary.get(above)) || []).length) {
+                primary.set(above, network);
+            }
+        }
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
         // the port), not in the grid of the network.
         // The devices of a gateway that stands for their network (an open one) hang under its card too, each under its port (a switch with devices of
@@ -202,7 +210,7 @@ export function createNetworkMap(root, data) {
         const pluggedIds = new Set();
         for (const node of map.nodes) {
             const owner = node.plug ? nodes.get(node.plug.switch) : null;
-            const sameNetwork = owner && (main.get(node.id) === main.get(node.plug.switch) || (owner.kind === 'gateway' && collapsed.get(main.get(node.id)) === node.plug.switch));
+            const sameNetwork = owner && (main.get(node.id) === main.get(node.plug.switch) || (owner.kind === 'gateway' && collapsed.get(main.get(node.id)) === node.plug.switch && primary.get(node.plug.switch) === main.get(node.id)));
             if (owner?.switch && main.has(node.id) && sameNetwork) {
                 plugged.set(node.plug.switch, [...(plugged.get(node.plug.switch) || []), { id: node.id, port: Number(node.plug.port) }]);
                 pluggedIds.add(node.id);
@@ -397,6 +405,19 @@ export function createNetworkMap(root, data) {
             elements.get(id).style.display = 'none';
         }
 
+        // The networks of a gateway that stands for them: the one with the devices hung under it first, the others right of it; each in a slot as wide
+        // as its devices (and the row hung under the gateway) with the room for its frame.
+        const slotWidth = (network) => {
+            const hungRow = primary.get(collapsed.get(network)) === network ? (planOf(collapsed.get(network))?.half ?? 0) * 2 : 0;
+
+            return Math.max(grids.get(network).width, hungRow) + FRAME * 2;
+        };
+        const networksOf = (gateway) => {
+            const list = [...collapsed].filter(([network, above]) => above === gateway && grids.has(network)).map(([network]) => network);
+            const lead = primary.get(gateway) ?? list[0];
+
+            return [lead, ...list.filter((network) => network !== lead)].filter((network) => network !== undefined);
+        };
         const graph = new dagre.graphlib.Graph({ compound: true });
         graph.setGraph({ rankdir: 'TB', nodesep: 32, ranksep: 64, edgesep: 12, marginx: 0, marginy: 24 });
         graph.setDefaultEdgeLabel(() => ({}));
@@ -413,7 +434,10 @@ export function createNetworkMap(root, data) {
         for (const [id, el] of elements) {
             if (placed(id)) {
                 const block = planOf(id) ? cellSize(id) : null;
-                graph.setNode(id, { width: block ? block.width : el.offsetWidth, height: block ? block.height : el.offsetHeight });
+                // (a gateway with several networks reserves the room of all of them: they stand side by side under it, the first one under its middle)
+                const nets = networksOf(id);
+                const reach = nets.length > 1 ? slotWidth(nets[0]) / 2 + nets.slice(1).reduce((sum, network) => sum + 32 + slotWidth(network), 0) : 0;
+                graph.setNode(id, { width: Math.max(block ? block.width : el.offsetWidth, reach * 2), height: block ? block.height : el.offsetHeight });
             }
         }
         for (const node of map.nodes) {
@@ -424,8 +448,7 @@ export function createNetworkMap(root, data) {
         // A grid is one block of its real size under its network: dagre centers the network over it.
         for (const [network, grid] of grids) {
             // (the frame of an open network is round it: room for it)
-            const pad = collapsed.has(network) ? FRAME * 2 : 0;
-            graph.setNode(grid.id, { width: grid.width + pad, height: grid.height + pad });
+            graph.setNode(grid.id, collapsed.has(network) ? { width: slotWidth(network), height: grid.height + FRAME * 2 } : { width: grid.width, height: grid.height });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
             graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
@@ -459,11 +482,22 @@ export function createNetworkMap(root, data) {
         }
 
         // The devices of a network the gateway stands for are centred under the gateway (the link of the network runs down the middle).
-        for (const [network, gateway] of collapsed) {
+        // (a gateway with several networks: the one with the devices under the gateway is the one under it, the others stand right of it)
+        for (const gateway of new Set(collapsed.values())) {
             const at = graph.node(gateway);
-            const grid = grids.get(network);
-            if (at && grid && graph.node(grid.id)) {
-                graph.node(grid.id).x = at.x;
+            let right = null;
+            for (const network of networksOf(gateway)) {
+                const node = graph.node(grids.get(network).id);
+                if (!node) {
+                    continue;
+                }
+                if (right === null) {
+                    node.x = at.x;
+                    right = at.x + node.width / 2 + 32;
+                } else {
+                    node.x = right + node.width / 2;
+                    right += node.width + 32;
+                }
             }
         }
         // The view as big as what is drawn (room on the left for a link running beside a grid).
@@ -693,10 +727,11 @@ export function createNetworkMap(root, data) {
             const offline = nodes.get(network).offline > 0 ? ' has-offline' : '';
             // The devices hung from the gateway are in the frame too: it starts under its card and is as wide as they are.
             const gateway = box.get(collapsed.get(network));
-            const hungHalf = gateway?.rowBottom ? (planOf(collapsed.get(network))?.half ?? 0) : 0;
-            const frameTop = gateway?.rowBottom ? gateway.bottom + 14 : at.top - FRAME;
-            const frameLeft = Math.min(at.left - FRAME, gateway ? gateway.x - hungHalf - FRAME : Infinity);
-            const frameRight = Math.max(at.left + grid.width + FRAME, gateway ? gateway.x + hungHalf + FRAME : -Infinity);
+            const hungHere = gateway?.rowBottom && primary.get(collapsed.get(network)) === network;
+            const hungHalf = hungHere ? (planOf(collapsed.get(network))?.half ?? 0) : 0;
+            const frameTop = hungHere ? gateway.bottom + 14 : at.top - FRAME;
+            const frameLeft = Math.min(at.left - FRAME, hungHere ? gateway.x - hungHalf - FRAME : Infinity);
+            const frameRight = Math.max(at.left + grid.width + FRAME, hungHere ? gateway.x + hungHalf + FRAME : -Infinity);
             frames.push(`<rect class="nm-frame is-${kind}${offline}" x="${frameLeft}" y="${frameTop}" width="${frameRight - frameLeft}" height="${at.top + grid.height + FRAME - frameTop}" rx="14"></rect>`);
             const label = document.createElement('div');
             label.className = `nm-frame-label is-toggle is-open is-${kind}${nodes.get(network).offline > 0 ? ' has-offline' : ''}`;

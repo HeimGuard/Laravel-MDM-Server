@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- Network map: a gateway with several networks (a router with a guest network) no longer draws them over one another: the one with the devices hung under the gateway is under it, the others stand right of it, each in a frame,
+  and the gateway reserves the room of all of them.
+
 ### Changed
 - Network map: every open network (a VPN aside) looks the same: no node of its own, its devices are in a dashed frame with the name of the network and the number of its devices (and how many are offline) on the
   bottom edge, linked from what is above it (the gateway or the public address). A click on the name closes the network (it is the node again), a click on the node opens it. Before, only the network of a gateway
