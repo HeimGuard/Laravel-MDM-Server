@@ -188,10 +188,14 @@ export function createNetworkMap(root, data) {
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
         // the port), not in the grid of the network.
+        // The devices of a gateway that stands for their network (an open one) hang under its card too, each under its port (a switch with devices of
+        // its own brings them under it).
         const plugged = new Map();
         const pluggedIds = new Set();
         for (const node of map.nodes) {
-            if (node.plug && nodes.get(node.plug.switch)?.switch && main.has(node.id) && main.get(node.id) === main.get(node.plug.switch)) {
+            const owner = node.plug ? nodes.get(node.plug.switch) : null;
+            const sameNetwork = owner && (main.get(node.id) === main.get(node.plug.switch) || (owner.kind === 'gateway' && collapsed.get(main.get(node.id)) === node.plug.switch));
+            if (owner?.switch && main.has(node.id) && sameNetwork) {
                 plugged.set(node.plug.switch, [...(plugged.get(node.plug.switch) || []), { id: node.id, port: Number(node.plug.port) }]);
                 pluggedIds.add(node.id);
             }
@@ -209,17 +213,23 @@ export function createNetworkMap(root, data) {
         const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
         // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
         // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
-        const portLinks = (id, el, elLeft, elTop, rowLeft) => {
+        const portLinks = (id, el, elLeft, elTop, rowLeft, centres = null) => {
             const kids = routesOf(id).slice().sort((p, q) => p.port - q.port);
             const card = nodes.get(id).switch;
             const top = elTop + el.offsetHeight + gapBelow(id);
             let left = rowLeft;
             const routes = kids.map((kid) => {
                 const kidEl = elements.get(kid.id);
-                kidEl.style.left = `${left}px`;
+                // (the devices of a gateway are each under its port, not in a row)
+                const at = centres?.has(kid.id) ? centres.get(kid.id) - kidEl.offsetWidth / 2 : left;
+                kidEl.style.left = `${at}px`;
                 kidEl.style.top = `${top}px`;
-                box.set(kid.id, { x: left + kidEl.offsetWidth / 2, top, bottom: top + kidEl.offsetHeight, left, right: left + kidEl.offsetWidth });
-                left += kidEl.offsetWidth + 14;
+                box.set(kid.id, { x: at + kidEl.offsetWidth / 2, top, bottom: top + kidEl.offsetHeight, left: at, right: at + kidEl.offsetWidth });
+                left += (centres ? 0 : kidEl.offsetWidth + 14);
+                if (routesOf(kid.id).length > 0) {
+                    // A switch hung from a gateway: its own devices under it, in a row.
+                    portLinks(kid.id, kidEl, at, top, at + kidEl.offsetWidth / 2 - cellSize(kid.id).rowWidth / 2);
+                }
                 const button = el.querySelector(`.nm-port[data-port="${kid.port}"]`);
                 const port = card.ports.find((p) => p.port === kid.port);
                 const start = button
@@ -244,11 +254,47 @@ export function createNetworkMap(root, data) {
         };
         const routesOf = (id) => (plugged.get(id) || []);
         const gapBelow = (id) => 20 + LEVEL * routesOf(id).length;
+        // The devices under the card of a gateway: each as near to its port as it can be (centres from the middle of the card), the ones left of the
+        // middle going left from it, the others right, so the cables do not cross and the middle under the card is free for the link of the network.
+        const plans = new Map();
+        const planOf = (id) => {
+            if (nodes.get(id)?.kind !== 'gateway' || routesOf(id).length === 0) {
+                return null;
+            }
+            if (!plans.has(id)) {
+                const el = elements.get(id);
+                const wanted = routesOf(id).map((kid) => {
+                    const button = el.querySelector(`.nm-port[data-port="${kid.port}"]`);
+
+                    return { id: kid.id, off: button ? el.clientLeft + button.offsetLeft + button.offsetWidth / 2 - el.offsetWidth / 2 : 0, width: cellSize(kid.id).width };
+                });
+                const centres = new Map();
+                let edge = -16;
+                for (const kid of wanted.filter((k) => k.off < 0).sort((p, q) => q.off - p.off)) {
+                    const centre = Math.min(kid.off, edge - kid.width / 2);
+                    centres.set(kid.id, centre);
+                    edge = centre - kid.width / 2 - 14;
+                }
+                edge = 16;
+                for (const kid of wanted.filter((k) => k.off >= 0).sort((p, q) => p.off - q.off)) {
+                    const centre = Math.max(kid.off, edge + kid.width / 2);
+                    centres.set(kid.id, centre);
+                    edge = centre + kid.width / 2 + 14;
+                }
+                plans.set(id, { centres, half: Math.max(...wanted.map((kid) => Math.abs(centres.get(kid.id)) + kid.width / 2)) });
+            }
+
+            return plans.get(id);
+        };
         const cellSize = (id) => {
             const el = elements.get(id);
             const kids = routesOf(id).map((kid) => elements.get(kid.id));
             if (kids.length === 0) {
                 return { width: el.offsetWidth, height: el.offsetHeight, rowWidth: 0 };
+            }
+            const plan = planOf(id);
+            if (plan) {
+                return { width: Math.max(el.offsetWidth, plan.half * 2), height: el.offsetHeight + gapBelow(id) + Math.max(...routesOf(id).map((kid) => cellSize(kid.id).height)), rowWidth: plan.half * 2, half: plan.half };
             }
             const rowWidth = kids.reduce((sum, kid) => sum + kid.offsetWidth, 0) + 14 * (kids.length - 1);
 
@@ -357,7 +403,8 @@ export function createNetworkMap(root, data) {
         const placed = (id) => !inGrid.has(id) && !hidden.has(id);
         for (const [id, el] of elements) {
             if (placed(id)) {
-                graph.setNode(id, { width: el.offsetWidth, height: el.offsetHeight });
+                const block = planOf(id) ? cellSize(id) : null;
+                graph.setNode(id, { width: block ? block.width : el.offsetWidth, height: block ? block.height : el.offsetHeight });
             }
         }
         for (const node of map.nodes) {
@@ -426,6 +473,7 @@ export function createNetworkMap(root, data) {
         svg.setAttribute('height', size.height);
 
         const box = new Map();
+        const hung = [];
         for (const [id, el] of elements) {
             if (!placed(id)) {
                 continue;
@@ -434,19 +482,41 @@ export function createNetworkMap(root, data) {
             if (x === undefined) {
                 continue;
             }
+            const plan = planOf(id);
+            if (plan) {
+                // The card at the top of its cell, its devices under it (placed below, when the links can be drawn).
+                const elLeft = x - el.offsetWidth / 2;
+                el.style.left = `${elLeft}px`;
+                el.style.top = `${y - height / 2}px`;
+                box.set(id, { x, top: y - height / 2, bottom: y - height / 2 + el.offsetHeight, left: elLeft, right: elLeft + el.offsetWidth, rowBottom: y + height / 2 });
+                hung.push({ id, el, elLeft, elTop: y - height / 2, centres: new Map([...plan.centres].map(([kid, centre]) => [kid, x + centre])) });
+                continue;
+            }
             el.style.left = `${x - width / 2}px`;
             el.style.top = `${y - height / 2}px`;
             box.set(id, { x, top: y - height / 2, bottom: y + height / 2, left: x - width / 2, right: x + width / 2 });
         }
-        // The links of a network the gateway stands for start at the bottom of the gateway.
+        // The links of a network the gateway stands for start at the bottom of the gateway (under the devices hung from it).
+        const trunks = [];
         for (const [network, gateway] of collapsed) {
             const at = box.get(gateway);
             if (at) {
-                box.set(network, { x: at.x, top: at.bottom, bottom: at.bottom, left: at.x, right: at.x });
+                const bottom = at.rowBottom ?? at.bottom;
+                box.set(network, { x: at.x, top: bottom, bottom, left: at.x, right: at.x });
+                if (bottom > at.bottom) {
+                    trunks.push({ network, x: at.x, from: at.bottom, to: bottom });
+                }
             }
         }
         const bars = [];
         const routes = [];
+        for (const row of hung) {
+            portLinks(row.id, row.el, row.elLeft, row.elTop, 0, row.centres);
+        }
+        for (const trunk of trunks) {
+            const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(trunk.network).network) ? nodes.get(trunk.network).network : 'lan';
+            bars.push(`<path class="nm-link is-${kind}${nodes.get(trunk.network).state === 'up' ? '' : ' is-down'}" d="M${trunk.x} ${trunk.from} V${trunk.to}"></path>`);
+        }
         const gridBox = new Map();
         for (const [network, grid] of grids) {
             const { x, y } = graph.node(grid.id);
@@ -585,12 +655,18 @@ export function createNetworkMap(root, data) {
             }
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
             const offline = nodes.get(network).offline > 0 ? ' has-offline' : '';
-            frames.push(`<rect class="nm-frame is-${kind}${offline}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
+            // The devices hung from the gateway are in the frame too: it starts under its card and is as wide as they are.
+            const gateway = box.get(collapsed.get(network));
+            const hungHalf = gateway?.rowBottom ? (planOf(collapsed.get(network))?.half ?? 0) : 0;
+            const frameTop = gateway?.rowBottom ? gateway.bottom + 14 : at.top - FRAME;
+            const frameLeft = Math.min(at.left - FRAME, gateway ? gateway.x - hungHalf - FRAME : Infinity);
+            const frameRight = Math.max(at.left + grid.width + FRAME, gateway ? gateway.x + hungHalf + FRAME : -Infinity);
+            frames.push(`<rect class="nm-frame is-${kind}${offline}" x="${frameLeft}" y="${frameTop}" width="${frameRight - frameLeft}" height="${at.top + grid.height + FRAME - frameTop}" rx="14"></rect>`);
             const label = document.createElement('div');
             label.className = `nm-frame-label is-toggle is-open is-${kind}${nodes.get(network).offline > 0 ? ' has-offline' : ''}`;
             label.dataset.id = network;
             label.title = 'Hide the devices';
-            label.style.left = `${at.left - FRAME + 14}px`;
+            label.style.left = `${frameLeft + 14}px`;
             label.style.top = `${at.top + grid.height + FRAME}px`;
             label.innerHTML = `<i class="fas fa-chevron-down nm-chev"></i><b>${esc(nodes.get(network).label)}</b>${nodes.get(network).sub ? ` · ${esc(nodes.get(network).sub)}` : ''}`;
             layer.appendChild(label);
