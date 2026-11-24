@@ -15,8 +15,9 @@ to test and what has broken tests before. Read it instead of searching the code 
   code, and a `*_VERSION` constant in `app/Models/Device.php` when it gates a command (see
   `CHROME_UPDATE_VERSION`). Agents older than that must keep working (the server ignores what they do not send).
 - **Strong types in the agent**: parameters and local variables are typed (`[int]$count = 0`, `[hashtable]$answer = ...`,
-  `[System.Collections.Generic.List[string]]$lines = ...`, `foreach ([int]$version in $versions)`), so a wrong value fails at the
-  assignment, not three calls later. PowerShell does not tell the case of a name: a local `$version` is the parameter `[int]$Version`,
+  `[System.Collections.Generic.List[string]]$lines = ...`), so a wrong value fails at the
+  assignment, not three calls later. The variable of a `foreach` cannot be typed (`foreach ([int]$v in ...)` does not parse: "Missing
+  variable name after foreach", the agent then refuses its own update as "not valid"): type a copy in the first line of the body. PowerShell does not tell the case of a name: a local `$version` is the parameter `[int]$Version`,
   which was `Cannot convert the "System.Collections.Hashtable" value ... to type "System.Int32"` in 1.40.0. Never name a local like a parameter.
 - A function the agent runs in a background job (`Start-AgentJob -Functions ...`) must be in that list,
   otherwise it does not exist in the job.

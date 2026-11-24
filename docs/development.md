@@ -90,6 +90,12 @@ Rules for the look:
     `LivewireAdminActionsForbiddenTest` calls the admin actions as a normal user (403).
   - `RoutesRequireAuthTest`: every route has `auth`, `device.signature`, `guest` or `is-system-admin`, or is in the allowlist
     of public routes in the test with the reason; every route named `system.*` has `is-system-admin`.
+- **The agent is checked before it is merged** like the agents check it before they take an update (`Update-Agent`: the PowerShell
+  parser must find no error, else "the downloaded agent is not valid" and every device stays on its old version):
+  `AgentUpdateValidTest` parses `app.ps1` with `pwsh` (skipped without it; the runners of GitHub have it) and, without PowerShell, checks the
+  structure (`PowerShellCheck::lex`), `function Start-Agent`, the version line and that no `foreach` variable is typed (it does not parse).
+  `AgentSnmpCodecTest` runs the SNMP functions of `app.ps1` with `pwsh` against bytes made by another encoder (the requests, the answers
+  of v1 and v2c). The rest of the agent is still never run by the tests.
 - The PowerShell check of the scripts (`App\Support\PowerShellCheck`) uses `pwsh` when there is one (`mdm.pwsh`),
   otherwise a lighter check in PHP; the agent itself is never run by the tests.
 - The cloud sessions of Claude have PHP 8.3 and no access to `git.steelants.cz` (SteelAnts packages), so
