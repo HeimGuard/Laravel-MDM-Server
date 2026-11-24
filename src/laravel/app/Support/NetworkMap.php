@@ -310,11 +310,11 @@ class NetworkMap
             };
             $label = ['vpn' => __('VPN'), 'wifi' => __('Wi-Fi'), 'mixed' => __('LAN + Wi-Fi'), 'cellular' => __('Mobile'), 'lan' => __('LAN')][$kind];
             $this->node($key, 'network', $network['cidr'],
-                $label.' · '.trans_choice(':count device|:count devices', $members->count()),
+                $label.' · '.trans_choice(':count device|:count devices', $members->count()).($online < $members->count() ? ' · '.__(':count offline', ['count' => $members->count() - $online]) : ''),
                 ['vpn' => 'fas fa-shield-alt', 'wifi' => 'fas fa-wifi', 'cellular' => 'fas fa-signal'][$kind] ?? 'fas fa-ethernet',
                 ['vpn' => 'info', 'wifi' => 'purple'][$kind] ?? 'primary',
                 state: $online > 0 ? 'up' : 'down',
-                extra: ['network' => $kind, 'online' => $online, 'devices' => $members->count(), 'group' => $network['site']]);
+                extra: ['network' => $kind, 'online' => $online, 'devices' => $members->count(), 'offline' => $members->count() - $online, 'group' => $network['site']]);
             $this->networks[$key]['kind'] = $kind;
             $this->networks[$key]['online'] = $online;
 

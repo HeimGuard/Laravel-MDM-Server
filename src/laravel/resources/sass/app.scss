@@ -240,7 +240,8 @@ label.mdm-tag {
     .nm-viewport:active { cursor: grabbing; }
     .nm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
     .nm-links { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
-    .nm-nodes { position: absolute; inset: 0; }
+    // The layer of the cards covers the whole canvas: it lets the pointer through to the cables under it (their hit areas), only the cards take it.
+    .nm-nodes { position: absolute; inset: 0; pointer-events: none; > * { pointer-events: auto; } }
     .nm-tools { position: absolute; right: .75rem; bottom: .75rem; display: flex; flex-direction: column; gap: .35rem; }
     .nm-tools .btn { width: 2rem; height: 2rem; padding: 0; }
 }
@@ -334,6 +335,13 @@ label.mdm-tag {
     &:hover { border-color: var(--bs-primary); }
     &.is-wifi { border-color: #8a6cff; color: #8a6cff; }
 }
+
+// A network with devices that are offline: the node, the frame and its name are orange.
+.nm-node.is-network.has-offline { border-color: var(--hg-high); }
+.nm-frame.has-offline { stroke: var(--hg-high); fill: rgba(240, 138, 36, .04); }
+.nm-frame-label.has-offline { border-color: var(--hg-high); color: var(--hg-high); }
+// The hit area of a cable (the pointer on it opens the dropdown of its port).
+.nm-links .nm-link-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 
 // The pointer on a port (network-map.js): its cable and the devices it leads to are lit, the rest of the map is dimmed.
 .nm-nodes.is-focus .nm-node:not(.is-lit) { opacity: .35; }

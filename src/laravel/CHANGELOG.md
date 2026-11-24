@@ -7,7 +7,12 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Added
+- Network map: a button **Download** (the arrow under the zoom buttons) saves the map as a PNG picture of its real size (up to twice the pixels, 16000 px at most) with every network open, whatever the window shows.
+
 ### Changed
+- Network map: a network with devices that are offline says how many (`15 devices · 3 offline`) and is orange: its node, and its frame and name when it is open.
+- Network map: the pointer on a cable (not only on a port) opens the dropdown of its port and lights the cable and the devices it leads to.
 - Network map: the pointer on a port of a switch (or of the gateway) lights its cable and the devices it leads to and dims the rest of the map.
 
 ### Fixed

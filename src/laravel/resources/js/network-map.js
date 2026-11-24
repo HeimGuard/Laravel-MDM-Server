@@ -3,6 +3,7 @@
 // by dragging and zoomed with the wheel, two fingers or the buttons. update() takes new data from a
 // live update and keeps the view where it is.
 import dagre from '@dagrejs/dagre';
+import { toPng } from 'html-to-image';
 
 // How many ranks a link spans: networks line up whether or not a gateway is known, VPNs (over the
 // internet) at the level of the networks.
@@ -86,6 +87,7 @@ export function createNetworkMap(root, data) {
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="in" title="Zoom in"><i class="fas fa-plus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="out" title="Zoom out"><i class="fas fa-minus"></i></button>'
         + '<button class="btn btn-light btn-sm" type="button" data-zoom="fit" title="Fit"><i class="fas fa-expand"></i></button>'
+        + '<button class="btn btn-light btn-sm" type="button" data-zoom="export" title="Download the map as an image (full size, everything open)"><i class="fas fa-download"></i></button>'
         + '</div>';
     const viewport = root.querySelector('.nm-viewport');
     const stage = root.querySelector('.nm-stage');
@@ -135,7 +137,7 @@ export function createNetworkMap(root, data) {
         const elements = new Map();
         for (const node of map.nodes) {
             const el = document.createElement(node.url && !node.switch ? 'a' : 'div');
-            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}${node.switch ? ' is-switch' : ''}`;
+            el.className = `nm-node is-${node.kind} tone-${node.tone} state-${node.state}${node.isolated ? ' is-isolated' : ''}${node.switch ? ' is-switch' : ''}${node.kind === 'network' && node.offline > 0 ? ' has-offline' : ''}`;
             el.dataset.id = node.id;
             if (node.url && !node.switch) {
                 el.href = node.url;
@@ -237,7 +239,7 @@ export function createNetworkMap(root, data) {
                 const points = levels.has(route)
                     ? [[route.start.x, route.start.y], [route.start.x, base + LEVEL * levels.get(route)], [route.x, base + LEVEL * levels.get(route)], [route.x, to.top]]
                     : [[route.start.x, route.start.y], [route.x, to.top]];
-                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path>`);
+                bars.push(`<path class="nm-link is-port ${SPEED(route.port?.link ?? 0)}${route.up ? '' : ' is-down'}" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(id)}" data-port="${route.kid.port}" d="${curve(points)}"></path>`);
             }
         };
         const routesOf = (id) => (plugged.get(id) || []);
@@ -582,9 +584,10 @@ export function createNetworkMap(root, data) {
                 continue;
             }
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
-            frames.push(`<rect class="nm-frame is-${kind}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
+            const offline = nodes.get(network).offline > 0 ? ' has-offline' : '';
+            frames.push(`<rect class="nm-frame is-${kind}${offline}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
             const label = document.createElement('div');
-            label.className = `nm-frame-label is-toggle is-open is-${kind}`;
+            label.className = `nm-frame-label is-toggle is-open is-${kind}${nodes.get(network).offline > 0 ? ' has-offline' : ''}`;
             label.dataset.id = network;
             label.title = 'Hide the devices';
             label.style.left = `${at.left - FRAME + 14}px`;
@@ -627,7 +630,7 @@ export function createNetworkMap(root, data) {
             const raw = [[r.start.x, r.start.y], [r.start.x, across], [r.lane, across], [r.lane, entry], [r.entryX, entry], [r.entryX, r.dev.top]];
             // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
-            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
+            bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
         }
         svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');
@@ -772,6 +775,21 @@ export function createNetworkMap(root, data) {
         }
     });
     layer.addEventListener('pointerleave', hideSoon);
+    // The pointer on a cable: the same dropdown as on its port (the link, the packets, the devices) and the same highlight.
+    svg.addEventListener('pointerover', (event) => {
+        const cable = event.target.closest('.nm-link-hit');
+        const card = cable ? current.nodes.find((node) => node.id === cable.dataset.owner)?.switch : null;
+        const button = card ? layer.querySelector(`.nm-port[data-switch="${card.id}"][data-port="${cable.dataset.port}"]`) : null;
+        if (button) {
+            cancelHide();
+            showTip(button);
+        }
+    });
+    svg.addEventListener('pointerout', (event) => {
+        if (event.target.closest('.nm-link-hit')) {
+            hideSoon();
+        }
+    });
     const openPort = (source) => window.Livewire?.dispatch('openModal', { livewireComponents: 'networks.switch-port', title: source.dataset.heading, parameters: { deviceId: Number(source.dataset.switch), port: Number(source.dataset.port) } });
     tip.addEventListener('click', (event) => {
         const action = event.target.closest('.nm-tip-action');
@@ -781,6 +799,59 @@ export function createNetworkMap(root, data) {
             openPort(action);
         }
     });
+
+    // The map as a picture (PNG) of its real size, not of what the window shows: every network open, the view as it is for the picture and as it
+    // was before it (the networks the user closed are closed again). At most 16000 px a side (more is more than a browser draws).
+    let exporting = false;
+    const exportImage = async () => {
+        if (exporting || !current) {
+            return;
+        }
+        exporting = true;
+        const button = root.querySelector('[data-zoom="export"]');
+        button?.setAttribute('disabled', '');
+        const before = new Map(chosen);
+        tip.hidden = true;
+        unlight();
+        try {
+            for (const node of current.nodes) {
+                if (node.kind === 'network') {
+                    chosen.set(node.id, true);
+                }
+            }
+            render(current);
+            // The links and frames are SVG: the picture does not take their styles from the stylesheet, so they are set on the elements (the dashes
+            // are still, no animation).
+            svg.querySelectorAll('.nm-link-hit').forEach((element) => element.remove());
+            svg.querySelectorAll('path, rect').forEach((element) => {
+                const computed = getComputedStyle(element);
+                for (const property of ['fill', 'fill-opacity', 'stroke', 'stroke-opacity', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'opacity']) {
+                    element.style.setProperty(property, computed.getPropertyValue(property));
+                }
+                element.style.animation = 'none';
+                element.style.filter = 'none';
+            });
+            const ratio = Math.min(2, 16000 / Math.max(size.width, size.height));
+            const url = await toPng(stage, {
+                width: size.width, height: size.height, pixelRatio: ratio,
+                backgroundColor: getComputedStyle(document.body).backgroundColor,
+                style: { transform: 'none', left: '0px', top: '0px' },
+                filter: (node) => !node.classList?.contains('nm-port-tip'),
+            });
+            const link = document.createElement('a');
+            link.download = `network-map-${new Date().toISOString().slice(0, 10)}.png`;
+            link.href = url;
+            link.click();
+        } catch (error) {
+            console.error('The picture of the map was not made', error);
+        } finally {
+            chosen.clear();
+            before.forEach((open, network) => chosen.set(network, open));
+            render(current);
+            button?.removeAttribute('disabled');
+            exporting = false;
+        }
+    };
 
     // A port of a switch: the devices plugged into it (a modal of the page, a multiselect).
     viewport.addEventListener('click', (event) => {
@@ -806,6 +877,7 @@ export function createNetworkMap(root, data) {
         if (action === 'in') zoomAt(1.25, rect.width / 2, rect.height / 2);
         if (action === 'out') zoomAt(0.8, rect.width / 2, rect.height / 2);
         if (action === 'fit') fit(true);
+        if (action === 'export') exportImage();
     });
 
     render(data);

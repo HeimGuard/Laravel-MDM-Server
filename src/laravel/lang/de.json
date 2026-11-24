@@ -4,6 +4,7 @@
     ":action (:count devices)": ":action (:count Geräte)",
     ":action on :count devices?": ":action auf :count Geräten?",
     ":command failed": ":command fehlgeschlagen",
+    ":count offline": ":count offline",
     ":count PowerShell modules": ":count PowerShell-Module",
     ":count alert firing|:count alerts firing": ":count aktiver Alarm|:count aktive Alarme",
     ":count applications": ":count Anwendungen",

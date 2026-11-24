@@ -53,7 +53,7 @@ link, for an offline device or with reduced motion set). A network with such a s
 (a multiselect, the ones already on this port ticked): tick the ones plugged into it by a cable. It is set by hand, or by the MAC table of an SNMP switch (see [Devices](devices.md#snmp-agents-1390); what you set by hand is not moved) (a switch like the TP-Link
 Easy Smart ones has no MAC address table to read it from): the device keeps the switch and the port as settings (`lan.switch_device_id`,
 `lan.switch_port`), its card has a tag *port N* and the tooltip *Plugged into Switch, port N*. A deleted switch frees its devices.
-The pointer on a port lights its cable and the devices it leads to (the rest of the map is dimmed) while its dropdown is open. The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10
+The pointer on a cable does the same as on its port. A network with devices that are offline says how many (its node, or its frame and name, are orange). The map is saved as a picture with the arrow under the zoom buttons: a PNG of its real size, every network open (`html-to-image`). The pointer on a port lights its cable and the devices it leads to (the rest of the map is dimmed) while its dropdown is open. The ports of the switches are in the legend of the map. **Smart alerts** of the device (the switch answers, its ports were read in the last 10
 minutes): *The port it is plugged into has no link* when the device is offline (check the cable and the power) and, when it still answers
 pings, with *Did you move the cable?* and the action **Remove the port** (`unplugPort`).
 

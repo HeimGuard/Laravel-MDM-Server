@@ -28,6 +28,10 @@ class NetworkMapSeederTest extends TestCase
         // The switches have their devices.
         $sw1 = Device::query()->where('token', 'seed-map-8')->firstOrFail();
         $this->assertSame([2, 3, 5], $nodes->filter(fn (array $node) => ($node['plug']['switch'] ?? null) === 'device:'.$sw1->id)->map(fn (array $node) => $node['plug']['port'])->sort()->values()->all());
+        // The network says how many of its devices are offline (the seeder has some).
+        $network = $nodes->first(fn (array $node) => $node['kind'] === 'network' && ($node['offline'] ?? 0) > 0);
+        $this->assertNotNull($network);
+        $this->assertStringContainsString((string) $network['offline'].' offline', $network['sub']);
         // Run again: replaced, not doubled.
         $this->seed(DatabaseSeeder::class);
         $this->assertSame(1, Device::query()->where('name', 'Turris')->count());
