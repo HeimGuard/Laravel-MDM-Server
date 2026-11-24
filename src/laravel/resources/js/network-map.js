@@ -243,7 +243,8 @@ export function createNetworkMap(root, data) {
             const levels = new Map();
             right.forEach((route, i) => levels.set(route, right.length - 1 - i));
             leftGoing.forEach((route, i) => levels.set(route, leftGoing.length - 1 - i));
-            const base = elTop + el.offsetHeight + 10;
+            // (the cables of a gateway bend only under the top edge of the frame of the network, which is 14 under its card)
+            const base = elTop + el.offsetHeight + (nodes.get(id)?.kind === 'gateway' ? 30 : 10);
             for (const route of routes) {
                 const to = box.get(route.kid.id);
                 const points = levels.has(route)
