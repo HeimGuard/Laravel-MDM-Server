@@ -15,9 +15,10 @@ use Throwable;
 /**
  * The ports of a switch: the server decides what is requested and reads the answers; the agent of its network only makes
  * the requests (the ingress proxy of Device::pingTargetsFor, agents 1.37.0+) and never interprets them. Two kinds: a switch
- * without SNMP (TP-Link Easy Smart, the pages of its web interface, the way check_tplink reads them) and any switch with
- * SNMP v2c (the IF-MIB table of the interfaces, agents 1.38.0+). The password (the community of SNMP) is stored encrypted
- * (APP_KEY), and goes to the agent encrypted with the public key of that agent, so only it can read it.
+ * without SNMP (TP-Link Easy Smart, the pages of its web interface, the way check_tplink reads them) and any device with
+ * SNMP v1 or v2c (agents 1.39.0+): the user gives only the community, the rest is found out from the answers (the version,
+ * what the device is, the interface table, the MAC table), all of it in standard MIBs. The password (the community of SNMP)
+ * is stored encrypted (APP_KEY), and goes to the agent encrypted with the public key of that agent, so only it can read it.
  *
  * The ports are measured values of the ping-only device: switch.port.link (code of LINKS, name = the port), switch.port.bad
  * (bad packets, TX + RX), switch.port.tx / switch.port.rx (good packets, at most every 10 minutes), switch.ports.up.
@@ -27,14 +28,25 @@ class SwitchService
     /** Agents from this version make the requests of a probe. */
     public const VERSION = '1.37.0';
 
-    /** Agents from this version read a switch over SNMP. */
-    public const SNMP_VERSION = '1.38.0';
+    /** Agents from this version read a device over SNMP (v1 and v2c, strings in the answer). */
+    public const SNMP_VERSION = '1.39.0';
 
-    /** The kinds of switch the portal reads (the value of the setting switch.type). */
-    public const TYPES = ['tplink' => 'TP-Link Easy Smart', 'snmp' => 'SNMP v2c'];
+    /** The kind of switch set by the community alone (the value of the setting switch.type). */
+    public const SNMP = 'snmp';
 
-    /** The columns of IF-MIB the agent walks (GETBULK) and returns as lines `oid value`; the server reads them (parseSnmp). */
+    /** The kinds of switch the portal reads from a web page, chosen by hand (the value of the setting switch.type). */
+    public const TYPES = ['tplink' => 'TP-Link Easy Smart'];
+
+    /** The SNMP versions the agent tries: the code it reports is the one of the protocol (0 = v1, 1 = v2c). */
+    public const SNMP_VERSIONS = [0 => '1', 1 => '2c'];
+
+    /**
+     * The columns the agent walks and returns as lines `oid value` (a string as `oid x:hex`); the server reads them (parseSnmp,
+     * snmpMacs, system). All of them are standard: SNMPv2-MIB (RFC 3418) the system, IF-MIB (RFC 2863) the interfaces,
+     * BRIDGE-MIB (RFC 4188) and Q-BRIDGE-MIB (RFC 4363) the MAC table, so they are the same on every make.
+     */
     public const SNMP_COLUMNS = [
+        'sys_descr' => '1.3.6.1.2.1.1.1', 'sys_name' => '1.3.6.1.2.1.1.5',
         'type' => '1.3.6.1.2.1.2.2.1.3', 'status' => '1.3.6.1.2.1.2.2.1.8', 'speed' => '1.3.6.1.2.1.2.2.1.5', 'fast' => '1.3.6.1.2.1.31.1.1.1.15',
         'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
         // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
@@ -66,7 +78,7 @@ class SwitchService
         $type = (string) $device->switch_type;
 
         // SNMP has a community (the password) and no user.
-        return $device->isPingOnly && isset(self::TYPES[$type]) && ($type === 'snmp' || (string) $device->switch_user !== '') && (string) $device->switch_password !== '';
+        return $device->isPingOnly && ($type === self::SNMP || (isset(self::TYPES[$type]) && (string) $device->switch_user !== '')) && (string) $device->switch_password !== '';
     }
 
     public static function storePassword(string $password): string
@@ -74,7 +86,8 @@ class SwitchService
         return Crypt::encryptString($password);
     }
 
-    private static function password(Device $device): ?string
+    /** The password of the switch, or the community of SNMP (null when it cannot be read). */
+    public static function password(Device $device): ?string
     {
         try {
             return Crypt::decryptString((string) $device->switch_password);
@@ -88,18 +101,21 @@ class SwitchService
      * only when the last answer had no ports or after LOGIN_SECONDS, otherwise just the page. SNMP: the columns to walk and the
      * community (sealed for that agent), every time (UDP has no login).
      *
-     * @return array{port: int, steps?: array<int, array<string, string>>, snmp?: array{secret: string, columns: array<int, string>}}|null
+     * @return array{port: int, steps?: array<int, array<string, string>>, snmp?: array{secret: string, columns: array<int, string>, version?: int}}|null
      */
     public static function probe(Device $device, Device $relay): ?array
     {
-        $snmp = (string) $device->switch_type === 'snmp';
+        $snmp = (string) $device->switch_type === self::SNMP;
         if (! self::enabled($device) || ! $relay->public_key || version_compare((string) $relay->agent_version, $snmp ? self::SNMP_VERSION : self::VERSION, '<')) {
             return null;
         }
         if ($snmp) {
             $secret = self::seal($relay, ['community' => self::password($device)]);
 
-            return $secret === null ? null : ['port' => 161, 'snmp' => ['secret' => $secret, 'columns' => array_values(self::SNMP_COLUMNS)]];
+            // The version that answered last goes first (the agent tries the other one when it does not answer).
+            $version = Cache::get(self::versionKey($device));
+
+            return $secret === null ? null : ['port' => 161, 'snmp' => ['secret' => $secret, 'columns' => array_values(self::SNMP_COLUMNS)] + ($version === null ? [] : ['version' => $version])];
         }
         $steps = [['method' => 'GET', 'path' => self::PAGE]];
         if (! Cache::has(self::loginKey($device))) {
@@ -125,9 +141,39 @@ class SwitchService
         return base64_encode($encrypted);
     }
 
+    private static function versionKey(Device $device): string
+    {
+        return 'snmp-version.'.$device->id;
+    }
+
     private static function loginKey(Device $device): string
     {
         return 'switch-login.'.$device->id;
+    }
+
+    /**
+     * What the walk found out about a device: the version that answered (remembered, the agent tries it first) and what the device says
+     * about itself (the inventory `snmp` / `system`: name, description, version, only the changes).
+     */
+    private static function discovered(Device $device, string $body, mixed $version): void
+    {
+        $version = is_int($version) && isset(self::SNMP_VERSIONS[$version]) ? $version : null;
+        if ($version !== null) {
+            Cache::put(self::versionKey($device), $version, 86400);
+        }
+        $info = self::system($body);
+        $version ??= Cache::get(self::versionKey($device));
+        if ($version === null && $info['name'] === null && $info['descr'] === null) {
+            return;
+        }
+        $device->recordInventory('snmp', 'system', $info + ['version' => $version === null ? null : self::SNMP_VERSIONS[$version]]);
+        LiveUpdates::device($device->id, 'switch');
+    }
+
+    /** What the device said about itself, null before the first answer: name, descr, version. */
+    public static function info(Device $device): ?array
+    {
+        return $device->latestInventory('snmp', 'system');
     }
 
     /**
@@ -175,7 +221,7 @@ class SwitchService
     {
         $interfaces = [];
         foreach (self::snmpLines($body) as [$column, $index, $value]) {
-            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && ctype_digit($index) && (int) $index > 0) {
+            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && is_int($value) && ctype_digit($index) && (int) $index > 0) {
                 $interfaces[(int) $index][$column] = $value;
             }
         }
@@ -201,25 +247,45 @@ class SwitchService
     }
 
     /**
-     * The lines `oid value` of an SNMP walk as [column name, the rest of the OID (the index), value].
+     * The lines `oid value` of an SNMP walk as [column name, the rest of the OID (the index), value]: a number is an int, a string
+     * (`x:hex` in the answer) its bytes.
      *
-     * @return \Generator<int, array{0: string, 1: string, 2: int}>
+     * @return \Generator<int, array{0: string, 1: string, 2: int|string}>
      */
     private static function snmpLines(string $body): \Generator
     {
         $columns = array_flip(self::SNMP_COLUMNS);
         foreach (preg_split('/\R/', $body) as $line) {
-            if (! preg_match('/^(1(?:\.\d+)+) (\d+)$/', trim($line), $match)) {
+            if (! preg_match('/^(1(?:\.\d+)+) (\d+|x:(?:[0-9a-f]{2})*)$/', trim($line), $match)) {
                 continue;
             }
             foreach ($columns as $oid => $name) {
                 if (str_starts_with($match[1], $oid.'.')) {
-                    yield [$name, substr($match[1], strlen($oid) + 1), (int) $match[2]];
+                    yield [$name, substr($match[1], strlen($oid) + 1), str_starts_with($match[2], 'x:') ? (string) hex2bin(substr($match[2], 2)) : (int) $match[2]];
 
                     break;
                 }
             }
         }
+    }
+
+    /**
+     * What the device says about itself (the system group): its name and description, null for what it did not say. Control
+     * characters are removed, the text is cut.
+     *
+     * @return array{name: ?string, descr: ?string}
+     */
+    public static function system(string $body): array
+    {
+        $info = ['name' => null, 'descr' => null];
+        foreach (self::snmpLines($body) as [$column, , $value]) {
+            if (is_string($value) && in_array($column, ['sys_name', 'sys_descr'], true)) {
+                $text = trim((string) preg_replace('/[\x00-\x20\x7f]+/', ' ', mb_convert_encoding($value, 'UTF-8', 'UTF-8')));
+                $info[$column === 'sys_name' ? 'name' : 'descr'] ??= $text === '' ? null : mb_substr($text, 0, 255);
+            }
+        }
+
+        return $info;
     }
 
     /**
@@ -235,12 +301,12 @@ class SwitchService
         $bridge = [];
         $learned = [];
         foreach (self::snmpLines($body) as [$column, $index, $value]) {
-            if ($column === 'bridge_port' && ctype_digit($index)) {
+            if ($column === 'bridge_port' && is_int($value) && ctype_digit($index)) {
                 $bridge[(int) $index] = $value;
             } elseif ($column === 'fdb' || $column === 'fdb_vlan') {
                 $arcs = array_map('intval', explode('.', $index));
                 $arcs = array_slice($arcs, -6);
-                if (count($arcs) === 6 && max($arcs) <= 255 && $value > 0) {
+                if (is_int($value) && count($arcs) === 6 && max($arcs) <= 255 && $value > 0) {
                     $learned[] = [implode(':', array_map(fn (int $arc) => sprintf('%02X', $arc), $arcs)), $value];
                 }
             }
@@ -275,17 +341,24 @@ class SwitchService
                 continue;
             }
             $device = Device::query()->where('kind', 'ping')->find($id);
-            $ports = $device !== null && is_string($probe['body'] ?? null) ? ((string) $device->switch_type === 'snmp' ? self::parseSnmp($probe['body']) : self::parse($probe['body'])) : null;
+            $body = $device !== null && is_string($probe['body'] ?? null) ? $probe['body'] : null;
+            $snmp = $device !== null && (string) $device->switch_type === self::SNMP;
+            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body) : self::parse($body));
+            if ($snmp && $body !== null) {
+                self::discovered($device, $body, $probe['version'] ?? null);
+            }
             if ($ports === null) {
                 // The next request logs in again.
                 Cache::forget(self::loginKey($device ?? new Device(['id' => $id])));
 
                 continue;
             }
-            Cache::put(self::loginKey($device), true, self::LOGIN_SECONDS);
+            if (! $snmp) {
+                Cache::put(self::loginKey($device), true, self::LOGIN_SECONDS);
+            }
             self::store($device, $ports);
-            if ((string) $device->switch_type === 'snmp') {
-                self::pair($device, self::snmpMacs($probe['body'], $ports));
+            if ($snmp) {
+                self::pair($device, self::snmpMacs($body, $ports));
             }
             $taken++;
         }
@@ -375,7 +448,7 @@ class SwitchService
 
         // Where each MAC address is seen: [switch id, port, how many MAC addresses are on that port].
         $seen = [];
-        foreach (Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', ['snmp'])->pluck('id') as $id) {
+        foreach (Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::SNMP])->pluck('id') as $id) {
             foreach (Cache::get(self::macsKey((int) $id), []) as $port => $macs) {
                 foreach ($macs as $mac) {
                     $seen[$mac][] = ['switch' => (int) $id, 'port' => (int) $port, 'count' => count($macs)];

@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.38.0'
+$AgentVersion = '1.39.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -5415,20 +5415,25 @@ function ConvertFrom-BerOid {
     return $parts -join '.'
 }
 
-function New-SnmpBulkRequest {
-    # An SNMPv2c GetBulkRequest for the OIDs after Oid (no non-repeaters, Repetitions of the next ones).
-    param ([string]$Community, [int]$RequestId, [string]$Oid, [int]$Repetitions)
+function New-SnmpRequest {
+    # An SNMP request for the OID after Oid: version 1 (v2c) a GetBulkRequest of Repetitions values, version 0 (v1, which has no
+    # GetBulk) a GetNextRequest of one.
+    param ([int]$Version, [string]$Community, [int]$RequestId, [string]$Oid, [int]$Repetitions)
 
     $pair = New-BerValue -Tag 0x30 -Parts @((ConvertTo-BerOid -Oid $Oid), [byte[]](5, 0))
     $list = New-BerValue -Tag 0x30 -Parts @(, $pair)
-    $pdu = New-BerValue -Tag 0xA5 -Parts @((ConvertTo-BerInteger -Value $RequestId), (ConvertTo-BerInteger -Value 0), (ConvertTo-BerInteger -Value $Repetitions), $list)
+    $tag = if ($Version -eq 1) { 0xA5 } else { 0xA1 }
+    $third = if ($Version -eq 1) { $Repetitions } else { 0 }
+    $pdu = New-BerValue -Tag $tag -Parts @((ConvertTo-BerInteger -Value $RequestId), (ConvertTo-BerInteger -Value 0), (ConvertTo-BerInteger -Value $third), $list)
     $name = New-BerValue -Tag 0x04 -Parts @(, [System.Text.Encoding]::UTF8.GetBytes($Community))
-    return , (New-BerValue -Tag 0x30 -Parts @((ConvertTo-BerInteger -Value 1), $name, $pdu))
+    return , (New-BerValue -Tag 0x30 -Parts @((ConvertTo-BerInteger -Value $Version), $name, $pdu))
 }
 
 function ConvertFrom-SnmpResponse {
     # The answer to a request: its id and the variable bindings as @{ Oid; Value; End } (End: no such object, end of the MIB).
-    param ([byte[]]$Bytes)
+    # A number is its decimal text, a string "x:" and its bytes in hex (255 at most), anything else is empty. SNMPv1 ends a walk
+    # with the error noSuchName (2): no bindings.
+    param ([byte[]]$Bytes, [int]$Version = 1)
 
     $message = Read-BerElement -Bytes $Bytes -Offset 0
     if ($message.Tag -ne 0x30) { throw 'Not an SNMP answer' }
@@ -5441,6 +5446,7 @@ function ConvertFrom-SnmpResponse {
     $index = Read-BerElement -Bytes $Bytes -Offset $status.End
     $list = Read-BerElement -Bytes $Bytes -Offset $index.End
     $errorStatus = [int](ConvertFrom-BerNumber -Bytes $Bytes -Start $status.Start -End $status.End -Signed $false)
+    if ($errorStatus -eq 2 -and $Version -eq 0) { return @{ Id = [int](ConvertFrom-BerNumber -Bytes $Bytes -Start $id.Start -End $id.End -Signed $false); Items = @() } }
     if ($errorStatus -ne 0) { throw "SNMP error $errorStatus" }
     $items = New-Object 'System.Collections.Generic.List[object]'
     $offset = $list.Start
@@ -5454,16 +5460,17 @@ function ConvertFrom-SnmpResponse {
         if ($value.Tag -in 0x80, 0x81, 0x82) { $end = $true }
         elseif ($value.Tag -eq 0x02) { $text = "$(ConvertFrom-BerNumber -Bytes $Bytes -Start $value.Start -End $value.End -Signed $true)" }
         elseif ($value.Tag -in 0x41, 0x42, 0x43, 0x46) { $text = "$(ConvertFrom-BerNumber -Bytes $Bytes -Start $value.Start -End $value.End -Signed $false)" }
+        elseif ($value.Tag -eq 0x04) { $text = 'x:' + $(if ($value.End -gt $value.Start) { [System.BitConverter]::ToString($Bytes, $value.Start, [Math]::Min(255, $value.End - $value.Start)).Replace('-', '').ToLowerInvariant() } else { '' }) }
         $items.Add(@{ Oid = (ConvertFrom-BerOid -Bytes $Bytes -Start $oid.Start -End $oid.End); Value = $text; End = $end })
     }
     return @{ Id = [int](ConvertFrom-BerNumber -Bytes $Bytes -Start $id.Start -End $id.End -Signed $false); Items = $items }
 }
 
 function Invoke-SnmpWalk {
-    # SNMPv2c: walks each column (an OID the server named) of a device with GetBulk and returns the numbers as lines
-    # "oid value" (strings and other types are left out): the server reads them. Read only, no SET, at most 10 columns,
-    # 20 values per request, 2000 lines, the Deadline for all of it.
-    param ([System.Net.IPAddress]$Address, [int]$Port, [string]$Community, $Columns, [datetime]$Deadline)
+    # SNMP v2c (Version 1: GetBulk, 20 values per request) or v1 (Version 0: GetNext): walks each column (an OID the server named)
+    # of a device and returns the numbers and strings as lines "oid value" or "oid x:hex" (the server reads them). Read only, no
+    # SET, at most 16 columns, 2000 lines, the Deadline for all of it. It throws when the device does not answer.
+    param ([System.Net.IPAddress]$Address, [int]$Port, [string]$Community, $Columns, [datetime]$Deadline, [int]$Version = 1)
 
     $lines = New-Object 'System.Collections.Generic.List[string]'
     $client = New-Object System.Net.Sockets.UdpClient
@@ -5471,17 +5478,17 @@ function Invoke-SnmpWalk {
         $client.Client.ReceiveTimeout = 2000
         $client.Connect($Address, $Port)
         $requestId = Get-Random -Minimum 1000 -Maximum 2000000000
-        foreach ($column in @(@($Columns) | Select-Object -First 10)) {
+        foreach ($column in @(@($Columns) | Select-Object -First 16)) {
             if ("$column" -notmatch '^1(\.[0-9]{1,10}){3,20}$') { throw 'An OID the agent does not read' }
             $current = "$column"
             $finished = $false
-            for ($round = 0; $round -lt 40 -and -not $finished; $round++) {
+            for ($round = 0; $round -lt $(if ($Version -eq 1) { 40 } else { 800 }) -and -not $finished; $round++) {
                 if ((Get-Date) -gt $Deadline) { throw 'The SNMP walk took too long' }
                 $requestId++
-                $packet = New-SnmpBulkRequest -Community $Community -RequestId $requestId -Oid $current -Repetitions 20
+                $packet = New-SnmpRequest -Version $Version -Community $Community -RequestId $requestId -Oid $current -Repetitions 20
                 [void]$client.Send($packet, $packet.Length)
                 $remote = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
-                $answer = ConvertFrom-SnmpResponse -Bytes ([byte[]]$client.Receive([ref]$remote))
+                $answer = ConvertFrom-SnmpResponse -Bytes ([byte[]]$client.Receive([ref]$remote)) -Version $Version
                 if ($answer.Id -ne $requestId) { continue }
                 if ($answer.Items.Count -eq 0) { break }
                 foreach ($item in $answer.Items) {
@@ -5505,20 +5512,34 @@ function Invoke-LanProbe {
     # the same cookies; the answer of the last one goes back, the server reads it (a page of a switch). Not a general
     # proxy: GET and POST over HTTP (port 1-65535, 80 default), a path without "..", no redirects, 4 steps, 5 s each,
     # 256 KB of the answer. A POST carries a form: a secret (ConvertFrom-ServerSecret) is the fields of it.
-    # A probe with snmp (agents 1.38.0+) is not HTTP: the columns of the table to walk over SNMPv2c (Invoke-SnmpWalk, port
-    # 161), the community in its secret; the answer is the lines "oid value".
+    # A probe with snmp (agents 1.39.0+) is not HTTP: the columns to walk over SNMP v2c or v1 (Invoke-SnmpWalk, port 161, the
+    # version is tried: the one the server names first), the community in its secret; the answer is the lines "oid value" and
+    # the version that answered (0 = v1, 1 = v2c).
     param ($Target)
 
     $probe = $Target.Probe
-    $result = @{ id = $Target.Id; status = 0; body = $null; error = $null }
+    $result = @{ id = $Target.Id; status = 0; body = $null; error = $null; version = $null }
     $client = $null
     try {
         if ($probe.PSObject.Properties['snmp'] -and $probe.snmp) {
             $snmpPort = 161
             if ($probe.PSObject.Properties['port'] -and "$($probe.port)" -match '^[0-9]{1,5}$' -and [int]$probe.port -ge 1 -and [int]$probe.port -le 65535) { $snmpPort = [int]$probe.port }
             $secret = ConvertFrom-ServerSecret -Secret "$($probe.snmp.secret)"
-            $result.body = Invoke-SnmpWalk -Address $Target.Address -Port $snmpPort -Community "$($secret.community)" -Columns $probe.snmp.columns -Deadline (Get-Date).AddSeconds(8)
-            $result.status = 200
+            # The version is found out: the one that worked last (the server says) first, then the other; the answer says which one.
+            $versions = if ($probe.snmp.PSObject.Properties['version'] -and "$($probe.snmp.version)" -eq '0') { @(0, 1) } else { @(1, 0) }
+            $deadline = (Get-Date).AddSeconds(12)
+            foreach ($version in $versions) {
+                try {
+                    $result.body = Invoke-SnmpWalk -Address $Target.Address -Port $snmpPort -Community "$($secret.community)" -Columns $probe.snmp.columns -Deadline $deadline -Version $version
+                    $result.status = 200
+                    $result.version = $version
+                    $result.error = $null
+                    break
+                }
+                catch {
+                    $result.error = "$($_.Exception.Message)".Substring(0, [Math]::Min(200, "$($_.Exception.Message)".Length))
+                }
+            }
             return $result
         }
         Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
@@ -5639,7 +5660,7 @@ function Send-PingResults {
             $reply = $pings[$_.Id]
             @{ id = $_.Id; up = [bool]$reply.Up; rtt = $(if ($reply.Up) { $reply.Rtt } else { $null }); at = $at }
         })
-    # The requests the server wants made to the devices that answered (agents 1.37.0+, SNMP 1.38.0+, at most every minute, 4 devices).
+    # The requests the server wants made to the devices that answered (agents 1.37.0+, SNMP 1.39.0+, at most every minute, 4 devices).
     if ($null -eq $script:ProbeAt) { $script:ProbeAt = @{} }
     $probes = @($script:PingTargets | Where-Object { $_.Probe -and $pings[$_.Id].Up -and ((Get-UnixTime) - [long]$script:ProbeAt["$($_.Id)"]) -ge 60 } | Select-Object -First 4 | ForEach-Object {
             $script:ProbeAt["$($_.Id)"] = Get-UnixTime

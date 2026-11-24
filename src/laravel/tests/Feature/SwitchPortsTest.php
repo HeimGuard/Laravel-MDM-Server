@@ -171,7 +171,7 @@ class SwitchPortsTest extends TestCase
     public function test_an_snmp_switch_gets_the_columns_and_the_community_for_its_own_key_only(): void
     {
         $switch = $this->snmpSwitch();
-        $relay = $this->relay('1.38.0');
+        $relay = $this->relay('1.39.0');
 
         $this->assertTrue(SwitchService::enabled($switch));
         $probe = SwitchService::probe($switch, $relay);
@@ -182,14 +182,16 @@ class SwitchPortsTest extends TestCase
         $this->assertStringNotContainsString('public', json_encode($probe));
         $this->assertTrue(openssl_private_decrypt(base64_decode($probe['snmp']['secret']), $plain, $this->deviceKey(), OPENSSL_PKCS1_OAEP_PADDING));
         $this->assertSame(['community' => 'public'], json_decode($plain, true));
-        // An agent that has HTTP probes only (1.37.0) cannot.
-        $this->assertNull(SwitchService::probe($switch, $this->relay('1.37.0', 'http-only')));
+        // An agent that has HTTP probes only (1.38.0 and older) cannot.
+        $this->assertNull(SwitchService::probe($switch, $this->relay('1.38.0', 'http-only')));
+        // No version known yet: the agent tries v2c, then v1.
+        $this->assertArrayNotHasKey('version', $probe['snmp']);
     }
 
     public function test_the_snmp_ports_the_agent_read_are_stored(): void
     {
         $switch = $this->snmpSwitch();
-        $relay = $this->relay('1.38.0');
+        $relay = $this->relay('1.39.0');
 
         $taken = SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $this->snmpAnswer(), 'error' => null]]);
 
@@ -202,16 +204,47 @@ class SwitchPortsTest extends TestCase
         $this->assertSame(0, SwitchService::record($relay, [['id' => $switch->id, 'status' => 0, 'body' => null, 'error' => 'timeout']]));
     }
 
-    public function test_the_snmp_community_is_saved_without_a_user(): void
+    public function test_what_the_device_says_and_the_version_that_answered_are_remembered(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.39.0');
+        $c = SwitchService::SNMP_COLUMNS;
+        $body = $this->snmpAnswer()."\n".$c['sys_name'].'.0 x:'.bin2hex('sw-office')."\n".$c['sys_descr'].'.0 x:'.bin2hex("Managed switch\x00 24 ports");
+
+        $this->assertSame(['name' => 'sw-office', 'descr' => 'Managed switch 24 ports'], SwitchService::system($body));
+        $this->assertSame(['name' => null, 'descr' => null], SwitchService::system($this->snmpAnswer()));
+
+        // The device answers SNMP v1 only: the version is remembered and the agent tries it first next time.
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $body, 'error' => null, 'version' => 0]]);
+
+        $this->assertSame(['sw-office', 'Managed switch 24 ports', '1'], array_values(SwitchService::info($switch)));
+        $this->assertSame(0, SwitchService::probe($switch, $relay)['snmp']['version']);
+        // Not a version of SNMP: not remembered.
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $body, 'error' => null, 'version' => 7]]);
+        $this->assertSame(0, SwitchService::probe($switch, $relay)['snmp']['version']);
+    }
+
+    public function test_a_device_that_has_no_ethernet_port_still_tells_what_it_is(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $c = SwitchService::SNMP_COLUMNS;
+
+        $taken = SwitchService::record($this->relay('1.39.0'), [['id' => $switch->id, 'status' => 200, 'body' => $c['sys_name'].'.0 x:'.bin2hex('ups'), 'error' => null, 'version' => 1]]);
+
+        $this->assertSame(0, $taken);
+        $this->assertSame('ups', SwitchService::info($switch)['name']);
+        $this->assertNull(SwitchService::ports($switch));
+    }
+
+    public function test_the_snmp_community_alone_makes_a_device_an_snmp_device(): void
     {
         $this->actingAs(User::factory()->create());
         $switch = $this->switchDevice(false);
 
         Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])
-            ->set('switchType', 'snmp')
-            ->call('save')
-            ->assertHasErrors('switchUser')
-            ->set('switchPassword', 'public')
+            ->set('snmpCommunity', 'public')
             ->call('save')
             ->assertHasNoErrors();
 
@@ -220,6 +253,16 @@ class SwitchPortsTest extends TestCase
         $this->assertTrue(blank($fresh->switch_user));
         $this->assertNotSame('public', $fresh->switch_password);
         $this->assertTrue(SwitchService::enabled($fresh));
+        $stored = $fresh->switch_password;
+        // It is shown again; saved as it is, it is not encrypted again; empty turns SNMP off.
+        $form = Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->assertSet('snmpCommunity', 'public')->assertSet('switchType', '');
+        $form->call('save');
+        $this->assertSame($stored, $switch->fresh()->switch_password);
+        $form->set('snmpCommunity', '')->call('save');
+        $this->assertFalse(SwitchService::enabled($switch->fresh()));
+        // The community is not taken for the password of a switch kind chosen later.
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('snmpCommunity', 'public')->call('save');
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('switchType', 'tplink')->set('switchUser', 'admin')->call('save')->assertHasErrors('switchUser');
     }
 
     private function pingDevice(string $name, string $mac): Device
@@ -250,7 +293,7 @@ class SwitchPortsTest extends TestCase
     {
         Cache::flush();
         $switch = $this->snmpSwitch();
-        $relay = $this->relay('1.38.0');
+        $relay = $this->relay('1.39.0');
         $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
         $byHand = $this->pingDevice('printer', '00:11:22:33:44:56');
         $byHand->forceFill(['switch_id' => $switch->id, 'switch_port' => 2])->save();

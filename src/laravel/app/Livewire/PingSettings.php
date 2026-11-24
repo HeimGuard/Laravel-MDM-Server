@@ -33,6 +33,9 @@ class PingSettings extends Component
 
     public bool $switchHasPassword = false;
 
+    /** The community of SNMP (v1 or v2c), empty for a device without it: the portal finds out the rest (SwitchService). Not with a switch kind above. */
+    public string $snmpCommunity = '';
+
     public function mount(int $deviceId): void
     {
         $device = Device::query()->where('kind', 'ping')->findOrFail($deviceId);
@@ -41,9 +44,12 @@ class PingSettings extends Component
         $this->prefix = $device->ping_prefix ?? 24;
         $this->mac = (string) $device->ping_mac;
         $this->via = (string) ($device->ping_via_id ?? '');
-        $this->switchType = (string) $device->switch_type;
+        $snmp = (string) $device->switch_type === \App\Services\SwitchService::SNMP;
+        $this->switchType = $snmp ? '' : (string) $device->switch_type;
         $this->switchUser = (string) $device->switch_user;
-        $this->switchHasPassword = (string) $device->switch_password !== '';
+        $this->switchHasPassword = ! $snmp && (string) $device->switch_password !== '';
+        // A community is shown (it is read only, every signed-in user is a trusted operator): empty turns SNMP off.
+        $this->snmpCommunity = $snmp ? (string) \App\Services\SwitchService::password($device) : '';
     }
 
     public function save(): void
@@ -90,32 +96,49 @@ class PingSettings extends Component
     }
 
     /**
-     * The settings of the switch (null and an error when they are not valid): none without a kind, the password stays when
-     * the field is blank. The password is stored encrypted.
+     * The settings of the switch (null and an error when they are not valid): a kind chosen by hand (user and password, the password stays
+     * when the field is blank), otherwise SNMP when there is a community, otherwise none. Passwords are stored encrypted.
      *
      * @return array<string, ?string>|null
      */
     private function switchSettings(Device $device): ?array
     {
+        $none = ['switch_type' => null, 'switch_user' => null, 'switch_password' => null];
         if ($this->switchType === '') {
-            return ['switch_type' => null, 'switch_user' => null, 'switch_password' => null];
+            $community = trim($this->snmpCommunity);
+            if ($community === '') {
+                return $none;
+            }
+            if (mb_strlen($community) > 100 || preg_match('/[\x00-\x1f]/', $community)) {
+                $this->addError('snmpCommunity', __('Enter the SNMP community.'));
+
+                return null;
+            }
+
+            return [
+                'switch_type' => \App\Services\SwitchService::SNMP,
+                'switch_user' => null,
+                // The same community is not encrypted again (it would be a change every time).
+                'switch_password' => (string) $device->switch_type === \App\Services\SwitchService::SNMP && \App\Services\SwitchService::password($device) === $community
+                    ? $device->switch_password : \App\Services\SwitchService::storePassword($community),
+            ];
         }
-        $snmp = $this->switchType === 'snmp';
-        $user = $snmp ? '' : trim($this->switchUser);
+        $user = trim($this->switchUser);
+        $stored = (string) $device->switch_type === $this->switchType ? (string) $device->switch_password : '';
         $password = $this->switchPassword !== '' ? $this->switchPassword : null;
-        $valid = isset(\App\Services\SwitchService::TYPES[$this->switchType]) && ($snmp || ($user !== '' && mb_strlen($user) <= 64))
-            && ($password !== null || (string) $device->switch_password !== '')
+        $valid = isset(\App\Services\SwitchService::TYPES[$this->switchType]) && $user !== '' && mb_strlen($user) <= 64
+            && ($password !== null || $stored !== '')
             && ($password === null || (mb_strlen($password) <= 100 && ! preg_match('/[\x00-\x1f]/', $password)));
         if (! $valid) {
-            $this->addError('switchUser', $snmp ? __('Enter the SNMP community.') : __('Enter the user name and the password of the switch.'));
+            $this->addError('switchUser', __('Enter the user name and the password of the switch.'));
 
             return null;
         }
 
         return [
             'switch_type' => $this->switchType,
-            'switch_user' => $snmp ? null : $user,
-            'switch_password' => $password !== null ? \App\Services\SwitchService::storePassword($password) : $device->switch_password,
+            'switch_user' => $user,
+            'switch_password' => $password !== null ? \App\Services\SwitchService::storePassword($password) : $stored,
         ];
     }
 

@@ -8,10 +8,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Added
-- **SNMP switches** (agents 1.38.0+): a ping-only device can be a switch of the kind **SNMP v2c** (read-only community in its Ping settings). The agent that pings it walks the
-  IF-MIB table over SNMP and the portal shows its ports (link and speed, bad packets, packets sent and received) like those of a TP-Link switch, on the card, the network
-  map and in the alerts. If the switch has a MAC table, the devices are **plugged into the ports automatically** by their MAC address (what is set by hand stays, a device taken off
-  a port is not paired again, a trunk to another switch is skipped).
+- **SNMP** (agents 1.39.0+): enter only the **SNMP community** in the Ping settings of a ping-only device (v1 and v2c, the agent tries both); the portal finds out the rest:
+  the version, what the device is (name and description on its card), its ports (link and speed, bad packets, packets sent and received, on the card, the network map and in the
+  alerts) and, when it has the MAC table, **which device is plugged into which port** (automatically, by the MAC address: what is set by hand stays, a device taken off a
+  port is not paired again, a trunk to another switch is skipped).
 - Remediation script **Enable Wake-on-LAN (Windows)** (every installation starts with it, manual remediation): detects wired network cards whose
   *Wake on Magic Packet* is off (a Windows or driver update often resets it, the magic packet is sent but the PC does not wake) and **Remediate**
   switches it on (card power management, the driver keyword, the card may wake the PC). Fast Startup and the BIOS are left alone.

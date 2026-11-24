@@ -111,27 +111,35 @@ user name and password.
   detail has a card with the ports (link and speed, bad packets, packets sent and received); after the number of a port the devices plugged into it are badges that link to them.
 - An agent older than 1.37.0 ignores the `probe`: the ping works, the ports stay empty.
 
-#### SNMP (agents 1.38.0+)
+#### SNMP (agents 1.39.0+)
 
-The same card for a switch that has SNMP. Any switch with SNMP v2c: in **Ping settings** choose **SNMP v2c** and enter the read-only **community** (no user name).
+The same card for any device with SNMP v1 or v2c. In **Ping settings** enter only the read-only **SNMP community** (the address is the
+one of the device); the portal finds out the rest itself. Empty turns it off. The **Switch without SNMP** below it (TP-Link) is the other way.
 
-- The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[]}}`. The agent (`Invoke-SnmpWalk`) walks each column of the
-  IF-MIB table with GETBULK (20 values per request) and returns the numbers as lines `oid value` in `body`. It reads nothing else: only
-  the columns the server names (`SwitchService::SNMP_COLUMNS`: `ifType`, `ifOperStatus`, `ifSpeed`, `ifHighSpeed`, `ifInUcastPkts`,
-  `ifInErrors`, `ifOutUcastPkts`, `ifOutErrors`), no SET, 10 columns, 2000 lines, 8 seconds, only the device it was given. The community is
-  sealed for that agent like the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login).
-- The server reads the lines (`SwitchService::parseSnmp`): the Ethernet interfaces (`ifType` 6) are the ports, **the port is the ifIndex**.
-  Down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and more *1000M full*, 100 Mb/s *100M full*, less
-  *10M full* (the duplex is not read, full is assumed). Bad packets are `ifInErrors` + `ifOutErrors`.
-- The same measured values, card, network map and alerts as for the TP-Link switch. An agent 1.37.0 gets no SNMP probe.
+- **Discovery:** the agent walks the standard columns and the server reads what the device is from the answer. The OIDs are the same on every
+  make: SNMPv2-MIB (`sysDescr`, `sysName`, RFC 3418), IF-MIB (the interfaces, RFC 2863), BRIDGE-MIB and Q-BRIDGE-MIB (the MAC table, RFC 4188 / 4363);
+  only what is vendor specific (PoE, temperature, VLAN names of one make) would need its own OIDs, and is not read. What is found out:
+  - **The version:** the agent tries v2c, then v1 (v1 has no GetBulk: it walks with GetNext). The one that answered is remembered (cache, a day)
+    and sent as `snmp.version` (0 = v1, 1 = v2c) so the agent tries it first; the answer carries `version`.
+  - **What it is:** name and description (the inventory `snmp` / `system`: `name`, `descr`, `version`, only the changes), shown on the card.
+  - **The ports:** the Ethernet interfaces (`ifType` 6), the port is the ifIndex. A device without any (a UPS, a printer without an `ifTable`) has the
+    system line and no ports.
+  - **Which device is plugged into which port**, when the MAC table is there (below).
+- The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
+  returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names
+  (`SwitchService::SNMP_COLUMNS`), no SET, 16 columns, 2000 lines, 12 seconds, only the device it was given. The community is sealed for that agent like
+  the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login). It is stored encrypted, but shown in the
+  settings (it is read only, every signed-in user is a trusted operator).
+- The server reads the lines (`SwitchService::parseSnmp`): down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and
+  more *1000M full*, 100 Mb/s *100M full*, less *10M full* (the duplex is not read, full is assumed). Bad packets are `ifInErrors` + `ifOutErrors`.
+- The same measured values, card, network map and alerts as for the TP-Link switch. An agent older than 1.39.0 gets no SNMP probe.
 - **Devices are plugged into the ports by their MAC address** when the switch has a MAC table (BRIDGE-MIB `dot1dTpFdbPort`, Q-BRIDGE-MIB
-  `dot1qTpFdbPort`, the bridge port turned into the ifIndex with `dot1dBasePortIfIndex`; the agent walks them as three more columns, so no newer
-  agent is needed). `SwitchService::pair` matches the addresses with those of the devices (interfaces, the followed MAC of a ping-only device, the
+  `dot1qTpFdbPort`, the bridge port turned into the ifIndex with `dot1dBasePortIfIndex`; the agent walks them as three more columns). `SwitchService::pair` matches the addresses with those of the devices (interfaces, the followed MAC of a ping-only device, the
   Wake-on-LAN MAC) and sets the switch and the port like by hand, marked `auto` (`lan.switch_auto`).
   - A device seen by several switches goes to the port with the fewest MAC addresses behind it (the nearest one); when two are equal, to none.
     A port with more than 16 addresses is a trunk to another switch: nothing is paired with it.
   - **By hand wins**: a device plugged in by hand (the dropdown of a port) is never moved. One paired by the MAC follows the cable (it moves when
     its address is learned on another port). One you take off its port is marked `off` and is not paired again.
   - The tables are kept in the cache for an hour; the devices are looked at again when a table changes, or every 10 minutes.
-- Not covered (simple on purpose): SNMP v1/v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
+- Not covered (simple on purpose): SNMP v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
 
