@@ -175,9 +175,6 @@ export function createNetworkMap(root, data) {
                 collapsed.set(edge.to, edge.from);
             }
         }
-        for (const [network, gateway] of collapsed) {
-            elements.get(gateway)?.querySelector('.nm-sub')?.append(` · ${nodes.get(network).label}`);
-        }
         // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
         const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
         const isOpen = (network) => (collapsed.has(network) ? true : chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
@@ -542,6 +539,24 @@ export function createNetworkMap(root, data) {
         const drawSide = () => {
             sideLayer.innerHTML = sideLinks.map((edge) => side(edge, hover.has(edge.from) || hover.has(edge.to))).join('');
         };
+        // The devices of a network the gateway stands for are in a frame with its name (at the bottom, where no link comes in).
+        const frames = [];
+        const FRAME = 12;
+        for (const network of collapsed.keys()) {
+            const grid = grids.get(network);
+            const at = gridBox.get(network);
+            if (!grid || !at) {
+                continue;
+            }
+            const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
+            frames.push(`<rect class="nm-frame is-${kind}" x="${at.left - FRAME}" y="${at.top - FRAME}" width="${grid.width + FRAME * 2}" height="${grid.height + FRAME * 2}" rx="14"></rect>`);
+            const label = document.createElement('div');
+            label.className = `nm-frame-label is-${kind}`;
+            label.style.left = `${at.left - FRAME + 14}px`;
+            label.style.top = `${at.top + grid.height + FRAME}px`;
+            label.innerHTML = `<b>${esc(nodes.get(network).label)}</b>${nodes.get(network).sub ? ` · ${esc(nodes.get(network).sub)}` : ''}`;
+            layer.appendChild(label);
+        }
         // A device plugged into a port of a switch that is not in its grid (the gateway of the network: its card hangs above the node of the
         // network): a link from the port, down and across above the node of the network, round it and into the top of the device.
         const remote = [];
@@ -579,7 +594,7 @@ export function createNetworkMap(root, data) {
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
             bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" d="${curve(points)}"></path>`);
         }
-        svg.innerHTML = `<g>${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
+        svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');
         drawSide();
         layer.onpointerover = (event) => {
