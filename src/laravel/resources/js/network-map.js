@@ -167,9 +167,20 @@ export function createNetworkMap(root, data) {
                 members.set(main.get(node.id), [...(members.get(main.get(node.id)) || []), node.id]);
             }
         }
+        // A network whose gateway is a router with its ports on the card (SNMP) has no node of its own: the gateway stands for it, the devices
+        // hang from the gateway (its name is under the gateway). Always open.
+        const collapsed = new Map();
+        for (const edge of map.edges) {
+            if (nodes.get(edge.from)?.kind === 'gateway' && nodes.get(edge.from).switch && nodes.get(edge.to)?.kind === 'network') {
+                collapsed.set(edge.to, edge.from);
+            }
+        }
+        for (const [network, gateway] of collapsed) {
+            elements.get(gateway)?.querySelector('.nm-sub')?.append(` · ${nodes.get(network).label}`);
+        }
         // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
         const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
-        const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
+        const isOpen = (network) => (collapsed.has(network) ? true : chosen.has(network) ? chosen.get(network) : (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
@@ -294,6 +305,8 @@ export function createNetworkMap(root, data) {
             composites.forEach((id) => inGrid.add(id));
             ids.forEach((id) => inGrid.add(id));
         }
+        // The node of a network the gateway stands for is not drawn.
+        collapsed.forEach((gateway, network) => hidden.add(network));
         // The other networks of the devices that are shown in a grid.
         const sideLinks = map.edges.filter((edge) => inGrid.has(edge.to) && edge.from !== main.get(edge.to));
         for (const id of hidden) {
@@ -327,7 +340,7 @@ export function createNetworkMap(root, data) {
         for (const [network, grid] of grids) {
             graph.setNode(grid.id, { width: grid.width, height: grid.height });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
-            graph.setEdge(network, grid.id, { minlen: 1, weight: 2 });
+            graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
         for (const edge of map.edges) {
             if (nodes.has(edge.from) && nodes.has(edge.to) && placed(edge.to) && placed(edge.from)) {
@@ -395,6 +408,13 @@ export function createNetworkMap(root, data) {
             el.style.left = `${x - width / 2}px`;
             el.style.top = `${y - height / 2}px`;
             box.set(id, { x, top: y - height / 2, bottom: y + height / 2, left: x - width / 2, right: x + width / 2 });
+        }
+        // The links of a network the gateway stands for start at the bottom of the gateway.
+        for (const [network, gateway] of collapsed) {
+            const at = box.get(gateway);
+            if (at) {
+                box.set(network, { x: at.x, top: at.bottom, bottom: at.bottom, left: at.x, right: at.x });
+            }
         }
         const bars = [];
         const routes = [];
@@ -538,9 +558,10 @@ export function createNetworkMap(root, data) {
                     : { x: at.x, y: at.bottom };
                 const dev = box.get(node.id);
                 const net = box.get(main.get(node.id));
-                // Into the top of the device beside its middle (where the link of the network comes in), round the node of the network, not through it.
+                // Into the top of the device beside its middle (where the link of the network comes in), round the node of the network, not through it
+                // (a network the gateway stands for has no node).
                 const entryX = dev.x + 14;
-                const lane = net && entryX > net.left - 16 && entryX < net.right + 16 ? (dev.x < net.x ? net.left - 16 : net.right + 16) : entryX;
+                const lane = net && net.right > net.left && entryX > net.left - 16 && entryX < net.right + 16 ? (dev.x < net.x ? net.left - 16 : net.right + 16) : entryX;
                 remote.push({ node, at, net, start, dev, entryX, lane, grid, port: card.ports.find((p) => p.port === Number(node.plug.port)) });
             }
         }
@@ -550,7 +571,8 @@ export function createNetworkMap(root, data) {
         goingRight.forEach((r, i) => { r.level = goingRight.length - 1 - i; });
         goingLeft.forEach((r, i) => { r.level = goingLeft.length - 1 - i; });
         for (const r of remote) {
-            const across = Math.min(r.at.bottom + 10 + LEVEL * (r.level || 0), (r.net ? r.net.top : r.dev.top) - 12);
+            // Above the bar of the network (32 under the node), or above the node of the network.
+            const across = Math.min(r.at.bottom + 10 + LEVEL * (r.level || 0), r.net && r.net.right > r.net.left ? r.net.top - 12 : r.at.bottom + 26);
             const entry = r.dev.top - r.grid.top < 1 ? r.grid.top - 20 : r.dev.top - GAP.y / 2;
             const raw = [[r.start.x, r.start.y], [r.start.x, across], [r.lane, across], [r.lane, entry], [r.entryX, entry], [r.entryX, r.dev.top]];
             // No point twice in a row (the corner of a link of no length would not be drawn).
