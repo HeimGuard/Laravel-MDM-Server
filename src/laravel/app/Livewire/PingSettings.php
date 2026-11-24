@@ -33,8 +33,8 @@ class PingSettings extends Component
 
     public bool $switchHasPassword = false;
 
-    /** The community of SNMP (v1 or v2c), empty for a device without it: the portal finds out the rest (SwitchService). Not with a switch kind above. */
-    public string $snmpCommunity = '';
+    /** The device is read over SNMP (set on the SNMP page). */
+    public bool $snmp = false;
 
     public function mount(int $deviceId): void
     {
@@ -45,11 +45,10 @@ class PingSettings extends Component
         $this->mac = (string) $device->ping_mac;
         $this->via = (string) ($device->ping_via_id ?? '');
         $snmp = (string) $device->switch_type === \App\Services\SwitchService::SNMP;
+        $this->snmp = $snmp;
         $this->switchType = $snmp ? '' : (string) $device->switch_type;
         $this->switchUser = (string) $device->switch_user;
         $this->switchHasPassword = ! $snmp && (string) $device->switch_password !== '';
-        // A community is shown (it is read only, every signed-in user is a trusted operator): empty turns SNMP off.
-        $this->snmpCommunity = $snmp ? (string) \App\Services\SwitchService::password($device) : '';
     }
 
     public function save(): void
@@ -97,7 +96,7 @@ class PingSettings extends Component
 
     /**
      * The settings of the switch (null and an error when they are not valid): a kind chosen by hand (user and password, the password stays
-     * when the field is blank), otherwise SNMP when there is a community, otherwise none. Passwords are stored encrypted.
+     * when the field is blank), otherwise what SNMP set (the SNMP page) or none. The password is stored encrypted.
      *
      * @return array<string, ?string>|null
      */
@@ -105,23 +104,9 @@ class PingSettings extends Component
     {
         $none = ['switch_type' => null, 'switch_user' => null, 'switch_password' => null];
         if ($this->switchType === '') {
-            $community = trim($this->snmpCommunity);
-            if ($community === '') {
-                return $none;
-            }
-            if (mb_strlen($community) > 100 || preg_match('/[\x00-\x1f]/', $community)) {
-                $this->addError('snmpCommunity', __('Enter the SNMP community.'));
-
-                return null;
-            }
-
-            return [
-                'switch_type' => \App\Services\SwitchService::SNMP,
-                'switch_user' => null,
-                // The same community is not encrypted again (it would be a change every time).
-                'switch_password' => (string) $device->switch_type === \App\Services\SwitchService::SNMP && \App\Services\SwitchService::password($device) === $community
-                    ? $device->switch_password : \App\Services\SwitchService::storePassword($community),
-            ];
+            // SNMP is set on its own page (Livewire\Snmp\Page): it stays as it is.
+            return (string) $device->switch_type === \App\Services\SwitchService::SNMP
+                ? ['switch_type' => $device->switch_type, 'switch_user' => null, 'switch_password' => $device->switch_password] : $none;
         }
         $user = trim($this->switchUser);
         $stored = (string) $device->switch_type === $this->switchType ? (string) $device->switch_password : '';

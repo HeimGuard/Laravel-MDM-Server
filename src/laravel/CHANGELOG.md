@@ -8,7 +8,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Added
-- **SNMP** (agents 1.39.0+): enter only the **SNMP community** in the Ping settings of a ping-only device (v1 and v2c, the agent tries both); the portal finds out the rest:
+- **SNMP** (agents 1.39.0+): a new item in the menu (the icon of syslog) where you enter only the address and the **SNMP community** of a device, or the community of a ping-only device that exists (v1 and v2c, the agent tries both); the portal finds out the rest:
   the version, what the device is (name and description on its card), its ports (link and speed, bad packets, packets sent and received, on the card, the network map and in the
   alerts) and, when it has the MAC table, **which device is plugged into which port** (automatically, by the MAC address: what is set by hand stays, a device taken off a
   port is not paired again, a trunk to another switch is skipped).

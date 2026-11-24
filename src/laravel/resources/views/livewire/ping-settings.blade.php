@@ -27,12 +27,6 @@
             <div class="form-text">{{ __('Automatic: an agent in its network; in another subnet (behind a router) the stationary agents of each site try in turn until one gets an answer and keep it. Choose an agent when you know which one reaches it.') }}</div>
         </div>
         <div class="col-12">
-            <label class="form-label" for="ping-settings-snmp">{{ __('SNMP community') }}</label>
-            <input autocomplete="off" class="form-control @error('snmpCommunity') is-invalid @enderror" id="ping-settings-snmp" type="text" wire:model="snmpCommunity" @disabled($switchType !== '')>
-            @error('snmpCommunity') <div class="invalid-feedback">{{ $message }}</div> @enderror
-            <div class="form-text">{{ __('Leave empty if the device has no SNMP. The portal finds out the rest: the version (1 or 2c), what the device is, its ports and, when it has the table, which device is plugged into which port (agents :version or newer).', ['version' => \App\Services\SwitchService::SNMP_VERSION]) }}</div>
-        </div>
-        <div class="col-12">
             <label class="form-label" for="ping-settings-switch">{{ __('Switch without SNMP') }}</label>
             <select class="form-select" id="ping-settings-switch" wire:model.live="switchType">
                 <option value="">{{ __('None') }}</option>
@@ -40,6 +34,9 @@
                     <option value="{{ $type }}">{{ $label }}</option>
                 @endforeach
             </select>
+            @if ($snmp && $switchType === '')
+                <div class="form-text"><a href="{{ route('snmp') }}">{{ __('This device is read over SNMP: the community is set on the SNMP page.') }}</a></div>
+            @endif
             <div class="form-text">{{ __('A switch without SNMP: the agent that pings it reads the ports from its web page (agents :version or newer).', ['version' => \App\Services\SwitchService::VERSION]) }}</div>
         </div>
         @if ($switchType !== '')

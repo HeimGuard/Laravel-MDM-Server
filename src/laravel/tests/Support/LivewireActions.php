@@ -89,6 +89,11 @@ final class LivewireActions
                 'getOptions' => $ui,
                 'submit' => $admin,
             ],
+            L\Snmp\Page::class => [
+                'add' => $user,
+                'save' => $user,
+                'remove' => $user,
+            ],
             L\Networks\Page::class => [
                 'scan' => $user,
                 'scanAll' => $user,

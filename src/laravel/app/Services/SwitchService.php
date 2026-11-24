@@ -170,6 +170,25 @@ class SwitchService
         LiveUpdates::device($device->id, 'switch');
     }
 
+    /** The devices read over SNMP. */
+    public static function snmpDevices(): \Illuminate\Support\Collection
+    {
+        return Device::query()->where('kind', 'ping')->whereSettingIn('switch.type', [self::SNMP])->get()
+            ->sortBy(fn (Device $device) => mb_strtolower($device->displayName))->values();
+    }
+
+    /** Sets the community of a ping-only device (SNMP on), or removes it (null: SNMP off). The old answers say nothing about the new one. */
+    public static function setCommunity(Device $device, ?string $community): void
+    {
+        $device->forceFill([
+            'switch_type' => $community === null ? null : self::SNMP,
+            'switch_user' => null,
+            'switch_password' => $community === null ? null : self::storePassword($community),
+        ])->save();
+        Cache::forget(self::versionKey($device));
+        Cache::forget(self::macsKey($device));
+    }
+
     /** What the device said about itself, null before the first answer: name, descr, version. */
     public static function info(Device $device): ?array
     {

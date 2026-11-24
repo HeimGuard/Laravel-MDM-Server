@@ -238,31 +238,55 @@ class SwitchPortsTest extends TestCase
         $this->assertNull(SwitchService::ports($switch));
     }
 
-    public function test_the_snmp_community_alone_makes_a_device_an_snmp_device(): void
+    public function test_the_snmp_page_adds_a_device_with_only_an_address_and_a_community(): void
     {
         $this->actingAs(User::factory()->create());
-        $switch = $this->switchDevice(false);
+        $this->get(route('snmp'))->assertOk()->assertSee('fa-stream', false);
 
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])
-            ->set('snmpCommunity', 'public')
-            ->call('save')
+        Livewire::test(\App\Livewire\Snmp\Page::class)
+            ->set('address', '192.168.1.50')
+            ->call('add')
+            ->assertHasErrors('community')
+            ->set('community', 'public')
+            ->call('add')
             ->assertHasNoErrors();
 
-        $fresh = $switch->fresh();
-        $this->assertSame('snmp', $fresh->switch_type);
-        $this->assertTrue(blank($fresh->switch_user));
-        $this->assertNotSame('public', $fresh->switch_password);
-        $this->assertTrue(SwitchService::enabled($fresh));
-        $stored = $fresh->switch_password;
-        // It is shown again; saved as it is, it is not encrypted again; empty turns SNMP off.
-        $form = Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->assertSet('snmpCommunity', 'public')->assertSet('switchType', '');
-        $form->call('save');
-        $this->assertSame($stored, $switch->fresh()->switch_password);
-        $form->set('snmpCommunity', '')->call('save');
-        $this->assertFalse(SwitchService::enabled($switch->fresh()));
-        // The community is not taken for the password of a switch kind chosen later.
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('snmpCommunity', 'public')->call('save');
-        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $switch->id])->set('switchType', 'tplink')->set('switchUser', 'admin')->call('save')->assertHasErrors('switchUser');
+        $device = Device::query()->where('kind', 'ping')->where('name', '192.168.1.50')->firstOrFail();
+        $this->assertSame(['snmp', '192.168.1.50'], [$device->switch_type, $device->ping_address]);
+        $this->assertNotSame('public', $device->switch_password);
+        $this->assertSame('public', SwitchService::password($device));
+        $this->assertTrue(SwitchService::enabled($device));
+        // Not an address: no device.
+        Livewire::test(\App\Livewire\Snmp\Page::class)->set('address', 'router')->set('community', 'public')->call('add')->assertHasErrors('address');
+        $this->assertSame(1, SwitchService::snmpDevices()->count());
+    }
+
+    public function test_an_existing_ping_device_gets_snmp_and_its_community_is_changed_and_removed_on_the_page(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
+        $tplink = $this->switchDevice();
+
+        $page = Livewire::test(\App\Livewire\Snmp\Page::class)->set('device', (string) $nas->id)->set('community', 'public')->call('add')->assertHasNoErrors();
+        $this->assertSame('snmp', $nas->fresh()->switch_type);
+        // The device of another kind is not offered.
+        $page->assertDontSee($tplink->displayName.' (');
+
+        $page->set('communities.'.$nas->id, 'private')->call('save', $nas->id);
+        $this->assertSame('private', SwitchService::password($nas->fresh()));
+        $stored = $nas->fresh()->switch_password;
+        // The same community is not encrypted again.
+        $page->call('save', $nas->id);
+        $this->assertSame($stored, $nas->fresh()->switch_password);
+        // The Ping settings keep SNMP when they are saved without a switch kind.
+        Livewire::test(\App\Livewire\PingSettings::class, ['deviceId' => $nas->id])->assertSet('switchType', '')->call('save')->assertHasNoErrors();
+        $this->assertTrue(SwitchService::enabled($nas->fresh()));
+        // Empty: off, the device stays.
+        $page->set('communities.'.$nas->id, '')->call('save', $nas->id);
+        $this->assertFalse(SwitchService::enabled($nas->fresh()));
+        $this->assertNotNull(Device::find($nas->id));
+        // A device that is not read over SNMP is not found.
+        $page->call('remove', $nas->id)->assertNotFound();
     }
 
     private function pingDevice(string $name, string $mac): Device

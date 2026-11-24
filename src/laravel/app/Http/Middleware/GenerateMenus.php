@@ -35,6 +35,11 @@ class GenerateMenus
                 'fas fa-project-diagram',
                 'networks',
             ],
+            // The same icon as syslog on a device (the stream of messages a device sends).
+            'SNMP' => [
+                'fas fa-stream',
+                'snmp',
+            ],
             'Security' => [
                 'fas fa-shield-alt',
                 'security',

@@ -29,7 +29,7 @@ class LocaleTest extends TestCase
         'Account created', 'Account locked out', 'Added to administrators', 'Audit log cleared', 'Service installed', 'Scheduled task created',
         'Malware detected', 'Protection turned off', 'Failed sudo', 'Restart', 'Agent update', 'Disk',
         'S.M.A.R.T.', 'Remediation', 'All', 'Windows', 'Linux', 'Every hour',
-        'Every 6 hours', 'Every day at 3:00', 'Every Sunday at 3:00', 'On the 1st of the month at 3:00', 'Devices', 'Networks',
+        'Every 6 hours', 'Every day at 3:00', 'Every Sunday at 3:00', 'On the 1st of the month at 3:00', 'Devices', 'Networks', 'SNMP',
         'Security', 'Notifications', 'Settings', 'Audit', 'User', 'Logs',
         'Jobs', 'Cache', 'Backup', 'Api', 'Critical', 'High',
         'Medium', 'Low', 'Info', 'Pending', 'Sent', 'Compliant',

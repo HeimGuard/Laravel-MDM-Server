@@ -113,8 +113,11 @@ user name and password.
 
 #### SNMP (agents 1.39.0+)
 
-The same card for any device with SNMP v1 or v2c. In **Ping settings** enter only the read-only **SNMP community** (the address is the
-one of the device); the portal finds out the rest itself. Empty turns it off. The **Switch without SNMP** below it (TP-Link) is the other way.
+The same card for any device with SNMP v1 or v2c. It has its own item in the menu, **SNMP** (the icon of syslog, `fas fa-stream`, page `/snmp`,
+`Livewire\Snmp\Page`): enter only the address and the read-only **SNMP community** of a device, or the community of a ping-only device that
+exists (a new device gets the prefix 24 and the MAC that network discovery sees at its address); the portal finds out the rest itself. The
+list of the page shows what each device says about itself, its ports and the community to change (empty or **Remove** turns SNMP off, the
+device stays). The Ping settings of the device only link to it; the **Switch without SNMP** there (TP-Link) is the other way, one at a time.
 
 - **Discovery:** the agent walks the standard columns and the server reads what the device is from the answer. The OIDs are the same on every
   make: SNMPv2-MIB (`sysDescr`, `sysName`, RFC 3418), IF-MIB (the interfaces, RFC 2863), BRIDGE-MIB and Q-BRIDGE-MIB (the MAC table, RFC 4188 / 4363);
@@ -128,8 +131,8 @@ one of the device); the portal finds out the rest itself. Empty turns it off. Th
 - The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
   returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names
   (`SwitchService::SNMP_COLUMNS`), no SET, 16 columns, 2000 lines, 12 seconds, only the device it was given. The community is sealed for that agent like
-  the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login). It is stored encrypted, but shown in the
-  settings (it is read only, every signed-in user is a trusted operator).
+  the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login). It is stored encrypted, but shown on the
+  SNMP page (it is read only, every signed-in user is a trusted operator).
 - The server reads the lines (`SwitchService::parseSnmp`): down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and
   more *1000M full*, 100 Mb/s *100M full*, less *10M full* (the duplex is not read, full is assumed). Bad packets are `ifInErrors` + `ifOutErrors`.
 - The same measured values, card, network map and alerts as for the TP-Link switch. An agent older than 1.39.0 gets no SNMP probe.
