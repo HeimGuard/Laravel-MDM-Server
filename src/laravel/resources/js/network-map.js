@@ -171,9 +171,9 @@ export function createNetworkMap(root, data) {
                 members.set(main.get(node.id), [...(members.get(main.get(node.id)) || []), node.id]);
             }
         }
-        // A network whose gateway is a router with its ports on the card (SNMP): while it is open the gateway stands for it (no node of its
-        // own, the devices hang from the gateway in a frame that has what the node had and closes the network like the node), closed it is
-        // the node again.
+        // An open network has no node of its own: what is above it (its gateway, or the public address) stands for it, its devices are in a frame
+        // that has what the node had and closes the network like the node; closed it is the node again. A VPN keeps its node. (A gateway that is a
+        // router with its ports on the card has the devices plugged into them hung under it; its network is open at first.)
         const standIn = new Map();
         for (const edge of map.edges) {
             if (nodes.get(edge.from)?.kind === 'gateway' && nodes.get(edge.from).switch && nodes.get(edge.to)?.kind === 'network') {
@@ -183,7 +183,15 @@ export function createNetworkMap(root, data) {
         // A network with a switch of its own (the ports are read) is open (its devices hang under the switch), the others when they are small.
         const hasSwitch = (network) => (members.get(network) || []).some((id) => nodes.get(id)?.switch);
         const isOpen = (network) => (chosen.has(network) ? chosen.get(network) : standIn.has(network) || (members.get(network) || []).length <= OPEN_UP_TO || hasSwitch(network));
-        const collapsed = new Map([...standIn].filter(([network]) => isOpen(network)));
+        const collapsed = new Map();
+        for (const edge of map.edges) {
+            const above = nodes.get(edge.from);
+            const network = nodes.get(edge.to);
+            if (network?.kind === 'network' && network.network !== 'vpn' && ['gateway', 'site'].includes(above?.kind) && !collapsed.has(edge.to)
+                && isOpen(edge.to) && (members.get(edge.to) || []).length > 0) {
+                collapsed.set(edge.to, edge.from);
+            }
+        }
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
         // Devices plugged into a port of a switch of their own network hang under the card of the switch (a link from
@@ -210,6 +218,8 @@ export function createNetworkMap(root, data) {
         }
         // The cell of a switch in the grid: its card and the row of its devices under it (room for the links between).
         const LEVEL = 8;
+        // The room inside the frame of a network round its devices.
+        const FRAME = 24;
         const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
         // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
         // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
@@ -413,7 +423,9 @@ export function createNetworkMap(root, data) {
         }
         // A grid is one block of its real size under its network: dagre centers the network over it.
         for (const [network, grid] of grids) {
-            graph.setNode(grid.id, { width: grid.width, height: grid.height });
+            // (the frame of an open network is round it: room for it)
+            const pad = collapsed.has(network) ? FRAME * 2 : 0;
+            graph.setNode(grid.id, { width: grid.width + pad, height: grid.height + pad });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
             graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
@@ -671,7 +683,6 @@ export function createNetworkMap(root, data) {
         };
         // The devices of a network the gateway stands for are in a frame with its name (at the bottom, where no link comes in).
         const frames = [];
-        const FRAME = 24;
         for (const network of collapsed.keys()) {
             const grid = grids.get(network);
             const at = gridBox.get(network);

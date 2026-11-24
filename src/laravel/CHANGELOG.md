@@ -7,6 +7,11 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Network map: every open network (a VPN aside) looks the same: no node of its own, its devices are in a dashed frame with the name of the network and the number of its devices (and how many are offline) on the
+  bottom edge, linked from what is above it (the gateway or the public address). A click on the name closes the network (it is the node again), a click on the node opens it. Before, only the network of a gateway
+  with its ports read had the frame.
+
 ## [1.40.2] - 2026-11-24
 
 ### Changed
