@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.40.1] - 2026-11-24
+
 ### Added
 - **SNMP** (agents 1.39.0+): a new item in the menu of a ping-only device, next to Ping settings (the icon of syslog), where you enter only the **SNMP community** (v1 and v2c, the agent
   tries both); the portal finds out the rest: the version, what the device is (name and description in the window), its ports (link and speed, bad packets, packets sent and
