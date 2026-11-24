@@ -7,6 +7,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Network map: the devices plugged into the ports of the gateway hang under its card in one row centred under it (a switch with its devices brings them under it) and are in the frame of the network,
+  which has more room inside. They no longer have a long cable across the map.
+
 ### Added
 - Network map: a button **Download** (the arrow under the zoom buttons) saves the map as a PNG picture of its real size (up to twice the pixels, 16000 px at most) with every network open, whatever the window shows.
 
