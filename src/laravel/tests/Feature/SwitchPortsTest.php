@@ -487,6 +487,30 @@ class SwitchPortsTest extends TestCase
         $this->assertStringContainsString('Plugged into', (string) $gateway['title']);
     }
 
+    public function test_a_router_that_is_the_gateway_and_is_read_over_snmp_has_its_ports_on_the_gateway(): void
+    {
+        Cache::flush();
+        $relay = $this->relay('1.39.0');
+        $data = json_decode(json_encode($relay->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $relay->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $router = new Device;
+        $router->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24,
+            'switch_type' => 'snmp', 'switch_password' => SwitchService::storePassword('public')])->save();
+        SwitchService::record($relay, [['id' => $router->id, 'status' => 200, 'body' => $this->snmpAnswer(), 'error' => null, 'version' => 1]]);
+
+        $nodes = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id');
+
+        // Still one node (the gateway), now with the ports: the same card as of a switch among the devices.
+        $this->assertFalse($nodes->has('device:'.$router->id));
+        $gateway = $nodes->first(fn (array $node) => $node['kind'] === 'gateway');
+        $this->assertSame('Turris', $gateway['label']);
+        $this->assertSame($router->id, $gateway['switch']['id']);
+        $this->assertSame([1, 2, 3, 5], array_column($gateway['switch']['ports'], 'port'));
+        $this->assertSame([6, 0, 5, 5], array_column($gateway['switch']['ports'], 'link'));
+    }
+
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void
     {
         $switch = $this->switchDevice();
