@@ -292,6 +292,8 @@ class NetworkMap
         $byId = $devices->keyBy('id');
         $relays = $pings->whereNotNull('ping_relay_id')->countBy('ping_relay_id');
 
+        // Devices plugged into a switch by hand (switch_id, switch_port), by the switch.
+        $plugged = $devices->filter(fn (Device $device) => $device->switch_id !== null)->groupBy('switch_id');
         // Networks and their gateways (one node per gateway MAC, or IP: a router of several networks).
         // The gateway nodes that are a device of the portal: device id => node ids.
         $gatewayNodes = [];
@@ -343,14 +345,14 @@ class NetworkMap
             } else {
                 $this->node($id, 'gateway', $known?->displayName ?? __('Gateway'), $gateway, 'fas fa-route', 'success',
                     url: $known ? route('devices', ['selectedDeviceId' => $known->id]) : null, badges: [__('gateway')],
-                    extra: ['title' => $mac ? __('MAC :mac', ['mac' => $mac]) : null, 'group' => $network['site']]);
+                    // A router whose ports are read (SNMP): the gateway has the card with its ports, like a switch among the devices.
+                    extra: ['title' => $mac ? __('MAC :mac', ['mac' => $mac]) : null, 'group' => $network['site'],
+                        'switch' => $known ? SwitchService::mapCard($known, $plugged->get($known->id, collect())) : null]);
                 $this->edge('site:'.$network['site'], $id, 'uplink', true);
             }
             $this->edge($id, $key, 'uplink', $online > 0);
         }
 
-        // Devices plugged into a switch by hand (switch_id, switch_port), by the switch.
-        $plugged = $devices->filter(fn (Device $device) => $device->switch_id !== null)->groupBy('switch_id');
         // Devices, linked to each of their networks.
         foreach ($devices as $device) {
             if (isset($gatewayNodes[$device->id])) {
