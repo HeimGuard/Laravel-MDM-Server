@@ -20,11 +20,12 @@
 3. **Gateways**: the default gateway of the interfaces (agents 1.15.0+, with its MAC from the
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
-   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The network of such a gateway has no
-   node of its own: the gateway stands for it and the devices hang from it, in a dashed frame with the name of the network and the number of its devices on the bottom edge (a click on it closes the network: it is the node of
-   the network again, and a click on the node opens it); a device with a cable from a port of the gateway has only the cable (no link of the network), in a column of its
-   own at the edge of the frame; the devices plugged into
-   its ports stay in the grid (with the tag *port N*) and are linked from the port.
+   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. The network of such
+   a gateway has no node of its own: the gateway stands for it, and its devices are in a dashed frame (the name of the network and the number of its
+   devices on the bottom edge; a click on it closes the network, it is the node of the network again, and a click on the node opens it). The devices
+   plugged into its ports hang under its card in one row centred under it (the first half left of the middle, the others right; the middle is free for
+   the link of the network), a switch with its devices brings them under it, and the cables are bent like the ones of a switch. The other devices of
+   the network are under them, linked to the network as before. A device with a cable has only the cable.
 4. **Networks**: the IPv4 subnets of the interfaces, LAN, Wi-Fi, LAN + Wi-Fi or mobile. A network
    is told apart by the MAC of its gateway (every device in it sees the same router), so one LAN is
    one network whatever address its devices reach the server from, and two homes with
