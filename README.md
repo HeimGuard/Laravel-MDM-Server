@@ -80,10 +80,10 @@ Dark mode (the portal follows the theme of the browser). They are taken by the w
 | ![Networks](docs/screenshots/networks.png) | ![Network table](docs/screenshots/network-discovery.png) |
 | **A router with its ports (SNMP)** | **A ping-only device** |
 | ![A router with its ports](docs/screenshots/device-ports.png) | ![A ping-only device](docs/screenshots/ping.png) |
-| **Security** | **Notifications** |
-| ![Security](docs/screenshots/security.png) | ![Notifications](docs/screenshots/notifications.png) |
-| **Dashboard** | **Adding a device** |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Adding a device](docs/screenshots/enrolment.png) |
+| **Notifications** | **Dashboard** |
+| ![Notifications](docs/screenshots/notifications.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| **Adding a device** | **Drives of a device** |
+| ![Adding a device](docs/screenshots/enrolment.png) | ![Drives of a device](docs/screenshots/device-drives.png) |
 | **Login** | **On a phone** |
 | ![Login](docs/screenshots/login.png) | <img alt="On a phone" src="docs/screenshots/mobile.png" width="240"> |
 

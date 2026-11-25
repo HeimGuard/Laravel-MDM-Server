@@ -103,8 +103,10 @@ async function step(page, name, work) {
     });
     // A router read over SNMP: its ports.
     await step(page, 'device-ports', async () => {
+        await page.setViewportSize({ width: 1440, height: 1300 });
         await device(page, 'Turris');
         await shot(page, 'device-ports');
+        await page.setViewportSize({ width: 1440, height: 1000 });
     });
     await step(page, 'enrolment', async () => {
         await page.goto(`${base}/devices`);
@@ -120,14 +122,13 @@ async function step(page, name, work) {
         // Everything in the picture, not the part the map opened with.
         await page.locator('[data-zoom="fit"]').click();
         await page.waitForTimeout(800);
-        // Then a little closer, on the middle of the network (the wheel zooms where the pointer is): the text of the cards is readable in the README.
-        const frame = await page.locator('rect.nm-frame').first().boundingBox();
-        if (frame) {
-            await page.mouse.move(frame.x + frame.width / 2, frame.y + frame.height / 2);
-            await page.mouse.wheel(0, -250);
-            await page.waitForTimeout(700);
-        }
+        // A wide window: the whole map in the picture, the text of the cards as large as it gets.
+        await page.setViewportSize({ width: 1900, height: 1100 });
+        await page.waitForTimeout(500);
+        await page.locator('[data-zoom="fit"]').click();
+        await page.waitForTimeout(800);
         await shot(page, 'networks');
+        await page.setViewportSize({ width: 1440, height: 1000 });
     });
     // The list of the networks with their unknown devices.
     await step(page, 'network-discovery', async () => {
@@ -135,7 +136,7 @@ async function step(page, name, work) {
         await page.waitForTimeout(800);
         await shot(page, 'network-discovery');
     });
-    for (const [name, path] of [['notifications', '/notifications'], ['security', '/security'], ['dashboard', '/dashboard']]) {
+    for (const [name, path] of [['notifications', '/notifications'], ['dashboard', '/dashboard']]) {
         await step(page, name, async () => {
             await page.goto(`${base}${path}`);
             await shot(page, name);
