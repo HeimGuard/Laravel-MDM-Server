@@ -8,12 +8,14 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Added
+- Agent 1.42.0: the software of the running Docker containers is part of the security inventory (`Source` docker): one item per image with a version, the name of the image (`nginx`) and the version from its tag, or from the `NAME_VERSION` variable the image sets (`NGINX_VERSION`), so the CVE rules judge it like any other software. Nothing is run inside a container.
 - Security tab, **Open ports**: the ports a scan from another host reached are marked *Confirmed from outside* (ports only the scan saw are added as *Outside only*; a host without an agent shows them too). The observations under the Open ports card of the overview are gone, they are security findings.
 - Agent 1.41.0: SNMP reads the default route and the ARP table of a router, so the map knows which device is in front of it (Turris behind the modem): the router hangs under that gateway and its card says the way out, no setting needed.
 - Ports by hand: a ping-only device without SNMP and TP-Link (an unmanaged switch, a modem) gets its ports from the item **Ports** of the device menu (how many); they show on the network map without a link and the devices are plugged into them by hand.
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Fixed
+- Security: a finding whose CVEs Ubuntu has not assessed yet, or whose package files were replaced after install, was shown as *Low* whatever the CVEs were (a 9+ CVE too). It is at most *Medium*, like a CVE without a fix, and the card says the worst severity of its CVEs.
 - The dialog of a port: the optional port of a ticked device is chosen by clicking the ports it really has (the boxes of its card: WAN, 0, 1…; a second click takes it back), not by a number; a device without ports (an agent, a printer) has no such choice.
 - Agent 1.41.1 (Linux): the systemd unit sets `HOME=/root` and a running agent adds it to an older unit: the snap `powershell` 7.7.0 aborted (SIGABRT) at its start in a service without `HOME`, the agent then restarted for ever (a rolled back update did not help). `docs/installation.md` has the check and the manual fix for an agent that cannot start.
 - The dialog of a port (the devices plugged into it, and the optional port of theirs) opens from the table of the ports on the page of the device too: after the number of each port there is always a box, the device (a click goes to the device) or an empty one with a dashed border and a question mark (a click opens the dialog); the table refreshes when it is saved.

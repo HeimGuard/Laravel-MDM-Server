@@ -665,10 +665,6 @@ class SecurityScanner
                 $item['Remediation'] = SecurityCves::remediation($items, $cves);
                 $item['Severity'] = $match['severity'] = SecurityCves::severity($cves, $definition['severity'] ?? 'medium');
                 $item['WorstSeverity'] = SecurityCves::worst($cves) ?? $item['Severity'];
-                // Only CVEs Ubuntu has not assessed, or of a package whose files were replaced (the version is unknown): at most low.
-                if (in_array(SecurityCves::status($cves), ['not_triaged', 'modified'], true) && (SecurityRules::SEVERITIES[$match['severity']] ?? 9) < SecurityRules::SEVERITIES['low']) {
-                    $item['Severity'] = $match['severity'] = 'low';
-                }
             }
             $found[$fingerprint] = $match + ['message' => SecurityRules::render($template, $item), 'item' => $item];
             if (count($found) >= self::MAX_FINDINGS_PER_RULE) {

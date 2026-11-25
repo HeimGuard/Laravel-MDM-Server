@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.41.1'
+$AgentVersion = '1.42.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -1907,6 +1907,36 @@ function Add-SecurityModifiedPackages {
     }
 }
 
+function Get-DockerSoftware {
+    # The software inside the running containers (agents 1.42.0+): what the package manager of the host does not list. One item per
+    # image with a version, Source 'docker', Name the short name of the image ("nginx" for "ghcr.io/acme/nginx:1.27.1-alpine"), Version
+    # from the tag, or, for a tag like "latest", the NAME_VERSION variable the image sets (NGINX_VERSION of the official nginx).
+    # Nothing is run in a container: only `docker ps` and `docker image inspect` of the local daemon.
+    if (-not (Get-Command -Name docker -CommandType Application -ErrorAction SilentlyContinue)) { return }
+
+    [string[]]$images = @(docker ps --format '{{.Image}}' 2>$null | Where-Object { $_ -is [string] -and $_.Trim() } | ForEach-Object { $_.Trim() } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0) { return }
+    foreach ($reference in $images) {
+        if ($reference -match '^sha256:' -or $reference -match '@sha256:') { continue }
+        # registry:5000/team/nginx:1.27.1-alpine -> repository, tag ("latest" when there is none)
+        [string]$repository = $reference
+        [string]$tag = 'latest'
+        if ($reference -match '^(?<repo>.+?):(?<tag>[^:/]+)$') { $repository = $Matches['repo']; $tag = $Matches['tag'] }
+        [string]$product = ($repository -split '/')[-1]
+        [string]$imageVersion = ''
+        if ($tag -match '^v?(?<number>\d+(?:\.\d+){1,3})(?:$|[-_+])') {
+            $imageVersion = $Matches['number']
+        } else {
+            [string]$variable = ($product.ToUpperInvariant() -replace '[^A-Z0-9]', '_') + '_VERSION'
+            foreach ($line in @(docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $reference 2>$null)) {
+                if ("$line" -match "^$variable=v?(?<number>\d+(?:\.\d+){1,3})") { $imageVersion = $Matches['number']; break }
+            }
+        }
+        if (-not $imageVersion) { continue }
+        [PSCustomObject]@{ Name = ConvertTo-SecurityText $product 300; Version = $imageVersion; Publisher = ConvertTo-SecurityText $repository 200; Source = 'docker' }
+    }
+}
+
 function Get-SecurityProcesses {
     param (
         [bool]$OnLinux,
@@ -2616,6 +2646,8 @@ function Get-SecurityInventory {
 
     $inventory = @{}
     try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath -FileScan $FileScan | Select-Object -First 5000) } catch { }
+    # The software of the running containers (agents 1.42.0+), after the host's own so the limit never cuts the packages of the host.
+    try { $inventory['software'] = @(@($inventory['software']) + @(Get-DockerSoftware | Select-Object -First 200)) } catch { }
     # As many as the server takes of each list (more and it refuses the whole collection).
     try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }
@@ -4880,7 +4912,7 @@ function Start-SecurityCollection {
         $FileScan = $false
     )
 
-    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Add-SecurityModifiedPackages', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
+    return Start-AgentJob -Name 'security' -Functions 'ConvertTo-SecurityText', 'Get-DpkgFixedCves', 'Get-AptPolicy', 'Get-OfflineUserSoftware', 'Get-AppxSoftware', 'Get-PortableSoftware', 'Get-PortableSoftwareLinux', 'Get-PortableUnique', 'Get-LinuxFirewall', 'Test-LinuxDeviceEncrypted', 'Get-LinuxUnencryptedMounts', 'Get-AptUpdateState', 'Add-SecuritySoftwareContext', 'Add-SecurityModifiedPackages', 'Get-SecurityOs', 'Get-SecuritySoftware', 'Get-DockerSoftware', 'Get-SecurityProcesses', 'Get-SecurityListening', 'Get-SecurityStartup', 'Get-SecurityAdmins', 'Get-SecurityPosture', 'Get-SecurityShortHash', 'Get-Sha256Hex', 'Get-SecurityDockerLogs', 'Get-SecurityWebLogs', 'Get-SecurityLogs', 'Get-SecurityInventory' -ArgumentList $OnLinux, $Since, $PID, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, "$AgentDir/security-cves.json", "$AgentDir/apt-update.json", $FileScan -ScriptBlock {
         param ($OnLinux, $Since, $AgentPid, $InContainer, $SendLogs, $PolicyJson, $CursorsJson, $CachePath, $AptStatePath, $FileScan)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         return Get-SecurityInventory -OnLinux $OnLinux -CachePath $CachePath -Since $Since -AgentPid $AgentPid -InContainer $InContainer -SendLogs $SendLogs -PolicyJson $PolicyJson -CursorsJson $CursorsJson -AptStatePath $AptStatePath -FileScan $FileScan
