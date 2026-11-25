@@ -62,6 +62,19 @@
                                     @endunless
                                 </tr>
                             @endforeach
+                            {{-- Devices plugged into a port this device does not have (any more): a row each, with the device to take off it (the map has a button). --}}
+                            @foreach ($plugged->filter(fn ($others, $number) => $number !== '' && ! in_array((int) $number, array_column($ports, 'port'), true)) as $number => $others)
+                                <tr class="text-body-secondary" wire:key="switch-port-missing-{{ $number }}">
+                                    <td class="fw-medium text-nowrap" colspan="{{ $manual ? 1 : 5 }}">
+                                        {{ $number }}<span class="fw-normal ms-1">{{ __('Not a port now') }}</span>
+                                        @foreach ($others as $other)
+                                            <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Not a port of this device now: click to take the device off it') }}">
+                                                <x-badge color="warning" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
+                                            </a>
+                                        @endforeach
+                                    </td>
+                                </tr>
+                            @endforeach
                         </tbody>
                     </table>
                 </div>

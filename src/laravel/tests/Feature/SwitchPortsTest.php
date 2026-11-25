@@ -875,6 +875,26 @@ class SwitchPortsTest extends TestCase
         $this->assertSame(4, $router['wan']);
     }
 
+    public function test_a_device_plugged_into_a_port_the_switch_does_not_have_any_more_has_a_button_to_take_it_off(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        // Plugged into port 9 once (a port that was one then): the switch has 5 now.
+        $printer->forceFill(['switch_id' => $switch->id, 'switch_port' => 9])->save();
+
+        $card = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id')['device:'.$switch->id]['switch'];
+        $this->assertSame([1, 2, 3, 4, 5, 9], array_column($card['ports'], 'port'));
+        $missing = collect($card['ports'])->firstWhere('port', 9);
+        $this->assertTrue($missing['missing']);
+        $this->assertSame([$printer->displayName], array_column($missing['devices'], 'name'));
+        // The dialog of that port opens and takes the device off it.
+        Livewire::test(\App\Livewire\Networks\SwitchPort::class, ['deviceId' => $switch->id, 'port' => 9])->assertSee('printer')->set('selected', [])->call('save');
+        $this->assertNull($printer->fresh()->switch_id);
+    }
+
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void
     {
         $switch = $this->switchDevice();
