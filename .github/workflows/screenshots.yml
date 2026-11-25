@@ -1,0 +1,101 @@
+name: Screenshots
+
+# The pictures of the README (docs/screenshots, dark mode): the portal is installed here, seeded (`php artisan db:seed`: the devices and the
+# home network of the seeders), and docs/screenshots/shoot.cjs takes them. Run it by hand (Actions > Screenshots > Run workflow) when
+# the portal looks different; a change of the script or of this file runs it on the pull request and commits the pictures to its branch.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - docs/screenshots/shoot.cjs
+      - .github/workflows/screenshots.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    # A pull request from a fork has no token to push with.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: local
+      APP_DEBUG: 'false'
+      APP_URL: http://127.0.0.1:8000
+      APP_SYSTEM_ADMINS: '1'
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ${{ github.workspace }}/screenshots.sqlite
+      BROADCAST_CONNECTION: log
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_sqlite, sqlite3
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install the portal
+        working-directory: src/laravel
+        run: |
+          composer install --no-interaction --no-progress --prefer-dist
+          npm ci
+          npm run build
+          cp .env.example .env
+          php artisan key:generate
+          touch "$DB_DATABASE"
+          php artisan migrate --force
+          php artisan db:seed --force
+
+      - name: Start the portal
+        working-directory: src/laravel
+        run: |
+          nohup php artisan serve --host=127.0.0.1 --port=8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8000/setup && break; sleep 1; done
+
+      - name: Install the browser
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm i playwright
+          npx playwright install --with-deps chromium
+
+      - name: Take the screenshots
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+          BASE_URL: http://127.0.0.1:8000
+          OUT: docs/screenshots
+        run: node docs/screenshots/shoot.cjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: docs/screenshots/*.png
+
+      - name: The server log
+        if: failure()
+        run: tail -n 60 "$RUNNER_TEMP/serve.log"
+
+      - name: Commit the pictures
+        if: github.event_name == 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots/*.png
+          if git diff --cached --quiet; then echo "no change"; else
+            git commit -m "Screenshots of the README (dark mode)"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
