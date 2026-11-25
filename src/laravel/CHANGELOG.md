@@ -13,7 +13,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Fixed
-- The dialog of a port (the devices plugged into it, and the optional port of theirs) opens from the table of the ports on the page of the device too: click the number of the port; the table refreshes when it is saved.
+- The dialog of a port (the devices plugged into it, and the optional port of theirs) opens from the table of the ports on the page of the device too: after the number of each port there is always a box, the device (a click goes to the device) or an empty one with a dashed border and a question mark (a click opens the dialog); the table refreshes when it is saved.
 - Network map: a device plugged into a port its switch does not have any more (the numbers of the interfaces changed, a port that is switched off) has a button of its own on the card (dashed, the number of the port) that opens the dialog to take the device off it; the table of the ports lists it too.
 - Network map: the cable from a port nothing reads (a modem without SNMP, ports by hand) to a router has the colour of the WAN port of the router, which is read.
 - Ports are labelled as on the device: `lan0` is 0, the port a router leaves by (its default route) is WAN (Turris: WAN, 0 to 4, not 4 to 9 by the interface number); the name is shown beside it. The map, the table of the device and the choice of the port use the label.
