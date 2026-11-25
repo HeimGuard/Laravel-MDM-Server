@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.40.2'
+$AgentVersion = '1.41.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -5471,7 +5471,7 @@ function ConvertFrom-SnmpResponse {
 function Invoke-SnmpWalk {
     # SNMP v2c (Version 1: GetBulk, 20 values per request) or v1 (Version 0: GetNext): walks each column (an OID the server named)
     # of a device and returns the numbers and strings as lines "oid value" or "oid x:hex" (the server reads them). Read only, no
-    # SET, at most 16 columns, 2000 lines, the Deadline for all of it. It throws when the device does not answer.
+    # SET, at most 24 columns (16 before 1.41.0: the server sends the older agents 16), 2000 lines, the Deadline for all of it. It throws when the device does not answer.
     param ([System.Net.IPAddress]$Address, [int]$Port, [string]$Community, $Columns, [datetime]$Deadline, [int]$Version = 1)
 
     [System.Collections.Generic.List[string]]$lines = New-Object 'System.Collections.Generic.List[string]'
@@ -5480,7 +5480,7 @@ function Invoke-SnmpWalk {
         $client.Client.ReceiveTimeout = 2000
         $client.Connect($Address, $Port)
         [int]$requestId = Get-Random -Minimum 1000 -Maximum 2000000000
-        foreach ($column in @(@($Columns) | Select-Object -First 16)) {
+        foreach ($column in @(@($Columns) | Select-Object -First 24)) {
             if ("$column" -notmatch '^1(\.[0-9]{1,10}){3,20}$') { throw 'An OID the agent does not read' }
             [string]$current = "$column"
             [bool]$finished = $false

@@ -422,14 +422,28 @@ class NetworkMap
                 // The cable from that port to the card of the gateway (network-map.js).
                 $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;
                 $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];
-                // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one,
-                // so this gateway hangs under it, not under the public address.
-                if ($owner !== $nodeId && isset($this->nodes[$owner]) && $this->nodes[$owner]['kind'] === 'gateway' && ($this->nodes[$owner]['group'] ?? null) === ($this->nodes[$nodeId]['group'] ?? null)) {
-                    $site = 'site:'.$this->nodes[$nodeId]['group'];
-                    unset($this->edges[$site.'>'.$nodeId]);
-                    $this->edge($owner, $nodeId, 'uplink', true);
+                // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one.
+                $this->hangUnder($nodeId, $owner);
+            }
+        }
+
+        // The way out of a router read over SNMP (agents 1.41.0+): its default route says which device is in front of it, found by the address of the next hop or its MAC
+        // address (the ARP table). A router whose next hop is a gateway of the portal hangs under it, with or without a cable set by hand.
+        foreach ($gatewayNodes as $deviceId => $nodeIds) {
+            $device = $byId->get($deviceId);
+            $uplink = $device !== null && (string) $device->switch_type === SwitchService::SNMP ? $device->latestInventory('snmp', 'uplink') : null;
+            if (! is_array($uplink) || empty($uplink['via'])) {
+                continue;
+            }
+            $mac = NetworkNeighbour::normalizeMac($uplink['mac'] ?? null);
+            $front = $byId->first(fn (Device $other) => $other->id !== $deviceId && isset($gatewayNodes[$other->id])
+                && ($other->ping_address === $uplink['via'] || ($mac !== null && in_array($mac, array_filter([NetworkNeighbour::normalizeMac($other->ping_mac), NetworkNeighbour::normalizeMac($other->wake_mac)]), true))));
+            foreach (array_keys($nodeIds) as $nodeId) {
+                $wan = __('Way out: :interface via :via', ['interface' => $uplink['interface'] ?? __('interface'), 'via' => $uplink['via']]);
+                $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$wan : $wan;
+                if ($front !== null) {
+                    $this->hangUnder($nodeId, array_key_first($gatewayNodes[$front->id]));
                 }
-                $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
             }
         }
 
@@ -597,6 +611,20 @@ class NetworkMap
     private function node(string $id, string $kind, string $label, ?string $sub, string $icon, string $tone, string $state = 'up', ?string $url = null, array $badges = [], array $extra = []): void
     {
         $this->nodes[$id] = compact('id', 'kind', 'label', 'sub', 'icon', 'tone', 'state', 'url', 'badges') + $extra;
+    }
+
+    /**
+     * A gateway hangs under another gateway of the same site (the traffic goes out through it): its link from the public address goes, the one from that gateway
+     * comes. Not when that one is under it already (no loop) or they are not in the same site.
+     */
+    private function hangUnder(string $nodeId, string $parentId): void
+    {
+        if ($parentId === $nodeId || ! isset($this->nodes[$parentId], $this->nodes[$nodeId]) || $this->nodes[$parentId]['kind'] !== 'gateway'
+            || ($this->nodes[$parentId]['group'] ?? null) !== ($this->nodes[$nodeId]['group'] ?? null) || isset($this->edges[$nodeId.'>'.$parentId])) {
+            return;
+        }
+        unset($this->edges['site:'.$this->nodes[$nodeId]['group'].'>'.$nodeId]);
+        $this->edge($parentId, $nodeId, 'uplink', true);
     }
 
     private function edge(string $from, string $to, string $type, bool $up, ?string $label = null): void

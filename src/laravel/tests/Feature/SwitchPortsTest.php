@@ -226,8 +226,8 @@ class SwitchPortsTest extends TestCase
         $byDescr = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['status'].'.1 1'."\n".$c['if_descr'].'.1 x:'.bin2hex('lan9'));
         $this->assertSame(['lan9'], array_column($byDescr, 'name'));
         $this->assertCount(2, SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['type'].'.2 6'));
-        // The agent walks the columns of the names too (at most 16 columns).
-        $this->assertLessThanOrEqual(16, count(SwitchService::SNMP_COLUMNS));
+        // The agent walks the columns of the names too (at most 24 columns, 16 for an agent older than 1.41.0).
+        $this->assertLessThanOrEqual(24, count(SwitchService::SNMP_COLUMNS));
     }
 
     public function test_turris_has_six_ports_lan0_to_lan4_and_the_wan_eth2_not_its_cpu_links(): void
@@ -247,8 +247,70 @@ class SwitchPortsTest extends TestCase
         // Without the addresses (not read yet): as before, the five of the switch chip.
         $without = implode("\n", array_filter($lines, fn (string $line) => ! str_starts_with($line, $c['ip_if'])));
         $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4'], array_column(SwitchService::parseSnmp($without), 'name'));
-        // The agent walks at most 16 columns.
-        $this->assertLessThanOrEqual(16, count($c));
+        // The agent walks at most 24 columns.
+        $this->assertLessThanOrEqual(24, count($c));
+    }
+
+    /** As Turris answers: the WAN eth2 with the address of the modem's network, the default route through the modem, its MAC address in the ARP table. */
+    private function turrisBody(): string
+    {
+        $c = SwitchService::SNMP_COLUMNS;
+        $lines = [];
+        foreach ([[1, 'lo', 24], [2, 'eth0', 6], [3, 'eth1', 6], [4, 'eth2', 6], [5, 'lan0', 6], [6, 'lan1', 6], [7, 'lan2', 6], [8, 'lan3', 6], [9, 'lan4', 6], [13, 'br-lan', 6]] as [$index, $name, $type]) {
+            array_push($lines, $c['type'].".$index $type", $c['status'].".$index 1", $c['if_name'].".$index x:".bin2hex($name));
+        }
+        array_push($lines, $c['ip_if'].'.192.168.1.1 13', $c['ip_if'].'.192.168.2.2 4',
+            $c['ip_route'].'.0.0.0.0.0.0.0.0.0.192.168.2.1 4', $c['ip_route'].'.192.168.1.0.255.255.255.0.0.0.0.0.0 13',
+            $c['arp_mac'].'.4.192.168.2.1 x:e0d3627862e5', $c['arp_mac'].'.13.192.168.1.5 x:aabbccddeeff');
+
+        return implode("\n", $lines);
+    }
+
+    public function test_the_way_out_of_a_router_is_its_default_route_with_the_mac_of_the_next_hop(): void
+    {
+        $this->assertSame(['index' => 4, 'interface' => 'eth2', 'address' => '192.168.2.2', 'via' => '192.168.2.1', 'mac' => 'E0:D3:62:78:62:E5'], SwitchService::uplink($this->turrisBody()));
+        // No default route (or an agent that does not read the routes): nothing in front.
+        $c = SwitchService::SNMP_COLUMNS;
+        $this->assertNull(SwitchService::uplink($c['type'].'.1 6'."\n".$c['ip_route'].'.192.168.1.0.255.255.255.0.0.0.0.0.0 13'));
+        // The routes and the ARP table are asked of an agent that walks more than 16 columns only.
+        $old = $this->relay('1.40.2');
+        $new = $this->relay('1.41.0', 'relay-new');
+        $this->assertLessThanOrEqual(16, count(SwitchService::snmpColumns($old)));
+        $this->assertArrayNotHasKey('ip_route', SwitchService::snmpColumns($old));
+        $this->assertArrayHasKey('ip_route', SwitchService::snmpColumns($new));
+        $this->assertArrayHasKey('arp_mac', SwitchService::snmpColumns($new));
+    }
+
+    public function test_a_router_whose_next_hop_is_another_gateway_hangs_under_it_by_what_it_reads(): void
+    {
+        Cache::flush();
+        $lan = $this->relay('1.41.0');
+        $data = json_decode(json_encode($lan->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $lan->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $second = $this->relay('1.41.0', 'relay2');
+        $data = json_decode(json_encode($second->data), true);
+        $data['machine']['Networks'][0] = ['Name' => 'eth1', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'Mac' => 'AA-BB-CC-DD-EE-02', 'IPAddresses' => ['192.168.2.5'],
+            'Addresses' => [['Address' => '192.168.2.5', 'PrefixLength' => 24]], 'Gateway' => '192.168.2.1', 'GatewayMac' => 'E0-D3-62-78-62-E5'];
+        $second->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24,
+            'switch_type' => 'snmp', 'switch_password' => SwitchService::storePassword('public')])->save();
+        $archer = new Device;
+        $archer->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24, 'ping_mac' => 'E0:D3:62:78:62:E5'])->save();
+        SwitchService::record($lan, [['id' => $turris->id, 'status' => 200, 'body' => $this->turrisBody(), 'error' => null, 'version' => 1]]);
+
+        $map = \App\Support\NetworkMap::build();
+        $nodes = collect($map['nodes']);
+        $router = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Turris');
+        $modem = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Archer');
+        $edges = collect($map['edges']);
+        $this->assertTrue($edges->contains(fn (array $edge) => $edge['from'] === $modem['id'] && $edge['to'] === $router['id']));
+        $this->assertFalse($edges->contains(fn (array $edge) => str_starts_with($edge['from'], 'site:') && $edge['to'] === $router['id']));
+        $this->assertStringContainsString('eth2', (string) $router['title']);
+        // The interface with the address is a port of the router: the WAN.
+        $this->assertContains('eth2', array_column($router['switch']['ports'], 'name'));
     }
 
     public function test_an_interface_switched_off_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void

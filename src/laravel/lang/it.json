@@ -745,6 +745,8 @@
     "SNMP": "SNMP",
     "SNMP of :device": "SNMP di :device",
     "Ports of :device": "Porte di :device",
+    "Way out: :interface via :via": "Uscita: :interface tramite :via",
+    "interface": "interfaccia",
     "Not read": "Non letto",
     "Number of ports": "Numero di porte",
     "Set by hand": "Impostato a mano",

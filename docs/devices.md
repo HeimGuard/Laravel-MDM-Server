@@ -140,7 +140,7 @@ off (the device stays). The window shows what the device says about itself once 
   - **Which device is plugged into which port**, when the MAC table is there (below).
 - The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
   returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names
-  (`SwitchService::SNMP_COLUMNS`), no SET, 16 columns, 2000 lines, 12 seconds, only the device it was given. The community is sealed for that agent like
+  (`SwitchService::SNMP_COLUMNS`), no SET, 24 columns (16 before agent 1.41.0), 2000 lines, 12 seconds, only the device it was given. The community is sealed for that agent like
   the password above (`secret` = `{"community": "..."}`) and goes with every probe (UDP has no login). It is stored encrypted, but shown in the
   SNMP window (it is read only, every signed-in user is a trusted operator).
 - The server reads the lines (`SwitchService::parseSnmp`): down unless `ifOperStatus` is up; the link is the speed (`ifHighSpeed`, else `ifSpeed`): 1000 Mb/s and
@@ -155,6 +155,17 @@ off (the device stays). The window shows what the device says about itself once 
     its address is learned on another port). One you take off its port is marked `off` and is not paired again.
   - The tables are kept in the cache for an hour; the devices are looked at again when a table changes, or every 10 minutes.
 - Not covered (simple on purpose): SNMP v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
+
+#### The way out of a router (agents 1.41.0+)
+
+A router read over SNMP says which device is in front of it, so the map does not need it set by hand. Two more columns (`SwitchService::SNMP_COLUMNS`, sent only to agents that walk more than 16:
+`SNMP_ROUTE_VERSION`): the routes (`ipCidrRouteIfIndex`, `1.3.6.1.2.1.4.24.4.1.5`: the default route `0.0.0.0/0` has the next hop in its index and the interface it leaves by as its value) and the ARP table
+(`ipNetToMediaPhysAddress`, `1.3.6.1.2.1.4.22.1.2`: the MAC address of every neighbour, the interface and the address in the index). Only integers and strings, no `IpAddress` type.
+- `SwitchService::uplink` makes `{index, interface, address, via, mac}` of them (Turris: `eth2`, its address `192.168.2.2`, via `192.168.2.1`, MAC `E0:D3:62:78:62:E5`), kept in the inventory `snmp` / `uplink`.
+- `NetworkMap`: when the next hop is a **gateway of the portal** (by its address, or by the MAC of the ARP table against the MAC of the device), the router hangs under it: the link from the public
+  address goes, the one from that gateway comes (`hangUnder`), and the title of the card says the way out (`Way out: eth2 via 192.168.2.1`). The same as plugging it into a port of that gateway by hand, without the port.
+- Not covered: a next hop that is a device of the portal but no gateway of a network (the map has no gateway node for it); plug the router into its port by hand then (Ports).
+- The WAN interface is a **port** of the router: the one that has an IPv4 address is not taken for the CPU (Turris and Omnia: `eth0`, `eth1` are the links of the SoC to its switch chip, `eth2` is the WAN).
 
 #### Ports by hand (no agent version needed)
 
