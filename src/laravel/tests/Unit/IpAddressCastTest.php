@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Casts\IpAddress;
+use App\Casts\Ipv6Address;
 use App\Services\IpAddressService;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
@@ -54,5 +55,42 @@ class IpAddressCastTest extends TestCase
         $this->assertTrue(IpAddressService::contains('192.168.1.0/24', '192.168.1.254'));
         $this->assertFalse(IpAddressService::contains('192.168.1.0/24', '192.168.2.1'));
         $this->assertFalse(IpAddressService::contains('bad', '192.168.2.1'));
+    }
+
+    public function test_an_ipv6_address_is_stored_as_32_characters_and_read_as_the_compressed_text(): void
+    {
+        $cast = new Ipv6Address;
+        $model = new class extends Model {};
+
+        $this->assertSame('fe800000000000000000000000000001', $cast->set($model, 'ip', 'fe80::1', []));
+        $this->assertSame('fe80::1', $cast->get($model, 'ip', 'fe800000000000000000000000000001', []));
+        $this->assertSame('fe80::1', $cast->get($model, 'ip', $cast->set($model, 'ip', 'FE80:0:0:0:0:0:0:1', []), []));
+        $this->assertSame('::1', $cast->get($model, 'ip', '00000000000000000000000000000001', []));
+        $this->assertNull($cast->get($model, 'ip', null, []));
+        $this->assertNull($cast->set($model, 'ip', '', []));
+        // What is stored already is kept.
+        $this->assertSame('fe800000000000000000000000000001', $cast->set($model, 'ip', 'fe800000000000000000000000000001', []));
+        foreach (['192.168.1.1', 'fe80::1/64', 'xyz', 'fe80:::1'] as $bad) {
+            try {
+                $cast->set($model, 'ip', $bad, []);
+                $this->fail($bad.' was stored');
+            } catch (InvalidArgumentException) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
+    public function test_the_range_of_an_ipv6_network(): void
+    {
+        $this->assertSame(['fe800000000000000000000000000000', 'fe80000000000000ffffffffffffffff'], IpAddressService::cidrToRangeV6('fe80::/64'));
+        $this->assertSame(['20010db8000000000000000000000000', '20010db800000000ffffffffffffffff'], IpAddressService::cidrToRangeV6('2001:db8::1/64'));
+        $this->assertSame(['fe800000000000000000000000000001', 'fe800000000000000000000000000001'], IpAddressService::cidrToRangeV6('fe80::1'));
+        // A prefix that is not a multiple of 8.
+        $this->assertSame(['fe000000000000000000000000000000', 'fe01ffffffffffffffffffffffffffff'], IpAddressService::cidrToRangeV6('fe00::/15'));
+        $this->assertNull(IpAddressService::cidrToRangeV6('fe80::/129'));
+        $this->assertNull(IpAddressService::cidrToRangeV6('192.168.1.0/24'));
+
+        $this->assertTrue(IpAddressService::containsV6('fe80::/64', 'fe80::dead:beef'));
+        $this->assertFalse(IpAddressService::containsV6('fe80::/64', 'fe80:0:0:1::1'));
     }
 }

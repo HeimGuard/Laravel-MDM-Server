@@ -57,7 +57,10 @@ The model keeps `$device->ping_address`, `wake_mac`, ... as attributes (`HasDevi
 An IPv4 address that is searched by network is stored as a number, not as text: `unsignedBigInteger` (what `ip2long` gives, 192.168.1.1 = 3232235777) with the cast
 `App\Casts\IpAddress` (`'ip' => IpAddress::class`): the model reads and writes the dotted text, the column holds the number. A network is then one range on an index,
 `IpAddressService::whereInNetwork($query, 'ip', '192.168.1.0/24')` (`whereBetween`), and the same on SQLite and PostgreSQL. The cast refuses what is no IPv4 address
-(it does not store 0). **IPv4 only**: an IPv6 address stays in a text column. Not applied to the tables yet (each needs a migration that converts the data and a `down()`).
+(it does not store 0). **IPv4 only**; IPv6 has its own cast, `App\Casts\Ipv6Address`: 128 bits do not fit in a number column, so it is `char(32)` (32 hexadecimal
+characters, lower case, zero-padded: `fe80::1` = `fe800000000000000000000000000001`), which sorts like the address, so a network is again one range
+(`IpAddressService::whereInNetworkV6`). A column that can hold both families is two columns (or the family decides which cast the model uses); there is no
+one cast for both. Not applied to the tables yet (each needs a migration that converts the data and a `down()`).
 
 ## `value_definitions` and `value_samples`
 
