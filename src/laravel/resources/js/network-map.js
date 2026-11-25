@@ -829,7 +829,10 @@ export function createNetworkMap(root, data) {
             // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
             const port = owner.switch.ports.find((p) => p.port === Number(node.plug.port));
-            bars.push(`<path class="nm-link is-port ${SPEED(port?.link ?? 0)}${nodes.get(node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path>`);
+            // A port nothing reads (set by hand, a modem without SNMP): the cable has the colour of the port of the router it goes into (its WAN), which is read.
+            const remote = node.wan ? node.switch?.ports.find((p) => p.port === Number(node.wan)) : null;
+            const link = port && port.link >= 0 ? port.link : (remote?.link ?? port?.link ?? 0);
+            bars.push(`<path class="nm-link is-port ${SPEED(link)}${nodes.get(node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path>`);
         }
         svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');

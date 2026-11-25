@@ -13,6 +13,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Fixed
+- Network map: the cable from a port nothing reads (a modem without SNMP, ports by hand) to a router has the colour of the WAN port of the router, which is read.
 - Ports are labelled as on the device: `lan0` is 0, the port a router leaves by (its default route) is WAN (Turris: WAN, 0 to 4, not 4 to 9 by the interface number); the name is shown beside it. The map, the table of the device and the choice of the port use the label.
 - Network map: in the dialog of a port, a ticked device can say the port of its own the cable goes into (optional: the device is chosen first); it is the WAN port (or the uplink) on the cable and wins over the default route.
 - Network map: a router plugged into a port of the gateway above it has the cable from that port, no second link beside it, and the cable ends on the WAN port of the router (the one its default route leaves by: a dot and `WAN` in the tooltip, agents 1.41.0+).
