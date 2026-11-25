@@ -120,15 +120,12 @@ async function step(page, name, work) {
         // Everything in the picture, not the part the map opened with.
         await page.locator('[data-zoom="fit"]').click();
         await page.waitForTimeout(800);
-        // Then closer to the network (the wheel zooms where the pointer is): the text of the cards is readable in the README.
-        const frame = await page.locator('.nm-frame-label').first().boundingBox();
+        // Then a little closer, on the middle of the network (the wheel zooms where the pointer is): the text of the cards is readable in the README.
+        const frame = await page.locator('rect.nm-frame').first().boundingBox();
         if (frame) {
-            await page.mouse.move(frame.x + 380, frame.y - 40);
-            for (let i = 0; i < 3; i++) {
-                await page.mouse.wheel(0, -250);
-                await page.waitForTimeout(250);
-            }
-            await page.waitForTimeout(500);
+            await page.mouse.move(frame.x + frame.width / 2, frame.y + frame.height / 2);
+            await page.mouse.wheel(0, -250);
+            await page.waitForTimeout(700);
         }
         await shot(page, 'networks');
     });
