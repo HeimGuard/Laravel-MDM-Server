@@ -31,7 +31,7 @@ async function shot(page, name) {
 async function device(page, name, tab = null) {
     await page.goto(`${base}/devices`);
     await settle(page, 400);
-    await page.locator('.list-group, .device-list, body').first().getByText(name, { exact: true }).first().click();
+    await page.getByText(new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i')).first().click();
     await settle(page, 1500);
     if (tab) {
         await page.getByRole('tab', { name: new RegExp(tab, 'i') }).or(page.getByText(new RegExp(`^\\s*${tab}`, 'i')).first()).first().click();
@@ -56,11 +56,12 @@ async function device(page, name, tab = null) {
         await Promise.all([page.waitForURL((url) => !url.pathname.includes('/setup')), page.locator('form button[type=submit], form input[type=submit]').first().click()]);
     }
 
-    await device(page, 'DESKTOP-HOME');
+    // The devices of the seeders (DeviceSeeder, NetworkMapSeeder).
+    await device(page, 'nas');
     await shot(page, 'device');
-    await device(page, 'DESKTOP-HOME', 'Updates');
+    await device(page, 'asus-pc-2', 'Updates');
     await shot(page, 'device-updates');
-    await device(page, 'Printer');
+    await device(page, 'Tiskárna');
     await shot(page, 'ping');
     // A router read over SNMP: its ports.
     try {
@@ -97,7 +98,7 @@ async function device(page, name, tab = null) {
     const small = await phone.newPage();
     await small.goto(`${base}/devices`);
     await settle(small, 600);
-    await small.getByText('DESKTOP-HOME', { exact: true }).first().click();
+    await small.getByText(/^\s*nas\s*$/i).first().click();
     await shot(small, 'mobile');
 
     // The login page (no session).
