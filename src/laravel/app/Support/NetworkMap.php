@@ -282,8 +282,8 @@ class NetworkMap
                 badges: [trans_choice(':count device|:count devices', $count)], extra: ['group' => $site]);
             $this->edge('internet', 'site:'.$site, 'wan', true);
         }
-        // The public addresses devices were behind before, nobody there now: faint, with when.
-        foreach (NetworkSite::query()->whereNotIn('address', $sites)->orderBy('address')->get() as $known) {
+        // The public addresses devices were behind before, nobody there now: faint, with when; not after a week (they have no devices and no activity).
+        foreach (NetworkSite::query()->whereNotIn('address', $sites)->where('last_seen_at', '>=', now()->subDays(NetworkSite::MAP_DAYS))->orderBy('address')->get() as $known) {
             $this->node('site:'.$known->address, 'site', $known->address, __('public · last seen :time', ['time' => $known->last_seen_at->diffForHumans()]),
                 'fas fa-building', 'secondary', state: 'down', badges: [trans_choice(':count device|:count devices', 0)], extra: ['group' => $known->address]);
             $this->edge('internet', 'site:'.$known->address, 'wan', false);

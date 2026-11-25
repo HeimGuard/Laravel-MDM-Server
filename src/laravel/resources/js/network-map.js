@@ -646,10 +646,18 @@ export function createNetworkMap(root, data) {
         }
         // The links of one parent share a bar (the tree); the bars of different parents (and tunnels)
         // that would lie on each other run side by side in lanes.
+        // The links that come into the frame of an open network bend 16 above its top edge (the cables of the devices hung from a gateway bend 16 under
+        // it), not wherever the layout left the room: the bars of the network, and the links of a device to its other networks (a VPN).
+        const FRAME_BEND = 16;
+        const hungNetwork = (network) => collapsed.has(network) && Boolean(box.get(collapsed.get(network))?.rowBottom) && primary.get(collapsed.get(network)) === network;
+        const frameTopOf = (network) => (hungNetwork(network) ? box.get(collapsed.get(network)).bottom + 14 : (gridBox.get(network)?.top ?? 0) - FRAME);
+        const framed = (network) => collapsed.has(network) && gridBox.has(network) && !hungNetwork(network);
         const LANE = 9;
         const bars_ = new Map();
         for (const route of routes) {
-            route.base = route.a.bottom + 32;
+            // (the lanes of the bars side by side go up from there, not into the frame)
+            route.up = framed(route.bundle);
+            route.base = route.up ? frameTopOf(route.bundle) - FRAME_BEND : route.a.bottom + 32;
             if (Math.abs(route.a.x - route.b.x) >= 0.5) {
                 const key = Math.round(route.base);
                 const group = bars_.get(key) || new Map();
@@ -674,7 +682,7 @@ export function createNetworkMap(root, data) {
         const drawn = routes.map((route) => {
             const lane = bars_.get(Math.round(route.base))?.get(route.bundle)?.lane || 0;
 
-            return `<path class="${route.cls}" d="${curve(elbow(route.a, route.b, route.base + lane * LANE))}">${route.title}</path>`;
+            return `<path class="${route.cls}" d="${curve(elbow(route.a, route.b, route.base + (route.up ? -lane : lane) * LANE))}">${route.title}</path>`;
         });
 
         // The other networks of a device: faint, clear while the device or the network is pointed at.
@@ -702,7 +710,8 @@ export function createNetworkMap(root, data) {
             }
             // Into the middle of the device's top, where its other links come in: across over the grid
             // for its first row, else across the gap above it.
-            const y = dev.top - grid.top < 1 ? grid.top - 20 : dev.top - GAP.y / 2;
+            const network = main.get(edge.to);
+            const y = dev.top - grid.top < 1 ? (framed(network) ? frameTopOf(network) - FRAME_BEND : grid.top - 20) : dev.top - GAP.y / 2;
             const right = sides.get(edge.to) === 'right';
             const entryX = dev.x;
             const channel = right ? grid.right + 14 : grid.left - 14;

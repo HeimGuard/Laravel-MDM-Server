@@ -12,6 +12,9 @@ use Illuminate\Database\Eloquent\Model;
  */
 class NetworkSite extends Model
 {
+    /** An address nobody has been behind for this many days is not on the map any more (the row stays). */
+    public const MAP_DAYS = 7;
+
     protected $fillable = ['address', 'last_seen_at'];
 
     protected $casts = ['last_seen_at' => 'datetime'];

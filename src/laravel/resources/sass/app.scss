@@ -319,7 +319,7 @@ label.mdm-tag {
         &.is-slow { border-color: var(--hg-high); }
         &.is-down { border-style: dashed; opacity: .75; }
         &.has-devices { background: var(--hg-surface-raised); }
-        &.has-errors { box-shadow: 0 0 0 2px var(--hg-high); }
+        &.has-errors { box-shadow: 0 0 0 2px var(--hg-critical); }
         &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
     }
 }
@@ -373,8 +373,10 @@ label.mdm-tag {
     display: inline-block; width: .85rem; height: .85rem; margin-right: .3rem; vertical-align: -2px; border: 2px solid var(--hg-offline); border-radius: .4rem;
     &.is-gig { border-color: var(--hg-ok); }
     &.is-fast { border-color: var(--hg-info); }
-    &.is-down { border-style: dashed; }
-    &.has-errors { border-color: var(--hg-info); box-shadow: 0 0 0 2px var(--hg-high); }
+    &.is-slow { border-color: var(--hg-high); }
+    &.is-down { border-style: dashed; opacity: .75; }
+    // As on a port: the colour of its speed with a red ring (not the orange of 10M).
+    &.has-errors { border-color: var(--hg-ok); box-shadow: 0 0 0 2px var(--hg-critical); }
 }
 
 // A network that shows or hides its devices on a click.

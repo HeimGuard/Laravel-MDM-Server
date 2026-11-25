@@ -7,6 +7,11 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Changed
+- Network map: a public address without devices that nobody has been behind for a week is not on the map any more (it stays stored and is shown again when a device is behind it).
+- Network map: the links that come into the frame of a network (the bars of the network, the link of a device to its other network such as a VPN) bend 16 px above its top edge, the cables of the devices hung from a gateway 16 px under it.
+- Network map: the colours of the ports match the legend: it has 10M (orange) too, and the ring for bad packets is red on every port (it was orange, like 10M) and in the legend, on a port of the colour of its speed.
+
 ### Fixed
 - SNMP: a router read over SNMP (the Turris) showed 15 ports instead of its 6: every Ethernet interface counted, with the ports of its CPU, bridges, VLANs and Wi-Fi. The names of the interfaces are read
   now (shown after the number of the port), the virtual ones (bridges, VLANs, Wi-Fi, tunnels, containers) and the CPU (`eth0`… of a router that names its ports `lan0`…) are left out, and the SNMP window lists all

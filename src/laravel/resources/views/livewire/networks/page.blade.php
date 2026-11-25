@@ -125,6 +125,7 @@
                         {{-- The ports of a switch whose ports are read (the card of the switch). --}}
                         <span><span class="nm-port-key is-gig"></span>1000M</span>
                         <span><span class="nm-port-key is-fast"></span>100M</span>
+                        <span><span class="nm-port-key is-slow"></span>10M</span>
                         <span><span class="nm-port-key is-down"></span>{{ __('port without a link') }}</span>
                         <span><span class="nm-port-key has-errors"></span>{{ __('bad packets') }}</span>
                     @endif
