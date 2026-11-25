@@ -167,7 +167,7 @@ class SecurityCves
      * The CVEs of a rule that affect an item.
      *
      * @param  array<int, array>  $cves
-     * @return array<string, array{id: string, severity: string, status: string, fixed: ?string}> by CVE id
+     * @return array<string, array{id: string, severity: string, cvss: ?float, kev: bool, status: string, fixed: ?string}> by CVE id
      */
     public static function affecting(array $cves, array $item, ?string $release, ?string $osId = null, ?array $index = null, ?string $arch = null): array
     {
@@ -195,7 +195,7 @@ class SecurityCves
                 $result = ['status' => 'modified', 'fixed' => $result['fixed']];
             }
             if ($result !== null) {
-                $found[$cve['id']] = ['id' => $cve['id'], 'severity' => $cve['severity'] ?? 'medium'] + $result;
+                $found[$cve['id']] = ['id' => $cve['id'], 'severity' => self::effectiveSeverity($cve), 'cvss' => self::cvss($cve), 'kev' => ! empty($cve['kev'])] + $result;
             }
         }
 
@@ -341,31 +341,56 @@ class SecurityCves
         return null;
     }
 
+    /** The CVSS base score of a CVE of a rule (the feed, agents do not matter), null when it says none. */
+    public static function cvss(array $cve): ?float
+    {
+        $score = $cve['cvss'] ?? null;
+
+        return is_numeric($score) && $score >= 0 && $score <= 10 ? round((float) $score, 1) : null;
+    }
+
+    /** The severity band of a CVSS score (the bands of the CVSS specification: 9.0 critical, 7.0 high, 4.0 medium, below low). */
+    public static function band(float $score): string
+    {
+        return match (true) {
+            $score >= 9.0 => 'critical',
+            $score >= 7.0 => 'high',
+            $score >= 4.0 => 'medium',
+            $score > 0 => 'low',
+            default => 'info',
+        };
+    }
+
     /**
-     * The severity of a finding: the most severe of its CVEs. A CVE nobody can fix yet (no fix, not yet assessed by Ubuntu) counts
-     * at most as medium: the severity says how urgent it is to act, and there is nothing to do but wait or restrict the package.
-     * worst() has the severity the CVEs really have.
+     * The severity of one CVE, as a scanner that goes by the CVE and not by what the distribution thinks of it (Nessus, OpenVAS):
+     * the more severe of what the feed says and the band of its CVSS score (a distribution's priority is its own opinion: Debian
+     * says "medium" to a CVE the NVD scores 9.8), and at least high for a CVE on the CISA list of the ones exploited in the wild.
+     */
+    public static function effectiveSeverity(array $cve): string
+    {
+        $levels = [isset(SecurityRules::SEVERITIES[$cve['severity'] ?? null]) ? $cve['severity'] : 'medium'];
+        if (($score = self::cvss($cve)) !== null && $score > 0) {
+            $levels[] = self::band($score);
+        }
+        if (! empty($cve['kev'])) {
+            $levels[] = 'high';
+        }
+        usort($levels, fn ($a, $b) => SecurityRules::SEVERITIES[$a] <=> SecurityRules::SEVERITIES[$b]);
+
+        return $levels[0];
+    }
+
+    /**
+     * The severity of a finding: the most severe of its CVEs, whatever can be done about them. How urgent the action is is said by the
+     * status (no fix yet, update available, ...), not by lowering the severity: a 9.8 nobody has fixed is still a 9.8 (it was shown as
+     * medium or low before, which hid it).
      */
     public static function severity(array $affecting, string $default = 'medium'): string
     {
-        $best = null;
-        foreach ($affecting as $cve) {
-            $level = $cve['severity'] ?? null;
-            if (! isset(SecurityRules::SEVERITIES[$level])) {
-                continue;
-            }
-            if (in_array($cve['status'] ?? null, ['no_fix', 'not_triaged', 'modified'], true) && SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES['medium']) {
-                $level = 'medium';
-            }
-            if ($best === null || SecurityRules::SEVERITIES[$level] < SecurityRules::SEVERITIES[$best]) {
-                $best = $level;
-            }
-        }
-
-        return $best ?? $default;
+        return self::worst($affecting) ?? $default;
     }
 
-    /** The most severe severity the CVEs have, whatever can be done about them. */
+    /** The most severe severity the CVEs have. */
     public static function worst(array $affecting): ?string
     {
         $best = null;
@@ -377,6 +402,23 @@ class SecurityCves
         }
 
         return $best;
+    }
+
+    /** The highest CVSS score of the CVEs, null when none has one. */
+    public static function maxCvss(array $affecting): ?float
+    {
+        $scores = array_filter(array_map(fn ($cve) => $cve['cvss'] ?? null, $affecting), fn ($score) => $score !== null);
+
+        return $scores === [] ? null : max($scores);
+    }
+
+    /** The ids of the CVEs on the CISA list of the exploited ones, sorted. */
+    public static function exploited(array $affecting): array
+    {
+        $ids = array_keys(array_filter($affecting, fn ($cve) => ! empty($cve['kev'])));
+        sort($ids);
+
+        return $ids;
     }
 
     /**

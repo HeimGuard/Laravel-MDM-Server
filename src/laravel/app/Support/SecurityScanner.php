@@ -664,10 +664,12 @@ class SecurityScanner
                 $item['Status'] = SecurityCves::STATUSES[SecurityCves::status($cves)] ?? '';
                 $item['Remediation'] = SecurityCves::remediation($items, $cves);
                 $item['Severity'] = $match['severity'] = SecurityCves::severity($cves, $definition['severity'] ?? 'medium');
-                $item['WorstSeverity'] = SecurityCves::worst($cves) ?? $item['Severity'];
-                // Only CVEs Ubuntu has not assessed, or of a package whose files were replaced (the version is unknown): at most low.
-                if (in_array(SecurityCves::status($cves), ['not_triaged', 'modified'], true) && (SecurityRules::SEVERITIES[$match['severity']] ?? 9) < SecurityRules::SEVERITIES['low']) {
-                    $item['Severity'] = $match['severity'] = 'low';
+                // What a vulnerability scanner shows beside the severity: the highest CVSS score and the CVEs exploited in the wild (CISA KEV).
+                if (($score = SecurityCves::maxCvss($cves)) !== null) {
+                    $item['MaxCvss'] = $score;
+                }
+                if (($exploited = SecurityCves::exploited($cves)) !== []) {
+                    $item['Exploited'] = self::fit($exploited, 300);
                 }
             }
             $found[$fingerprint] = $match + ['message' => SecurityRules::render($template, $item), 'item' => $item];

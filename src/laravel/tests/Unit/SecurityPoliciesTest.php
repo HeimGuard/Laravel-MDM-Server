@@ -110,20 +110,20 @@ class SecurityPoliciesTest extends TestCase
         $this->assertSame([], array_values($found)[0]['legacy']);
     }
 
-    public function test_cves_ubuntu_has_not_assessed_are_a_low_finding(): void
+    public function test_cves_ubuntu_has_not_assessed_keep_their_severity(): void
     {
         $cves = $this->cves(2, ['python3.10' => ['jammy' => ['needs-triage', '']]]);
         $cves[0]['severity'] = 'high';
         $rule = $this->cveRule($cves, '^python3');
         $found = SecurityScanner::matches($rule, [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']);
 
-        $this->assertSame('low', array_values($found)[0]['severity']);
+        $this->assertSame('high', array_values($found)[0]['severity'], 'a high CVE is not hidden as low');
         $this->assertSame('not yet assessed by Ubuntu', array_values($found)[0]['item']['Status']);
 
         $cves[1]['ubuntu'] = ['python3.10' => ['jammy' => ['needed', '']]];
-        $this->assertSame('medium', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity'], 'no fix yet: at most medium');
+        $this->assertSame('high', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity'], 'no fix yet: the severity of the CVE');
         $cves[1]['ubuntu'] = ['python3.10' => ['jammy' => ['released', '3.10.12-2']]];
-        $this->assertSame('medium', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity']);
+        $this->assertSame('high', array_values(SecurityScanner::matches($this->cveRule($cves, '^python3'), [$this->deb('python3.10', '3.10.12-1', null)], ['release' => 'jammy']))[0]['severity']);
     }
 
     public function test_the_severity_of_a_cve_finding_is_the_one_of_its_worst_cve(): void
@@ -138,8 +138,7 @@ class SecurityPoliciesTest extends TestCase
         $cves[1]['severity'] = 'critical';
         $found = SecurityScanner::matches($this->cveRule($cves, '^foo'), [$this->deb('foo', '1.0-1')], ['release' => 'resolute']);
 
-        $this->assertSame('medium', array_values($found)[0]['severity'], 'a CVE without a fix is at most medium: there is nothing to do but wait');
-        $this->assertSame('critical', array_values($found)[0]['item']['WorstSeverity'], 'what the CVEs really have is kept');
+        $this->assertSame('critical', array_values($found)[0]['severity'], 'a CVE without a fix is as severe as it is: the status says there is nothing to do yet');
     }
 
     public function test_nmap_nmap_common_and_zenmap_are_one_finding_and_netcat_openbsd_none(): void
