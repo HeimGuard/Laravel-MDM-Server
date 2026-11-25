@@ -151,8 +151,7 @@ class SecurityCvesTest extends TestCase
         $affecting = SecurityCves::affecting($cves, $item + ['Modified' => true], 'resolute');
         $this->assertSame('modified', $affecting['CVE-2026-41179']['status']);
         $this->assertSame('modified', SecurityCves::status($affecting));
-        $this->assertSame('medium', SecurityCves::severity($affecting));
-        $this->assertSame('critical', SecurityCves::worst($affecting));
+        $this->assertSame('critical', SecurityCves::severity($affecting), 'the status says what to do, the severity is the one of the CVE');
         $text = SecurityCves::remediation([$item + ['Modified' => true]], $affecting);
         $this->assertStringContainsString('dpkg --verify', $text);
         $this->assertStringNotContainsString('apt never updates', $text);
@@ -319,11 +318,42 @@ class SecurityCvesTest extends TestCase
             'B' => ['id' => 'B', 'severity' => 'critical', 'status' => 'no_fix', 'fixed' => null],
         ];
         $this->assertSame('no_fix', SecurityCves::status($affecting));
-        $this->assertSame('medium', SecurityCves::severity($affecting), 'a critical CVE nobody can fix yet is at most medium');
-        $this->assertSame('critical', SecurityCves::worst($affecting), 'what the CVEs really have');
+        $this->assertSame('critical', SecurityCves::severity($affecting), 'a critical CVE nobody can fix yet is still critical');
         $affecting['C'] = ['id' => 'C', 'severity' => 'high', 'status' => 'update_available', 'fixed' => '2'];
-        $this->assertSame('high', SecurityCves::severity($affecting), 'one that an update fixes keeps its severity');
+        $this->assertSame('critical', SecurityCves::severity($affecting), 'the most severe CVE counts, fixable or not');
+        unset($affecting['B']);
+        $this->assertSame('high', SecurityCves::severity($affecting), 'the most severe of the rest');
         $this->assertNull(SecurityCves::status([]));
+    }
+
+    public function test_the_severity_of_a_cve_is_its_cvss_band_or_what_the_feed_says_whichever_is_worse(): void
+    {
+        // Debian says medium to what the NVD scores 9.8.
+        $this->assertSame('critical', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'medium', 'cvss' => 9.8]));
+        $this->assertSame('high', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'high', 'cvss' => 5.0]), 'a score never lowers the severity');
+        $this->assertSame('high', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'medium', 'cvss' => 7.0]));
+        $this->assertSame('medium', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'low', 'cvss' => 4.0]));
+        $this->assertSame('medium', SecurityCves::effectiveSeverity(['id' => 'A']), 'no word: medium');
+        $this->assertSame('medium', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'nonsense', 'cvss' => 'x']));
+        $this->assertSame('medium', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'medium', 'cvss' => 42]), 'a score out of 0..10 is ignored');
+        // Exploited in the wild: at least high, whatever the score.
+        $this->assertSame('high', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'low', 'cvss' => 3.1, 'kev' => true]));
+        $this->assertSame('critical', SecurityCves::effectiveSeverity(['id' => 'A', 'severity' => 'critical', 'kev' => true]));
+    }
+
+    public function test_affecting_carries_the_score_and_the_exploited_flag(): void
+    {
+        $cves = [
+            $this->cve('CVE-2026-1', [[null, '2.0', null]], [], 'medium') + ['cvss' => 9.1, 'kev' => true],
+            $this->cve('CVE-2026-2', [[null, '2.0', null]], [], 'low'),
+        ];
+        $affecting = SecurityCves::affecting($cves, ['Name' => 'nginx', 'Version' => '1.25.3', 'Source' => 'docker'], null);
+
+        $this->assertSame(['critical', 9.1, true], [$affecting['CVE-2026-1']['severity'], $affecting['CVE-2026-1']['cvss'], $affecting['CVE-2026-1']['kev']]);
+        $this->assertSame(['low', null, false], [$affecting['CVE-2026-2']['severity'], $affecting['CVE-2026-2']['cvss'], $affecting['CVE-2026-2']['kev']]);
+        $this->assertSame(9.1, SecurityCves::maxCvss($affecting));
+        $this->assertSame(['CVE-2026-1'], SecurityCves::exploited($affecting));
+        $this->assertNull(SecurityCves::maxCvss([]));
     }
 
     public function test_the_kernel_without_a_fix_is_not_advised_to_be_uninstalled(): void

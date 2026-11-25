@@ -180,7 +180,7 @@ class SecurityRules
     /** At most this many CVEs in a rule. */
     public const MAX_CVES = 3000;
 
-    /** @param  mixed  $cves  [{id, severity, ranges: [[start, end_excl, end_incl]], ubuntu: {source: {release: [status, fixed version]}}}] */
+    /** @param  mixed  $cves  [{id, severity, cvss (0-10, optional), kev (exploited in the wild, optional), ranges: [[start, end_excl, end_incl]], ubuntu: {source: {release: [status, fixed version]}}}] */
     private static function cvesValid(mixed $cves): bool
     {
         if (! is_array($cves) || ! array_is_list($cves) || $cves === [] || count($cves) > self::MAX_CVES) {
@@ -189,6 +189,8 @@ class SecurityRules
         foreach ($cves as $cve) {
             if (! is_array($cve) || ! is_string($cve['id'] ?? null) || ! preg_match('/^CVE-\d{4}-\d+$/', $cve['id'])
                 || (isset($cve['severity']) && ! isset(self::SEVERITIES[$cve['severity']]))
+                || (isset($cve['cvss']) && (! is_numeric($cve['cvss']) || $cve['cvss'] < 0 || $cve['cvss'] > 10))
+                || (isset($cve['kev']) && ! is_bool($cve['kev']))
                 || (isset($cve['ranges']) && (! is_array($cve['ranges']) || ! array_is_list($cve['ranges'])))
                 || (isset($cve['ubuntu']) && ! is_array($cve['ubuntu'])) || (isset($cve['debian']) && ! is_array($cve['debian']))) {
                 return false;

@@ -108,11 +108,16 @@ package owns (dpkg file lists, `rpm -qf` asks the database only), the first four
 `~/bin`, `~/.cargo/bin`, `~/go/bin` (an ELF it has no version for is listed without one) and `~/.cargo/.crates2.json`
 (`Source` `cargo`). Links, `node_modules`, caches and hidden directories are skipped.
 
+**Containers** (agents 1.42.0+, `Get-DockerSoftware`): the running containers are software too, `Source` `docker`: one item per image with a version, `Name` the short
+name of the image (`nginx` of `ghcr.io/acme/nginx:1.27.1-alpine`), `Version` from the tag (`1.27.1`), or, when the tag is no version (`latest`), from the
+`NAME_VERSION` variable the image sets (`NGINX_VERSION` of the official nginx); `Publisher` is the repository. Images pinned by digest and images
+without a version are skipped, nothing is run inside a container (`docker ps`, `docker image inspect`). The packages inside an image (apt in the container) are not read.
+
 The CVE rules see these items like any software (`Name`, `Version`): a version is compared with the ranges of the CVE (`SecurityCves::upstream`), a
 item without a version (an AppImage whose name has none) cannot be judged and is only listed. The remediation of a `portable` finding says to replace
 the files at its `Path`, that of a `cargo` one `cargo install --locked --force`. The agent writes an old `1, 2, 3, 4` resource version as `1.2.3.4` (1.35.1).
 
-**CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, ranges, ubuntu}]`)
+**CVE rules (feed rules with `cves`).** A rule of the feed lists its CVEs one by one (`"cves": [{id, severity, cvss?, kev?, ranges, ubuntu}]`)
 and names the packages it is about in `select`; the `when` next to it is what a server that does not know `cves` evaluates.
 For every package each CVE is judged on its own and the finding names only the CVEs that apply:
 
@@ -135,9 +140,15 @@ with the word of a tracker is not in these.
 
 A CVE of the cores of one CPU family (the rules of the trackers mark the Arm ones with `"arch": ["arm64"]`) is judged only on a device of that architecture (`Arch` of the `os` item; `x86_64` is `amd64`, `aarch64` is `arm64`); a device that sends none (agents before 1.30.0) is judged as before.
 
-A CVE nobody can fix yet (*no fix available yet*, *not yet assessed*) counts at most as **medium**: the severity says how urgent it is to act, and
-there is nothing to do but wait or restrict the package (the finding keeps the severity the CVEs really have as `WorstSeverity` and shows it under the message; the kernel included: its advice is to install the fix and reboot when it comes, never to remove
-the running kernel). The headers, tools, perf, bpftool and libc headers built from the kernel source (`linux-headers-*`, `linux-tools-*`, `linux-libc-dev`,
+**Severity of a CVE finding** goes by the CVE, as in Nessus or OpenVAS, not by what can be done about it. The severity of a CVE
+(`SecurityCves::effectiveSeverity`) is the more severe of what the feed says and the band of its CVSS score (`cvss` of the CVE in the feed:
+9.0 critical, 7.0 high, 4.0 medium), and at least *high* for a CVE on the CISA list of the exploited ones (`kev`). The finding has the
+most severe of its CVEs; its status (*no fix available yet*, *not yet assessed*, *update available*, ...) says what to do and does not lower it
+(it was capped at medium or low until this, which hid a 9.8 nobody had fixed yet). The finding shows the highest score (`MaxCvss`) and the exploited CVEs
+(`Exploited`) under the message. A feed without `cvss` / `kev` (an older one) is judged by its `severity` alone. The feed takes the score from the
+Ubuntu tracker (`cvss3`) and from the NVD data it already has for the CVE, so a CVE that Debian marks *medium* and the NVD scores 9.8 is critical.
+The kernel is judged the same: its advice is to install the fix and reboot when it comes, never to remove the running kernel.
+The headers, tools, perf, bpftool and libc headers built from the kernel source (`linux-headers-*`, `linux-tools-*`, `linux-libc-dev`,
 `bpftool`) are not loaded, so the CVEs of the kernel are not a finding of them. The links of a finding of CVEs are the NVD pages of the CVEs it lists
 (at most 10), not the links of the rule, which are the same for every device; a finding of a rule that covers many packages is titled by the source
 package (`qemu: known vulnerabilities`).

@@ -176,12 +176,20 @@ class SecurityFinding extends Model
         return $this->rule?->urls ?? [];
     }
 
-    /** The severity the CVEs of the finding really have, when the finding says less (nothing can be done about them yet), else null. */
-    public function getWorstSeverityAttribute(): ?string
+    /** The highest CVSS score of the CVEs of the finding (rules with "cves", feed with scores), else null. */
+    public function getMaxCvssAttribute(): ?float
     {
-        $worst = $this->details['WorstSeverity'] ?? null;
+        $score = $this->details['MaxCvss'] ?? null;
 
-        return is_string($worst) && (SecurityRules::SEVERITIES[$worst] ?? 9) < (SecurityRules::SEVERITIES[$this->severity] ?? 9) ? $worst : null;
+        return is_numeric($score) ? (float) $score : null;
+    }
+
+    /** The CVEs of the finding the CISA lists as exploited in the wild ("CVE-1, CVE-2"), else null. */
+    public function getExploitedAttribute(): ?string
+    {
+        $ids = $this->details['Exploited'] ?? null;
+
+        return is_string($ids) && $ids !== '' ? $ids : null;
     }
 
     public function getSeverityColorAttribute(): string

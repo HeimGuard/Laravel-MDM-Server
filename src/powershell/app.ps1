@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.42.0'
+$AgentVersion = '1.42.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -2645,9 +2645,12 @@ function Get-SecurityInventory {
     )
 
     $inventory = @{}
-    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath -FileScan $FileScan | Select-Object -First 5000) } catch { }
-    # The software of the running containers (agents 1.42.0+), after the host's own so the limit never cuts the packages of the host.
-    try { $inventory['software'] = @(@($inventory['software']) + @(Get-DockerSoftware | Select-Object -First 200)) } catch { }
+    # The software of the running containers (agents 1.42.0+) and of the host together are at most what the server takes (5000): the containers
+    # (a few) are read first, so the limit cuts the host's own packages, never the containers.
+    [object[]]$containerSoftware = @()
+    try { $containerSoftware = @(Get-DockerSoftware | Select-Object -First 200) } catch { }
+    try { $inventory['software'] = @(Get-SecuritySoftware -OnLinux $OnLinux -CachePath $CachePath -FileScan $FileScan | Select-Object -First (5000 - $containerSoftware.Count)) } catch { }
+    if ($containerSoftware.Count -gt 0) { $inventory['software'] = @(@($inventory['software'] | Where-Object { $_ }) + $containerSoftware) }
     # As many as the server takes of each list (more and it refuses the whole collection).
     try { $inventory['processes'] = @(Get-SecurityProcesses -OnLinux $OnLinux -AgentPid $AgentPid | Select-Object -First 1000) } catch { }
     try { $inventory['listening'] = @(Get-SecurityListening -OnLinux $OnLinux | Select-Object -First 1000) } catch { }

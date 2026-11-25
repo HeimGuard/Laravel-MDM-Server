@@ -21,8 +21,15 @@
             @endif
         </div>
         <div class="small text-break mt-1">{{ $finding->message }}</div>
-        @if ($finding->worstSeverity)
-            <div class="small text-body-secondary mt-1"><i class="fas fa-info-circle me-1"></i>{{ __('Worst CVE: :severity (nothing can be done about it yet)', ['severity' => __(ucfirst($finding->worstSeverity))]) }}</div>
+        @if ($finding->maxCvss !== null || $finding->exploited)
+            <div class="small mt-1">
+                @if ($finding->maxCvss !== null)
+                    <x-badge color="secondary" size="sm" variant="subtle">{{ __('CVSS :score', ['score' => number_format($finding->maxCvss, 1)]) }}</x-badge>
+                @endif
+                @if ($finding->exploited)
+                    <span class="text-danger"><i class="fas fa-bomb me-1"></i>{{ __('Known exploited (CISA KEV): :ids', ['ids' => $finding->exploited]) }}</span>
+                @endif
+            </div>
         @endif
         @if ($finding->remediation)
             <div class="small text-body-secondary mt-1" style="white-space: pre-line"><i class="fas fa-wrench me-1"></i>{{ $finding->remediation }}</div>

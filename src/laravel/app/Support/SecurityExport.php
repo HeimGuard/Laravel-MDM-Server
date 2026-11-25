@@ -69,8 +69,11 @@ class SecurityExport
         if ($finding->acknowledged_at) {
             $out[] = '- **Acknowledged:** '.$finding->acknowledged_at->toDateTimeString().' by '.self::line($finding->acknowledger?->name ?? '?');
         }
-        if ($worst = $finding->worstSeverity) {
-            $out[] = '- **Worst CVE:** '.$worst.' (nothing can be done about it yet, so the finding is '.$finding->severity.')';
+        if ($finding->maxCvss !== null) {
+            $out[] = '- **CVSS:** '.number_format($finding->maxCvss, 1);
+        }
+        if ($finding->exploited) {
+            $out[] = '- **Known exploited (CISA KEV):** '.self::line($finding->exploited);
         }
         if ($hint = $finding->remediation) {
             $out[] = '- **Remediation:** '.self::line($hint);
