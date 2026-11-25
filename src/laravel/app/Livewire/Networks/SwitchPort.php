@@ -40,6 +40,12 @@ class SwitchPort extends Component
         return $switch;
     }
 
+    /** A port of a device is clicked as the one its cable goes into: a second click takes it back (it is optional). */
+    public function pickRemote(int $deviceId, int $port): void
+    {
+        $this->remote[$deviceId] = (int) ($this->remote[$deviceId] ?? 0) === $port ? null : $port;
+    }
+
     public function save(): void
     {
         $switch = $this->switch($this->deviceId);

@@ -857,6 +857,34 @@ class SwitchPortsTest extends TestCase
         $this->assertNull($printer->fresh()->switch_id);
     }
 
+    public function test_the_port_of_the_device_is_clicked_in_the_dialog_among_the_ports_it_has(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice();
+        $this->relay();
+        // A device with ports of its own (set by hand), one without (an agent or a printer has none).
+        $modem = new Device;
+        $modem->forceFill(['kind' => 'ping', 'name' => 'modem', 'os' => '', 'token' => hash('sha256', 'modem'), 'ping_address' => '192.168.1.60', 'ping_prefix' => 24, 'switch_ports' => 4])->save();
+        $printer = $this->printer();
+
+        $rows = collect(SwitchService::candidates($switch, 2))->keyBy('id');
+        $this->assertSame([1, 2, 3, 4], array_column($rows[$modem->id]['ports'], 'port'));
+        $this->assertSame([], $rows[$printer->id]['ports']);
+
+        $component = Livewire::test(\App\Livewire\Networks\SwitchPort::class, ['deviceId' => $switch->id, 'port' => 2])
+            ->set('selected', [$modem->id, $printer->id])
+            ->call('pickRemote', $modem->id, 3);
+        $this->assertSame(3, $component->get('remote')[$modem->id]);
+        // The same port again takes it back; another one replaces it.
+        $component->call('pickRemote', $modem->id, 3);
+        $this->assertNull($component->get('remote')[$modem->id]);
+        $component->call('pickRemote', $modem->id, 4)->call('save');
+
+        $this->assertSame([$switch->id, 2, 4], [$modem->fresh()->switch_id, $modem->fresh()->switch_port, $modem->fresh()->switch_remote_port]);
+        // No port of its own for a device that has none to click.
+        $this->assertNull($printer->fresh()->switch_remote_port);
+    }
+
     public function test_the_port_said_by_hand_is_the_wan_port_of_the_router_on_the_map(): void
     {
         $lan = $this->relay();

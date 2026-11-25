@@ -8,19 +8,18 @@
                 <span class="fw-medium">{{ $candidate['name'] }}</span>
                 <span class="text-body-secondary font-monospace small">{{ $candidate['address'] }}</span>
             </label>
-            {{-- The port of the device itself the cable goes into: optional, asked when the device is ticked. --}}
-            @if (in_array($candidate['id'], array_map('intval', $selected), true))
-                <div class="ms-4 mt-1 mb-2">
-                    @if ($candidate['ports'] !== [])
-                        <select aria-label="{{ __('Its port (optional)') }}" class="form-select form-select-sm w-auto" wire:model="remote.{{ $candidate['id'] }}">
-                            <option value="">{{ __('Its port (optional)') }}</option>
-                            @foreach ($candidate['ports'] as $remotePort)
-                                <option value="{{ $remotePort['port'] }}">{{ $remotePort['label'] }}@if ($remotePort['name'] && $remotePort['name'] !== $remotePort['label']) · {{ $remotePort['name'] }}@endif</option>
-                            @endforeach
-                        </select>
-                    @else
-                        <input aria-label="{{ __('Its port (optional)') }}" class="form-control form-control-sm w-auto" max="64" min="1" placeholder="{{ __('Its port (optional)') }}" type="number" wire:model="remote.{{ $candidate['id'] }}">
-                    @endif
+            {{-- The port of the device itself the cable goes into: optional, only for a device that has ports (read or set by hand), the ports as boxes to click (a second click takes it back). --}}
+            @if ($candidate['ports'] !== [] && in_array($candidate['id'], array_map('intval', $selected), true))
+                <div class="ms-4 mt-1 mb-2 nm-ports" role="group" aria-label="{{ __('Its port (optional)') }}">
+                    @foreach ($candidate['ports'] as $remotePort)
+                        @php
+                            $link = $remotePort['link'];
+                            $speed = $link < 0 ? 'is-manual' : ($link === 6 ? 'is-gig' : ($link >= 4 ? 'is-fast' : ($link >= 2 ? 'is-slow' : 'is-down')));
+                            $picked = (int) ($remote[$candidate['id']] ?? 0) === $remotePort['port'];
+                        @endphp
+                        {{-- The same boxes as on the card of the device (colour = link, dashed = down, a dot = the WAN): the port the cable goes into is clicked. --}}
+                        <button class="nm-port {{ $speed }}{{ $remotePort['label'] === 'WAN' ? ' is-wan' : '' }}{{ $picked ? ' is-picked' : '' }}" title="{{ $remotePort['name'] && $remotePort['name'] !== $remotePort['label'] ? $remotePort['name'] : __('Its port (optional)') }}" type="button" wire:click="pickRemote({{ $candidate['id'] }}, {{ $remotePort['port'] }})" wire:key="remote-{{ $candidate['id'] }}-{{ $remotePort['port'] }}">{{ $remotePort['label'] }}</button>
+                    @endforeach
                 </div>
             @endif
         </div>
