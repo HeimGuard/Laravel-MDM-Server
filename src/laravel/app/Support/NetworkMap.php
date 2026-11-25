@@ -422,6 +422,10 @@ class NetworkMap
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
                 // The cable from that port to the card of the gateway (network-map.js).
                 $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;
+                // A router behind a modem that is a plain device (its address is in a network of its own): the modem is a gateway of the router now.
+                if (str_starts_with($owner, 'device:')) {
+                    $owner = $this->promote($into, $this->nodes[$nodeId]['group'] ?? null, $gatewayNodes) ?? $owner;
+                }
                 $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];
                 // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one.
                 $this->hangUnder($nodeId, $owner);
@@ -437,13 +441,16 @@ class NetworkMap
                 continue;
             }
             $mac = NetworkNeighbour::normalizeMac($uplink['mac'] ?? null);
-            $front = $byId->first(fn (Device $other) => $other->id !== $deviceId && isset($gatewayNodes[$other->id])
+            $front = $byId->first(fn (Device $other) => $other->id !== $deviceId && (isset($gatewayNodes[$other->id]) || isset($this->nodes['device:'.$other->id]))
                 && ($other->ping_address === $uplink['via'] || ($mac !== null && in_array($mac, array_filter([NetworkNeighbour::normalizeMac($other->ping_mac), NetworkNeighbour::normalizeMac($other->wake_mac)]), true))));
             foreach (array_keys($nodeIds) as $nodeId) {
                 $wan = __('Way out: :interface via :via', ['interface' => $uplink['interface'] ?? __('interface'), 'via' => $uplink['via']]);
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$wan : $wan;
                 if ($front !== null) {
-                    $this->hangUnder($nodeId, array_key_first($gatewayNodes[$front->id]));
+                    $parent = array_key_first($gatewayNodes[$front->id] ?? []) ?? $this->promote($front, $this->nodes[$nodeId]['group'] ?? null, $gatewayNodes);
+                    if ($parent !== null) {
+                        $this->hangUnder($nodeId, $parent);
+                    }
                 }
             }
         }
@@ -612,6 +619,52 @@ class NetworkMap
     private function node(string $id, string $kind, string $label, ?string $sub, string $icon, string $tone, string $state = 'up', ?string $url = null, array $badges = [], array $extra = []): void
     {
         $this->nodes[$id] = compact('id', 'kind', 'label', 'sub', 'icon', 'tone', 'state', 'url', 'badges') + $extra;
+    }
+
+    /**
+     * A device that is in front of a gateway (a modem whose address is in a network of its own, the way out of a router) becomes a gateway of that
+     * site: its card (with the ports set by hand or read) is the gateway node under the public address, the router hangs under it (hangUnder). Its
+     * device node goes, and so does its network. Only a device that is alone in its networks (a modem outside the LAN of the router) is one: a switch of a
+     * LAN with other devices is not. Returns the id of the gateway node, null when it cannot be one (no node, no ports). It is in the site of the router behind it.
+     *
+     * @param  array<int, array<string, bool>>  $gatewayNodes
+     */
+    private function promote(Device $device, ?string $site, array &$gatewayNodes): ?string
+    {
+        $deviceNode = 'device:'.$device->id;
+        if ($site === null || ! isset($this->nodes[$deviceNode]) || empty($this->nodes[$deviceNode]['switch'])) {
+            return null;
+        }
+        // Only a device that is alone in its networks (a modem outside the LAN of the router): a switch of a LAN with other devices in it is no gateway of a
+        // router plugged into it (that is the LAN side of the router, the cable only).
+        $inEdges = array_filter($this->edges, fn (array $edge) => $edge['to'] === $deviceNode);
+        foreach ($inEdges as $edge) {
+            if (array_filter($this->edges, fn (array $other) => $other['from'] === $edge['from'] && $other['to'] !== $deviceNode) !== []) {
+                return null;
+            }
+        }
+        $old = $this->nodes[$deviceNode];
+        $id = 'gw:'.$site.'|device:'.$device->id;
+        $this->node($id, 'gateway', $device->displayName, $device->ping_address, 'fas fa-route', 'success', state: $old['state'] ?? 'up', url: $old['url'] ?? null, badges: [__('gateway')],
+            extra: ['title' => $old['title'] ?? null, 'group' => $site, 'switch' => $old['switch'], 'plug' => $old['plug'] ?? null]);
+        $this->edge('site:'.$site, $id, 'uplink', ($old['state'] ?? 'up') === 'up');
+        $gatewayNodes[$device->id][$id] = true;
+        // Its networks had nothing else in them: they go with it (a network of one device is not drawn anyway).
+        foreach ($inEdges as $edge) {
+            foreach (array_filter($this->edges, fn (array $up) => $up['to'] === $edge['from']) as $up) {
+                unset($this->edges[$up['id']]);
+            }
+            unset($this->edges[$edge['id']], $this->nodes[$edge['from']]);
+        }
+        // What was plugged into its ports (and the cable of the card) belongs to the gateway now.
+        foreach ($this->nodes as $key => $node) {
+            if (($node['plug']['switch'] ?? null) === $deviceNode) {
+                $this->nodes[$key]['plug']['switch'] = $id;
+            }
+        }
+        unset($this->nodes[$deviceNode]);
+
+        return $id;
     }
 
     /**
