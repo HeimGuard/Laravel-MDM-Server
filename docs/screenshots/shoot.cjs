@@ -8,6 +8,8 @@ const { chromium } = require('playwright');
 
 const base = process.env.BASE_URL || 'http://127.0.0.1:8000';
 const out = process.env.OUT || 'docs/screenshots';
+const debugDir = process.env.DEBUG_DIR || '';
+const failed = [];
 const user = { name: 'Admin', email: 'admin@example.com', password: 'password-123' };
 
 /** Dark mode: the attribute the layout sets from the cookie `theme`, and the colour scheme of the browser. */
@@ -27,15 +29,37 @@ async function shot(page, name) {
     console.log('saved', name);
 }
 
-/** Opens a device of the list by its name. */
+/** Opens a device of the list by its name; `tab` (a part of its label) opens that tab, false when the device has none. */
 async function device(page, name, tab = null) {
     await page.goto(`${base}/devices`);
     await settle(page, 400);
-    await page.getByText(new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i')).first().click();
+    const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await page.getByText(new RegExp(`^\\s*${escaped(name)}\\s*$`, 'i')).first().click({ timeout: 15000 });
     await settle(page, 1500);
-    if (tab) {
-        await page.getByRole('tab', { name: new RegExp(tab, 'i') }).or(page.getByText(new RegExp(`^\\s*${tab}`, 'i')).first()).first().click();
-        await settle(page, 900);
+    if (!tab) {
+        return true;
+    }
+    const target = page.getByRole('tab', { name: new RegExp(escaped(tab), 'i') }).or(page.getByText(new RegExp(`^\\s*${escaped(tab)}`, 'i'))).first();
+    try {
+        await target.click({ timeout: 4000 });
+    } catch (error) {
+        return false;
+    }
+    await settle(page, 900);
+
+    return true;
+}
+
+/** One picture: a failure is written down (and a picture of the page kept for the artifact) and the others go on. */
+async function step(page, name, work) {
+    try {
+        await work();
+    } catch (error) {
+        failed.push(name);
+        console.log(`FAILED ${name}: ${String(error.message).split('\n')[0]}`);
+        if (debugDir) {
+            await page.screenshot({ path: `${debugDir}/failed-${name}.png` }).catch(() => {});
+        }
     }
 }
 
@@ -57,58 +81,77 @@ async function device(page, name, tab = null) {
     }
 
     // The devices of the seeders (DeviceSeeder, NetworkMapSeeder).
-    await device(page, 'nas');
-    await shot(page, 'device');
-    await device(page, 'asus-pc-2', 'Updates');
-    await shot(page, 'device-updates');
-    await device(page, 'Tiskárna');
-    await shot(page, 'ping');
+    await step(page, 'device', async () => {
+        await device(page, 'nas');
+        await shot(page, 'device');
+    });
+    await step(page, 'device-updates', async () => {
+        // The first device that has the tab of updates (it is shown only when there are some).
+        for (const name of ['asus-pc-2', 'nas', 'laptop-anna']) {
+            if (await device(page, name, 'Updates')) {
+                return shot(page, 'device-updates');
+            }
+        }
+        throw new Error('no device has updates');
+    });
+    await step(page, 'ping', async () => {
+        await device(page, 'Tiskárna');
+        await shot(page, 'ping');
+    });
     // A router read over SNMP: its ports.
-    try {
+    await step(page, 'device-ports', async () => {
         await device(page, 'Turris');
         await shot(page, 'device-ports');
-    } catch (error) {
-        console.log('no Turris card:', error.message);
-    }
-
-    await page.goto(`${base}/devices`);
-    await settle(page, 400);
-    await page.getByText('Add device').first().click();
-    await page.getByText('Enrol new device').waitFor({ timeout: 15000 });
-    await shot(page, 'enrolment');
-
-    await page.goto(`${base}/networks`);
-    await page.locator('.network-map').waitFor({ timeout: 20000 });
-    await page.waitForTimeout(1500);
-    await shot(page, 'networks');
+    });
+    await step(page, 'enrolment', async () => {
+        await page.goto(`${base}/devices`);
+        await settle(page, 400);
+        await page.getByText('Add device').first().click({ timeout: 15000 });
+        await page.getByText('Enrol new device').waitFor({ timeout: 15000 });
+        await shot(page, 'enrolment');
+    });
+    await step(page, 'networks', async () => {
+        await page.goto(`${base}/networks`);
+        await page.locator('.network-map').waitFor({ timeout: 20000 });
+        await page.waitForTimeout(1500);
+        await shot(page, 'networks');
+    });
     // The list of the networks with their unknown devices.
-    await page.getByRole('link', { name: /^\s*Networks/ }).or(page.getByRole('button', { name: /^\s*Networks/ })).first().click();
-    await shot(page, 'network-discovery');
-
-    await page.goto(`${base}/notifications`);
-    await shot(page, 'notifications');
-    await page.goto(`${base}/security`);
-    await shot(page, 'security');
-    await page.goto(`${base}/dashboard`);
-    await shot(page, 'dashboard');
+    await step(page, 'network-discovery', async () => {
+        await page.getByRole('link', { name: /^\s*Networks/ }).or(page.getByRole('button', { name: /^\s*Networks/ })).first().click({ timeout: 10000 });
+        await shot(page, 'network-discovery');
+    });
+    for (const [name, path] of [['notifications', '/notifications'], ['security', '/security'], ['dashboard', '/dashboard']]) {
+        await step(page, name, async () => {
+            await page.goto(`${base}${path}`);
+            await shot(page, name);
+        });
+    }
 
     // A phone.
     const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark' });
     await phone.addCookies(await context.cookies());
     const small = await phone.newPage();
-    await small.goto(`${base}/devices`);
-    await settle(small, 600);
-    await small.getByText(/^\s*nas\s*$/i).first().click();
-    await shot(small, 'mobile');
+    await step(small, 'mobile', async () => {
+        await small.goto(`${base}/devices`);
+        await settle(small, 600);
+        await small.getByText(/^\s*nas\s*$/i).first().click({ timeout: 15000 });
+        await shot(small, 'mobile');
+    });
 
     // The login page (no session).
     const guest = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
     await guest.addCookies([{ name: 'theme', value: 'dark', url: base }]);
     const login = await guest.newPage();
-    await login.goto(`${base}/login`);
-    await shot(login, 'login');
+    await step(login, 'login', async () => {
+        await login.goto(`${base}/login`);
+        await shot(login, 'login');
+    });
 
     await browser.close();
+    if (failed.length) {
+        console.log('Not taken:', failed.join(', '));
+    }
 })().catch((error) => {
     console.error(error);
     process.exit(1);

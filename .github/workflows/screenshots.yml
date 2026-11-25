@@ -78,16 +78,22 @@ jobs:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
           BASE_URL: http://127.0.0.1:8000
           OUT: docs/screenshots
-        run: node docs/screenshots/shoot.cjs
+          DEBUG_DIR: ${{ runner.temp }}/debug
+        run: |
+          mkdir -p "$DEBUG_DIR"
+          node docs/screenshots/shoot.cjs
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: screenshots
-          path: docs/screenshots/*.png
+          path: |
+            docs/screenshots/*.png
+            ${{ runner.temp }}/debug/*.png
 
       - name: The server log
         if: failure()
-        run: tail -n 60 "$RUNNER_TEMP/serve.log"
+        run: grep -v -E '\.(css|js|woff2|svg|html)|livewire.min' "$RUNNER_TEMP/serve.log" | tail -n 25
 
       - name: Commit the pictures
         if: github.event_name == 'pull_request'
