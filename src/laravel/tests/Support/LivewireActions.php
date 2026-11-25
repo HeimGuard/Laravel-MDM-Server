@@ -89,6 +89,9 @@ final class LivewireActions
                 'getOptions' => $ui,
                 'submit' => $admin,
             ],
+            L\ManualPorts::class => [
+                'save' => $user,
+            ],
             L\Networks\Page::class => [
                 'scan' => $user,
                 'scanAll' => $user,

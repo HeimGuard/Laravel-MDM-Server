@@ -20,8 +20,8 @@ class IpAddressCastTest extends TestCase
         $this->assertNull(IpAddressService::cidrToRangeV6('fe80::/129'));
         $this->assertNull(IpAddressService::cidrToRangeV6('192.168.1.0/24'));
 
-        $this->assertTrue(IpAddressService::containsV6('fe80::/64', 'fe80::dead:beef'));
-        $this->assertFalse(IpAddressService::containsV6('fe80::/64', 'fe80:0:0:1::1'));
+        $this->assertTrue(IpAddressService::within('fe80::/64', 'fe80::dead:beef'));
+        $this->assertFalse(IpAddressService::within('fe80::/64', 'fe80:0:0:1::1'));
     }
 
     public function test_one_cast_holds_both_families_in_one_column(): void
