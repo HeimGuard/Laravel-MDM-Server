@@ -192,6 +192,72 @@ class SwitchPortsTest extends TestCase
         $this->assertNull(SwitchService::parseSnmp("1.3.6.1.2.1.2.2.1.3.1 53\nnot a line"));
     }
 
+    /** The interface table of a Linux router (the Turris): the physical ports and everything else of the type Ethernet. */
+    private function routerBody(): string
+    {
+        $c = SwitchService::SNMP_COLUMNS;
+        $lines = [];
+        foreach ([[1, 'lo', 24], [2, 'eth0', 6], [3, 'lan0', 6], [4, 'lan1', 6], [5, 'br-lan', 6], [6, 'wlan0', 6], [7, 'lan0.10', 6], [8, 'veth1a2b', 6], [9, 'wan', 6]] as [$index, $name, $type]) {
+            array_push($lines, $c['type'].".$index $type", $c['status'].".$index 1", $c['fast'].".$index 1000", $c['if_name'].".$index x:".bin2hex($name));
+        }
+
+        return implode("\n", $lines);
+    }
+
+    public function test_the_interfaces_that_are_no_ports_are_left_out_and_the_ports_have_their_names(): void
+    {
+        $body = $this->routerBody();
+
+        // Bridges, Wi-Fi, VLANs and virtual interfaces are no ports; the CPU of the router (eth0) is a name like any other.
+        $ports = SwitchService::parseSnmp($body);
+        $this->assertSame(['eth0', 'lan0', 'lan1', 'wan'], array_column($ports, 'name'));
+        $this->assertSame([2, 3, 4, 9], array_column($ports, 'port'));
+        // The user ignores the CPU (a name with * is any characters, separators are commas, spaces and lines).
+        $this->assertSame(['lan0', 'lan1', 'wan'], array_column(SwitchService::parseSnmp($body, "ETH*\nbogus"), 'name'));
+        $this->assertSame(['lan0', 'wan'], array_column(SwitchService::parseSnmp($body, "eth* lan1\nbogus"), 'name'));
+        // ifDescr when there is no ifName.
+        $c = SwitchService::SNMP_COLUMNS;
+        $byDescr = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['status'].'.1 1'."\n".$c['if_descr'].'.1 x:'.bin2hex('lan9'));
+        $this->assertSame(['lan9'], array_column($byDescr, 'name'));
+        // A device that tells no names: all the Ethernet interfaces, as before.
+        $this->assertCount(2, SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['type'].'.2 6'));
+        // The agent walks the columns of the names too (at most 16 columns).
+        $this->assertLessThanOrEqual(16, count(SwitchService::SNMP_COLUMNS));
+    }
+
+    public function test_an_interface_that_is_ignored_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.39.0');
+        $read = fn () => SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $this->routerBody(), 'error' => null, 'version' => 1]]);
+
+        $this->assertSame(1, $read());
+        $this->assertSame([[2, 'eth0'], [3, 'lan0'], [4, 'lan1'], [9, 'wan']], array_map(fn (array $port) => [$port['port'], $port['name']], SwitchService::ports($switch->fresh())));
+
+        // The CPU is ignored from now on: it is not read, the old values stay as history but it is not shown.
+        $switch->forceFill(['switch_hidden' => 'eth*'])->save();
+        $this->assertSame(1, $read());
+        $this->assertSame([3, 4, 9], array_column(SwitchService::ports($switch->fresh()), 'port'));
+        $this->assertSame(3.0, $switch->fresh()->latestValue('switch.ports.up'));
+        $card = SwitchService::mapCard($switch->fresh(), collect());
+        $this->assertStringContainsString('(lan0)', $card['ports'][0]['heading']);
+        $this->assertStringContainsString('lan0', $card['ports'][0]['title']);
+    }
+
+    public function test_the_interfaces_to_ignore_are_saved_in_the_snmp_window(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
+
+        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $nas->id])
+            ->set('community', 'public')->set('hidden', "eth*\nbr-lan; wlan0")->call('save')->assertHasNoErrors();
+
+        $this->assertSame('eth*, br-lan, wlan0', $nas->fresh()->switch_hidden);
+        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $nas->id])->assertSet('hidden', 'eth*, br-lan, wlan0')->set('hidden', '')->call('save');
+        $this->assertTrue(blank($nas->fresh()->switch_hidden));
+    }
+
     public function test_an_snmp_switch_gets_the_columns_and_the_community_for_its_own_key_only(): void
     {
         $switch = $this->snmpSwitch();

@@ -8,6 +8,10 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 ## [Unreleased]
 
 ### Fixed
+- SNMP: a router read over SNMP (the Turris) showed 15 ports instead of its 6: every Ethernet interface counted, with the ports of its CPU, bridges, VLANs and Wi-Fi. The names of the interfaces are read
+  now (shown after the number of the port), the virtual ones (bridges, VLANs, Wi-Fi, tunnels, containers) are left out, and the SNMP window has **Interfaces to ignore** (`eth*` for the CPU) and says what is read as ports.
+
+### Fixed
 - Network map: a gateway with several networks (a router with a guest network) no longer draws them over one another: the one with the devices hung under the gateway is under it, the others stand right of it, each in a frame,
   and the gateway reserves the room of all of them.
 

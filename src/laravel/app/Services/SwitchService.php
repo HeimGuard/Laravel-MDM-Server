@@ -52,12 +52,22 @@ class SwitchService
         'sys_descr' => '1.3.6.1.2.1.1.1', 'sys_name' => '1.3.6.1.2.1.1.5',
         'type' => '1.3.6.1.2.1.2.2.1.3', 'status' => '1.3.6.1.2.1.2.2.1.8', 'speed' => '1.3.6.1.2.1.2.2.1.5', 'fast' => '1.3.6.1.2.1.31.1.1.1.15',
         'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
+        // The names of the interfaces (ifName, else ifDescr): a Linux router has bridges, VLANs, Wi-Fi and the ports of its CPU among its Ethernet interfaces.
+        'if_name' => '1.3.6.1.2.1.31.1.1.1.1', 'if_descr' => '1.3.6.1.2.1.2.2.1.2',
         // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
         // (index = VLAN and the MAC), and the bridge port => ifIndex of BRIDGE-MIB. Not every switch has them.
         'bridge_port' => '1.3.6.1.2.1.17.1.4.1.2', 'fdb' => '1.3.6.1.2.1.17.4.3.1.2', 'fdb_vlan' => '1.3.6.1.2.1.17.7.1.2.2.1.2',
     ];
 
     /** The columns of the interface table (one row per ifIndex). */
+    /**
+     * Interfaces of the type Ethernet that are no ports of a switch (names, `*` is any characters, any case): the loopback, bridges, VLANs (`eth0.10`,
+     * `lan@eth0`), Wi-Fi, tunnels, virtual machines and containers. The ports of the CPU of a router (`eth0`) are no more than a name, they are not
+     * left out: the user can add them to the interfaces to ignore of the device.
+     */
+    public const VIRTUAL_INTERFACES = ['lo', 'br*', 'bridge*', 'veth*', 'docker*', 'virbr*', 'vnet*', 'lxc*', 'macvlan*', 'tun*', 'tap*', 'wg*', 'tailscale*', 'zt*', 'vlan*',
+        '*.*', '*@*', 'ifb*', 'dummy*', 'bond*', 'teql*', 'gre*', 'sit*', 'ip6*', 'wlan*', 'wl[0-9]*', 'ath*', 'phy*'];
+
     private const SNMP_INTERFACE_COLUMNS = ['type' => 1, 'status' => 1, 'speed' => 1, 'fast' => 1, 'rx' => 1, 'rx_bad' => 1, 'tx' => 1, 'tx_bad' => 1];
 
     /** A port that has more MAC addresses behind it than this is a trunk to another switch: the devices are not paired with it. */
@@ -244,29 +254,42 @@ class SwitchService
 
     /**
      * The ports in the answer of an SNMP walk (lines `oid value` of the columns of SNMP_COLUMNS): the Ethernet interfaces
-     * (ifType 6), the port is the ifIndex. Down unless ifOperStatus is up; the link code is the speed (ifHighSpeed, else ifSpeed):
-     * 1000 Mb/s and more 1000M full, 100 Mb/s 100M full, less 10M full (the duplex is not read, full is assumed). Null when there
-     * are no Ethernet interfaces in it.
+     * (ifType 6) that are no virtual ones (VIRTUAL_INTERFACES) and are not among the ones the user ignores ($hidden, names with `*`,
+     * separated by commas, spaces or lines); the port is the ifIndex, the name ifName (else ifDescr). Down unless ifOperStatus is up; the link code is the speed
+     * (ifHighSpeed, else ifSpeed): 1000 Mb/s and more 1000M full, 100 Mb/s 100M full, less 10M full (the duplex is not read, full is assumed).
+     * Null when there are no such interfaces in it.
      *
-     * @return array<int, array{port: int, enabled: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>|null
+     * @return array<int, array{port: int, name: ?string, enabled: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>|null
      */
-    public static function parseSnmp(string $body): ?array
+    public static function parseSnmp(string $body, string $hidden = ''): ?array
     {
         $interfaces = [];
+        $names = [];
         foreach (self::snmpLines($body) as [$column, $index, $value]) {
-            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && is_int($value) && ctype_digit($index) && (int) $index > 0) {
+            if (! ctype_digit($index) || (int) $index < 1) {
+                continue;
+            }
+            if (isset(self::SNMP_INTERFACE_COLUMNS[$column]) && is_int($value)) {
                 $interfaces[(int) $index][$column] = $value;
+            } elseif (in_array($column, ['if_name', 'if_descr'], true) && is_string($value)) {
+                $name = trim((string) preg_replace('/[\x00-\x20\x7f]+/', ' ', mb_convert_encoding($value, 'UTF-8', 'UTF-8')));
+                if ($name !== '') {
+                    $names[(int) $index][$column] = mb_substr($name, 0, 64);
+                }
             }
         }
         ksort($interfaces);
+        $ignored = array_merge(self::VIRTUAL_INTERFACES, self::patterns($hidden));
         $rows = [];
         foreach ($interfaces as $index => $values) {
-            if (($values['type'] ?? null) !== 6 || count($rows) >= self::MAX_PORTS) {
+            $name = $names[$index]['if_name'] ?? $names[$index]['if_descr'] ?? null;
+            if (($values['type'] ?? null) !== 6 || ($name !== null && self::matches($name, $ignored)) || count($rows) >= self::MAX_PORTS) {
                 continue;
             }
             $mbit = $values['fast'] ?? intdiv($values['speed'] ?? 0, 1000000);
             $rows[] = [
                 'port' => $index,
+                'name' => $name,
                 'enabled' => true,
                 'link' => ($values['status'] ?? 2) !== 1 ? 0 : ($mbit >= 1000 ? 6 : ($mbit >= 100 ? 5 : 3)),
                 'tx' => $values['tx'] ?? 0,
@@ -277,6 +300,23 @@ class SwitchService
         }
 
         return $rows === [] ? null : $rows;
+    }
+
+    /** The patterns of a list of names (commas, spaces, lines): `*` is any characters, `?` one. */
+    public static function patterns(string $list): array
+    {
+        return array_values(array_filter(preg_split('/[\s,;]+/', mb_strtolower($list)), fn (string $pattern) => $pattern !== ''));
+    }
+
+    private static function matches(string $name, array $patterns): bool
+    {
+        foreach ($patterns as $pattern) {
+            if (fnmatch($pattern, mb_strtolower($name))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -376,7 +416,7 @@ class SwitchService
             $device = Device::query()->where('kind', 'ping')->find($id);
             $body = $device !== null && is_string($probe['body'] ?? null) ? $probe['body'] : null;
             $snmp = $device !== null && (string) $device->switch_type === self::SNMP;
-            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body) : self::parse($body));
+            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body, (string) $device->switch_hidden) : self::parse($body));
             if ($snmp && $body !== null) {
                 self::discovered($device, $body, $probe['version'] ?? null);
             }
@@ -415,13 +455,23 @@ class SwitchService
             }
         }
         ValueRecorder::record($device->getMorphClass(), $device->id, $values);
+        if ((string) $device->switch_type === self::SNMP) {
+            // Which interfaces are the ports now (the values of the ones that are not stay as history) and their names.
+            $names = [];
+            foreach ($ports as $port) {
+                if (($port['name'] ?? null) !== null) {
+                    $names[(string) $port['port']] = $port['name'];
+                }
+            }
+            $device->recordInventory('snmp', 'ports', ['ports' => array_column($ports, 'port'), 'names' => $names]);
+        }
         LiveUpdates::device($device->id, 'switch');
     }
 
     /**
      * The last ports of a switch for the pages, null when none were read.
      *
-     * @return array<int, array{port: int, link: int, bad: int, tx: ?int, rx: ?int}>|null
+     * @return array<int, array{port: int, name: ?string, link: int, bad: int, tx: ?int, rx: ?int}>|null
      */
     public static function ports(Device $device): ?array
     {
@@ -433,13 +483,22 @@ class SwitchService
         $ports = [];
         foreach ($definitions as $definition) {
             $number = (int) $definition->name;
-            $ports[$number] ??= ['port' => $number, 'link' => 0, 'bad' => 0, 'tx' => null, 'rx' => null];
+            $ports[$number] ??= ['port' => $number, 'name' => null, 'link' => 0, 'bad' => 0, 'tx' => null, 'rx' => null];
             $field = ['switch.port.link' => 'link', 'switch.port.bad' => 'bad', 'switch.port.tx' => 'tx', 'switch.port.rx' => 'rx'][$definition->key];
             $ports[$number][$field] = $definition->last_value === null ? $ports[$number][$field] : (int) $definition->last_value;
         }
+        // Over SNMP: only the interfaces that are the ports now (an interface that was one before and is ignored now keeps its history, it is not shown), with their names.
+        $known = (string) $device->switch_type === self::SNMP ? $device->latestInventory('snmp', 'ports') : null;
+        if ($known !== null) {
+            $numbers = array_map('intval', (array) ($known['ports'] ?? []));
+            $ports = array_filter($ports, fn (array $port) => in_array($port['port'], $numbers, true));
+            foreach ($ports as $number => $port) {
+                $ports[$number]['name'] = ((array) ($known['names'] ?? []))[(string) $number] ?? null;
+            }
+        }
         ksort($ports);
 
-        return array_values($ports);
+        return $ports === [] ? null : array_values($ports);
     }
 
     private static function macsKey(Device|int $switch): string
@@ -608,9 +667,9 @@ class SwitchService
             $ports[] = $port + [
                 'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->all(),
                 'link_name' => $link,
-                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]),
+                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]).($port['name'] ? ' ('.$port['name'].')' : ''),
                 'title' => implode(' · ', array_filter([
-                    __('Port :port', ['port' => $port['port']]), $link,
+                    __('Port :port', ['port' => $port['port']]), $port['name'], $link,
                     $port['bad'] > 0 ? trans_choice(':count bad packet|:count bad packets', $port['bad']) : null,
                     $on === [] ? null : implode(', ', $on),
                 ])),

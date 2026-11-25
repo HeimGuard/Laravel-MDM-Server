@@ -128,8 +128,13 @@ off (the device stays). The window shows what the device says about itself once 
   - **The version:** the agent tries v2c, then v1 (v1 has no GetBulk: it walks with GetNext). The one that answered is remembered (cache, a day)
     and sent as `snmp.version` (0 = v1, 1 = v2c) so the agent tries it first; the answer carries `version`.
   - **What it is:** name and description (the inventory `snmp` / `system`: `name`, `descr`, `version`, only the changes), shown on the card.
-  - **The ports:** the Ethernet interfaces (`ifType` 6), the port is the ifIndex. A device without any (a UPS, a printer without an `ifTable`) has the
-    system line and no ports.
+  - **The ports:** the Ethernet interfaces (`ifType` 6) that are no virtual ones; the port is the ifIndex and the name is `ifName` (else
+    `ifDescr`), shown after the number on the card and in the dropdown of the port. A Linux router (Turris, OpenWrt) reports everything of the type Ethernet:
+    its ports (`lan0`…, `wan`), the ports of its CPU (`eth0`…), bridges (`br-lan`), VLANs (`lan0.10`), Wi-Fi (`wlan0`) and virtual interfaces (`veth…`).
+    `SwitchService::VIRTUAL_INTERFACES` leaves out the loopback, bridges, VLANs, Wi-Fi, tunnels and containers by name; the **Interfaces to ignore** of
+    the SNMP window (names, `*` is any characters, commas, spaces or lines; the setting `switch.hidden`) is for the rest, for example `eth*` for the CPU. The
+    window shows what is read as ports now. The values of an interface that is ignored later stay as history, it is not shown. A device that tells no names
+    keeps all its Ethernet interfaces. The agent reads the names as two more columns (15 of 16), no newer agent is needed.
   - **Which device is plugged into which port**, when the MAC table is there (below).
 - The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
   returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names
