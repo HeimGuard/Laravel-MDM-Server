@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.41.0'
+$AgentVersion = '1.41.1'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -4471,21 +4471,25 @@ function Get-AgentServiceName {
 }
 
 function Repair-AgentService {
-    # Units written by agents before 1.30.1 start pwsh of one snap revision and fail (203/EXEC) after its refresh.
-    $unit = "/etc/systemd/system/$(Get-AgentServiceName).service"
+    # Units written by agents before 1.30.1 start pwsh of one snap revision and fail (203/EXEC) after its refresh. Units before 1.41.1 had no HOME:
+    # a system service of root has none from systemd, and the snap pwsh 7.7.0 aborted (SIGABRT) at its start without it.
+    [string]$unit = "/etc/systemd/system/$(Get-AgentServiceName).service"
     if (-not (Test-Path -Path $unit)) { return }
-    $content = Get-Content -Path $unit -Raw
-    $repaired = $content -replace '(?m)^(ExecStart=/snap/[^/]+)/x?\d+/', '$1/current/'
+    [string]$content = Get-Content -Path $unit -Raw
+    [string]$repaired = $content -replace '(?m)^(ExecStart=/snap/[^/]+)/x?\d+/', '$1/current/'
+    if ($repaired -notmatch '(?m)^Environment=HOME=') {
+        $repaired = $repaired -replace '(?m)^(WorkingDirectory=.*)$', "`$1`nEnvironment=HOME=/root"
+    }
     if ($repaired -eq $content) { return }
     Set-Content -Path $unit -Value $repaired -NoNewline
     systemctl daemon-reload
-    Write-AgentLog 'The service starts pwsh of the snap through /current/ now, not of one snap revision'
+    Write-AgentLog 'The service unit was repaired (pwsh of the snap through /current/, HOME=/root); it takes effect at the next start of the service'
 }
 
 function Register-AgentService {
     # Linux: systemd service running as root, restarted when it exits, low CPU and I/O priority.
     $pwsh = Get-AgentPwshPath
-    $unit = @"
+    [string]$unit = @"
 [Unit]
 Description=HeimGuard agent
 After=network-online.target
@@ -4494,6 +4498,7 @@ Wants=network-online.target
 [Service]
 ExecStart=$pwsh -NoLogo -NoProfile -NonInteractive -File "$AgentDir/app.ps1" $(Get-AgentArguments)
 WorkingDirectory=$AgentDir
+Environment=HOME=/root
 Restart=always
 RestartSec=10
 TimeoutStopSec=15
