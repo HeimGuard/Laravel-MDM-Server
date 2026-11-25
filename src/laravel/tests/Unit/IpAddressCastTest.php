@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Casts\Ip;
 use App\Casts\IpAddress;
 use App\Casts\Ipv6Address;
 use App\Services\IpAddressService;
@@ -92,5 +93,48 @@ class IpAddressCastTest extends TestCase
 
         $this->assertTrue(IpAddressService::containsV6('fe80::/64', 'fe80::dead:beef'));
         $this->assertFalse(IpAddressService::containsV6('fe80::/64', 'fe80:0:0:1::1'));
+    }
+
+    public function test_one_cast_holds_both_families_in_one_column(): void
+    {
+        $cast = new Ip;
+        $model = new class extends Model {};
+
+        $this->assertSame('00000000000000000000ffffc0a80101', $cast->set($model, 'ip', '192.168.1.1', []));
+        $this->assertSame('192.168.1.1', $cast->get($model, 'ip', '00000000000000000000ffffc0a80101', []));
+        $this->assertSame('fe800000000000000000000000000001', $cast->set($model, 'ip', 'fe80::1', []));
+        $this->assertSame('fe80::1', $cast->get($model, 'ip', 'fe800000000000000000000000000001', []));
+        $this->assertNull($cast->set($model, 'ip', '', []));
+        $this->assertNull($cast->get($model, 'ip', null, []));
+        // What is stored already is kept.
+        $this->assertSame('00000000000000000000ffffc0a80101', $cast->set($model, 'ip', '00000000000000000000ffffc0a80101', []));
+        foreach (['192.168.1', 'fe80::1/64', 'host', '256.0.0.1'] as $bad) {
+            try {
+                $cast->set($model, 'ip', $bad, []);
+                $this->fail($bad.' was stored');
+            } catch (InvalidArgumentException) {
+                $this->assertTrue(true);
+            }
+        }
+        // The order of the text is the order of the addresses (IPv4 as numbers).
+        $sorted = array_map(fn (string $ip) => $cast->set($model, 'ip', $ip, []), ['10.0.0.2', '9.255.255.255', '192.168.1.1', '10.0.0.10']);
+        sort($sorted);
+        $this->assertSame(['9.255.255.255', '10.0.0.2', '10.0.0.10', '192.168.1.1'], array_map(fn (string $hex) => $cast->get($model, 'ip', $hex, []), $sorted));
+    }
+
+    public function test_a_network_of_either_family_is_one_range_of_the_same_column(): void
+    {
+        $this->assertSame(['00000000000000000000ffffc0a80100', '00000000000000000000ffffc0a801ff'], IpAddressService::hexRange('192.168.1.0/24'));
+        $this->assertSame(['00000000000000000000ffffc0a80101', '00000000000000000000ffffc0a80101'], IpAddressService::hexRange('192.168.1.1'));
+        $this->assertSame(['fe800000000000000000000000000000', 'fe80000000000000ffffffffffffffff'], IpAddressService::hexRange('fe80::/64'));
+        $this->assertNull(IpAddressService::hexRange('192.168.1.0/33'));
+        $this->assertNull(IpAddressService::hexRange('nonsense'));
+
+        $this->assertTrue(IpAddressService::within('192.168.1.0/24', '192.168.1.254'));
+        $this->assertFalse(IpAddressService::within('192.168.1.0/24', '192.168.2.1'));
+        $this->assertTrue(IpAddressService::within('fe80::/64', 'fe80::dead:beef'));
+        // A network of one family does not contain an address of the other.
+        $this->assertFalse(IpAddressService::within('0.0.0.0/0', 'fe80::1'));
+        $this->assertFalse(IpAddressService::within('fe80::/64', '10.0.0.1'));
     }
 }

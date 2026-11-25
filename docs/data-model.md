@@ -52,15 +52,19 @@ Polymorphic key-value (`HasSettings`). A ping-only device is pinged at, and an a
 
 The model keeps `$device->ping_address`, `wake_mac`, ... as attributes (`HasDeviceSettings`).
 
-## IP addresses as numbers
+## IP addresses
 
-An IPv4 address that is searched by network is stored as a number, not as text: `unsignedBigInteger` (what `ip2long` gives, 192.168.1.1 = 3232235777) with the cast
-`App\Casts\IpAddress` (`'ip' => IpAddress::class`): the model reads and writes the dotted text, the column holds the number. A network is then one range on an index,
-`IpAddressService::whereInNetwork($query, 'ip', '192.168.1.0/24')` (`whereBetween`), and the same on SQLite and PostgreSQL. The cast refuses what is no IPv4 address
-(it does not store 0). **IPv4 only**; IPv6 has its own cast, `App\Casts\Ipv6Address`: 128 bits do not fit in a number column, so it is `char(32)` (32 hexadecimal
-characters, lower case, zero-padded: `fe80::1` = `fe800000000000000000000000000001`), which sorts like the address, so a network is again one range
-(`IpAddressService::whereInNetworkV6`). A column that can hold both families is two columns (or the family decides which cast the model uses); there is no
-one cast for both. Not applied to the tables yet (each needs a migration that converts the data and a `down()`).
+An address that is searched by network is stored so that a network is **one range on an index** (`whereBetween`), the same on SQLite and PostgreSQL. Use **`App\Casts\Ip`**:
+`char(32)` (`$table->char('ip', 32)->index()`), `'ip' => Ip::class`. The column holds the 128 bits as 32 hexadecimal characters (lower case, zero-padded); an IPv4 address
+is stored as the IPv4-mapped IPv6 one (`::ffff:a.b.c.d`: `192.168.1.1` = `00000000000000000000ffffc0a80101`), so **both families are in one column** and sort in one order.
+The model reads and writes the text (`192.168.1.1`, `fe80::1`); what is no IP address is refused (not stored as 0).
+
+    Device::query()->tap(fn ($q) => IpAddressService::whereWithin($q, 'ip', '192.168.1.0/24'))   // or 'fe80::/64'
+    IpAddressService::within('192.168.1.0/24', $ip)    // in PHP
+
+A network of one family never contains an address of the other (`0.0.0.0/0` has no IPv6 address in it).
+Where a column surely holds one family only, the smaller casts exist: `IpAddress` (IPv4 as a number, `unsignedBigInteger`, `IpAddressService::whereInNetwork`) and `Ipv6Address`
+(`char(32)`, `whereInNetworkV6`). None is applied to the tables yet (each table needs a migration that converts the data and has a `down()`).
 
 ## `value_definitions` and `value_samples`
 

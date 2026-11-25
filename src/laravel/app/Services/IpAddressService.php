@@ -119,4 +119,60 @@ class IpAddressService
 
         return $range === null ? $query->whereRaw('1 = 0') : $query->whereBetween($column, $range);
     }
+
+    /** The prefix of an IPv4 address among the 32 characters (the IPv4-mapped IPv6 address, `::ffff:a.b.c.d`). */
+    private const V4_PREFIX = '00000000000000000000ffff';
+
+    /** An address of either family as its 32 characters (an IPv4 one as the IPv4-mapped one), null when it is no IP address (the 32 characters themselves are accepted). */
+    public static function toHex(string $ip): ?string
+    {
+        $number = self::toLong($ip);
+
+        return $number === null ? self::ipv6ToHex($ip) : self::V4_PREFIX.sprintf('%08x', $number);
+    }
+
+    /** The 32 characters to the text: "192.168.1.1" for an IPv4-mapped address, the compressed IPv6 one ("fe80::1") for the rest. */
+    public static function fromHex(string $hex): string
+    {
+        $hex = str_pad($hex, 32, '0', STR_PAD_LEFT);
+
+        return str_starts_with($hex, self::V4_PREFIX) ? self::toIp((int) hexdec(substr($hex, 24))) : self::hexToIpv6($hex);
+    }
+
+    /**
+     * The first and the last address of a network of either family ("192.168.1.0/24", "fe80::/64") as 32 characters (an IPv4 network is the IPv4-mapped
+     * range: the prefix of 96 bits and its own), null for no network.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public static function hexRange(string $cidr): ?array
+    {
+        $parts = explode('/', $cidr);
+        if (self::toLong($parts[0]) === null) {
+            return self::cidrToRangeV6($cidr);
+        }
+        $prefix = $parts[1] ?? '32';
+        if (count($parts) > 2 || ! ctype_digit($prefix) || (int) $prefix > 32) {
+            return null;
+        }
+
+        return self::cidrToRangeV6('::ffff:'.$parts[0].'/'.(96 + (int) $prefix));
+    }
+
+    /** The address (of either family) is in the network (of the same family). */
+    public static function within(string $cidr, string $ip): bool
+    {
+        $range = self::hexRange($cidr);
+        $hex = self::toHex($ip);
+
+        return $range !== null && $hex !== null && strcmp($hex, $range[0]) >= 0 && strcmp($hex, $range[1]) <= 0;
+    }
+
+    /** The rows whose address (a column with the cast `Ip`) is in the network, of either family: one `between`. A bad network matches nothing. */
+    public static function whereWithin(EloquentBuilder|Builder $query, string $column, string $cidr): EloquentBuilder|Builder
+    {
+        $range = self::hexRange($cidr);
+
+        return $range === null ? $query->whereRaw('1 = 0') : $query->whereBetween($column, $range);
+    }
 }
