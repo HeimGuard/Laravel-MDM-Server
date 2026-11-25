@@ -589,6 +589,78 @@ class SwitchPortsTest extends TestCase
         $this->assertSame([6, 0, 5, 5], array_column($gateway['switch']['ports'], 'link'));
     }
 
+    public function test_ports_set_by_hand_show_on_the_card_without_a_link_and_devices_are_plugged_into_them(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $modem = $this->switchDevice(false, 'modem');
+        $printer = $this->printer();
+        $this->assertFalse(SwitchService::enabled($modem));
+
+        Livewire::test(\App\Livewire\ManualPorts::class, ['deviceId' => $modem->id])
+            ->set('ports', '100')
+            ->call('save')
+            ->assertHasErrors('ports')
+            ->set('ports', '4')
+            ->call('save')
+            ->assertDispatched('closeModal');
+
+        $modem = $modem->fresh();
+        $this->assertTrue(SwitchService::enabled($modem));
+        $this->assertFalse(SwitchService::reads($modem));
+        $this->assertSame([1, 2, 3, 4], array_column(SwitchService::ports($modem), 'port'));
+        $this->assertSame([SwitchService::MANUAL_LINK], array_unique(array_column(SwitchService::ports($modem), 'link')));
+        // Nothing to read: no request for an agent.
+        $relay = $this->relay();
+        $this->assertNull(SwitchService::probe($modem, $relay));
+
+        // The devices are plugged into them by hand, and the card of the map has them.
+        SwitchService::assign($modem, 2, [$printer->id]);
+        $card = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id')['device:'.$modem->id]['switch'];
+        $this->assertCount(4, $card['ports']);
+        $this->assertSame('Not read', collect($card['ports'])->firstWhere('port', 2)['link_name']);
+        $this->assertSame([$printer->displayName], array_column(collect($card['ports'])->firstWhere('port', 2)['devices'], 'name'));
+
+        // Fewer ports: the device on a port that is gone is taken off it. Empty: no ports.
+        SwitchService::setPorts($modem, 1);
+        $this->assertNull($printer->fresh()->switch_id);
+        SwitchService::setPorts($modem, null);
+        $this->assertFalse(SwitchService::enabled($modem->fresh()));
+    }
+
+    public function test_the_ports_of_a_device_that_is_read_cannot_be_set_by_hand_and_the_reading_wins(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice();
+        $switch->forceFill(['switch_ports' => 8])->save();
+
+        $this->assertSame(0, SwitchService::manualPorts($switch->fresh()));
+        $this->assertNull(SwitchService::ports($switch->fresh()));
+        Livewire::test(\App\Livewire\ManualPorts::class, ['deviceId' => $switch->id])->assertSee('cannot be set by hand');
+    }
+
+    public function test_a_router_of_another_network_of_the_site_can_be_plugged_into_a_port(): void
+    {
+        $switch = $this->switchDevice();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        // The modem is the gateway of another network (192.168.2.0/24) the agent of that network reports; its address is not in the network of the switch.
+        $second = $this->relay('1.37.0', 'relay2');
+        $data = json_decode(json_encode($second->data), true);
+        $data['machine']['Networks'][0] = ['Name' => 'eth1', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'Mac' => 'AA-BB-CC-DD-EE-02', 'IPAddresses' => ['192.168.2.5'],
+            'Addresses' => [['Address' => '192.168.2.5', 'PrefixLength' => 24]], 'Gateway' => '192.168.2.1', 'GatewayMac' => 'AA-BB-CC-00-00-02'];
+        $second->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $modem = new Device;
+        $modem->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24])->save();
+
+        $this->assertContains($modem->id, array_column(SwitchService::candidates($switch, 3), 'id'));
+        $this->assertSame(1, SwitchService::assign($switch, 3, [$modem->id]));
+
+        // The gateway node has the cable: its port on the switch card (network-map.js draws it).
+        $nodes = collect(\App\Support\NetworkMap::build()['nodes']);
+        $gateway = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Archer');
+        $this->assertSame(['switch' => 'device:'.$switch->id, 'port' => 3], $gateway['plug']);
+    }
+
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void
     {
         $switch = $this->switchDevice();

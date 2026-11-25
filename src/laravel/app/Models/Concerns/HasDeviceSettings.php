@@ -32,6 +32,8 @@ trait HasDeviceSettings
         // The interfaces of an SNMP device the user switched off (hidden) or on (shown) against the default (names; SwitchService::parseSnmp).
         'switch_hidden' => ['switch.hidden', SettingDataType::STRING, 'ping'],
         'switch_shown' => ['switch.shown', SettingDataType::STRING, 'ping'],
+        // The ports of a device that is not read, set by hand (how many; the Ports window of the device menu).
+        'switch_ports' => ['switch.ports', SettingDataType::INT, 'ping'],
         'switch_type' => ['switch.type', SettingDataType::STRING, 'ping'],
         'switch_user' => ['switch.user', SettingDataType::STRING, 'ping'],
         'switch_password' => ['switch.password', SettingDataType::STRING, 'ping'],

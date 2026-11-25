@@ -86,12 +86,45 @@ class SwitchService
 
     private const PAGE = '/PortStatisticsRpm.htm';
 
-    public static function enabled(Device $device): bool
+    /** The link of a port set by hand: nothing reads it, so nothing is known about the cable. */
+    public const MANUAL_LINK = -1;
+
+    /** The agent reads the ports of the device (SNMP, or the web page of a TP-Link switch). */
+    public static function reads(Device $device): bool
     {
         $type = (string) $device->switch_type;
 
         // SNMP has a community (the password) and no user.
         return $device->isPingOnly && ($type === self::SNMP || (isset(self::TYPES[$type]) && (string) $device->switch_user !== '')) && (string) $device->switch_password !== '';
+    }
+
+    /** The ports of a ping-only device set by hand (a switch without SNMP, a modem, a patch panel): how many, 0 when none. A device that is read has its own. */
+    public static function manualPorts(Device $device): int
+    {
+        return $device->isPingOnly && ! self::reads($device) ? max(0, min(self::MAX_PORTS, (int) $device->switch_ports)) : 0;
+    }
+
+    /** The device has ports: read by the agent or set by hand. */
+    public static function enabled(Device $device): bool
+    {
+        return self::reads($device) || self::manualPorts($device) > 0;
+    }
+
+    /** Sets how many ports a device has by hand (0 or null: none); the devices on the ports that are gone are taken off them. */
+    public static function setPorts(Device $device, ?int $count): void
+    {
+        $count = $count === null || $count < 1 ? null : min($count, self::MAX_PORTS);
+        $device->forceFill(['switch_ports' => $count])->save();
+        Device::query()->whereSettingIn('lan.switch_device_id', [$device->id])->get()
+            ->filter(fn (Device $other) => $other->switch_port === null || $other->switch_port > (int) $count)
+            ->each(fn (Device $other) => self::unplug($other));
+        LiveUpdates::device($device->id, 'switch');
+    }
+
+    /** The name of a link for the pages: the speed, or that nothing reads it. */
+    public static function linkName(int $link): string
+    {
+        return $link === self::MANUAL_LINK ? __('Not read') : __(self::LINKS[$link] ?? 'Down');
     }
 
     public static function storePassword(string $password): string
@@ -119,7 +152,7 @@ class SwitchService
     public static function probe(Device $device, Device $relay): ?array
     {
         $snmp = (string) $device->switch_type === self::SNMP;
-        if (! self::enabled($device) || ! $relay->public_key || version_compare((string) $relay->agent_version, $snmp ? self::SNMP_VERSION : self::VERSION, '<')) {
+        if (! self::reads($device) || ! $relay->public_key || version_compare((string) $relay->agent_version, $snmp ? self::SNMP_VERSION : self::VERSION, '<')) {
             return null;
         }
         if ($snmp) {
@@ -523,6 +556,10 @@ class SwitchService
      */
     public static function ports(Device $device): ?array
     {
+        // Set by hand: the numbers only (the link is not read).
+        if (self::manualPorts($device) > 0) {
+            return array_map(fn (int $number) => ['port' => $number, 'name' => null, 'link' => self::MANUAL_LINK, 'bad' => 0, 'tx' => null, 'rx' => null], range(1, self::manualPorts($device)));
+        }
         $definitions = ValueDefinition::query()->where('valuable_type', $device->getMorphClass())->where('valuable_id', $device->id)
             ->whereIn('key', ['switch.port.link', 'switch.port.bad', 'switch.port.tx', 'switch.port.rx'])->get();
         if ($definitions->isEmpty()) {
@@ -636,7 +673,8 @@ class SwitchService
      */
     public static function candidates(Device $switch, int $port): array
     {
-        $network = collect(NetworkMap::build()['networks'])->first(fn (array $network) => collect($network['devices'])->contains('id', $switch->id));
+        $networks = collect(NetworkMap::build()['networks']);
+        $network = $networks->first(fn (array $network) => collect($network['devices'])->contains('id', $switch->id));
         if ($network === null) {
             return [];
         }
@@ -650,6 +688,16 @@ class SwitchService
             $here = $device->switch_id === $switch->id && $device->switch_port === $port;
             if ($device->switch_id === null || $here) {
                 $rows[] = ['id' => $device->id, 'name' => $member['name'], 'address' => $member['address'], 'selected' => $here];
+            }
+        }
+        // The routers of the other networks of the same site (a modem behind or beside it: its address is in another network, but the cable is in
+        // a port of this switch).
+        $others = $networks->filter(fn (array $other) => $other['site'] === $network['site'] && $other['id'] !== $network['id'] && ($other['gatewayId'] ?? null) !== null);
+        foreach ($others->pluck('gatewayId')->unique()->reject(fn ($id) => $id === $switch->id || collect($rows)->contains('id', $id)) as $id) {
+            $device = Device::query()->where('kind', 'ping')->find($id);
+            $here = $device !== null && $device->switch_id === $switch->id && $device->switch_port === $port;
+            if ($device !== null && ($device->switch_id === null || $here)) {
+                $rows[] = ['id' => $device->id, 'name' => $device->displayName, 'address' => (string) $device->ping_address, 'selected' => $here];
             }
         }
 
@@ -711,7 +759,7 @@ class SwitchService
         foreach (self::ports($device) ?? [] as $port) {
             $onPort = $plugged->where('switch_port', $port['port'])->values();
             $on = $onPort->map(fn (Device $other) => $other->displayName)->all();
-            $link = __(self::LINKS[$port['link']] ?? 'Down');
+            $link = self::linkName($port['link']);
             $ports[] = $port + [
                 'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->all(),
                 'link_name' => $link,

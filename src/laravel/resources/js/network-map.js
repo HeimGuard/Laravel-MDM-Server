@@ -16,7 +16,8 @@ function portsHtml(card) {
     if (!card.ports.length) {
         return `<span class="nm-sub">${esc(card.empty)}</span>`;
     }
-    const speed = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
+    // A port set by hand (link -1) is not read: no speed, no state.
+    const speed = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
 
     return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}"`
         + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
@@ -233,7 +234,7 @@ export function createNetworkMap(root, data) {
         const LEVEL = 8;
         // The room inside the frame of a network round its devices.
         const FRAME = 24;
-        const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
+        const SPEED = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
         // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
         // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
         const portLinks = (id, el, elLeft, elTop, rowLeft, centres = null) => {
@@ -792,6 +793,28 @@ export function createNetworkMap(root, data) {
             // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
             bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
+        }
+        // A gateway that is a device of the portal and is plugged into a port of a switch (a modem behind or beside the router): the cable from
+        // the port down, across and up into the side of its card (its card is not in a grid, it hangs under the address of the site).
+        for (const node of map.nodes) {
+            const owner = node.kind === 'gateway' && node.plug ? nodes.get(node.plug.switch) : null;
+            if (!owner?.switch || !box.has(node.id) || !box.has(owner.id)) {
+                continue;
+            }
+            const el = elements.get(owner.id);
+            const at = box.get(owner.id);
+            const gate = box.get(node.id);
+            const button = el.querySelector(`.nm-port[data-port="${Number(node.plug.port)}"]`);
+            const start = button
+                ? { x: at.left + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: at.top + el.clientTop + button.offsetTop + button.offsetHeight }
+                : { x: at.x, y: at.bottom };
+            const middle = (gate.top + gate.bottom) / 2;
+            const sideX = gate.x < start.x ? gate.right + 14 : gate.left - 14;
+            const across = at.bottom + 10;
+            const raw = [[start.x, start.y], [start.x, across], [sideX, across], [sideX, middle], [sideX < gate.x ? gate.left : gate.right, middle]];
+            const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
+            const port = owner.switch.ports.find((p) => p.port === Number(node.plug.port));
+            bars.push(`<path class="nm-link is-port ${SPEED(port?.link ?? 0)}${nodes.get(node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path>`);
         }
         svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');

@@ -155,3 +155,15 @@ off (the device stays). The window shows what the device says about itself once 
   - The tables are kept in the cache for an hour; the devices are looked at again when a table changes, or every 10 minutes.
 - Not covered (simple on purpose): SNMP v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
 
+#### Ports by hand (no agent version needed)
+
+A ping-only device that nothing reads (no SNMP, no TP-Link page: an unmanaged switch, a modem, a patch panel) gets ports from the item **Ports** of its menu
+(`Livewire\ManualPorts`): only how many (1 to 64; empty = none, setting `switch.ports`, `HasDeviceSettings::switch_ports`).
+- `SwitchService::manualPorts` / `reads` / `enabled`: a device that is read (SNMP, TP-Link) keeps its own ports, the number set by hand is ignored (and the window says so).
+- The ports are numbers with the link `SwitchService::MANUAL_LINK` (-1, "Not read"): on the map they have the plain colour, no speed, and their cable is a plain line
+  (`is-manual`); no packets, no alert for a cable (nothing is read, `plugState` is null). Fewer ports than before take the devices on the missing ones off them.
+- What is plugged into a port is chosen by hand, as for any port (click it on the map). The choice contains the devices of its network and **the routers
+  (gateways) of the other networks of the same site** (`SwitchService::candidates`: a modem behind or beside the router has its address in another network, but its cable
+  is in a port of this one).
+- A **gateway that is a device of the portal** and is plugged into a port has the cable drawn from that port to its card (`plug` of the gateway node, `network-map.js`).
+

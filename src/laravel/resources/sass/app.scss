@@ -418,6 +418,8 @@ label.mdm-tag {
         &.is-fast { stroke: var(--hg-info); --nm-flow: 1.8s; }
         &.is-slow { stroke: var(--hg-high); --nm-flow: 5s; }
         &.is-linkdown { stroke: var(--hg-offline); stroke-dasharray: 4 4; animation: none; }
+        // Set by hand: nothing reads the cable, a plain line.
+        &.is-manual { stroke: var(--hg-offline); stroke-dasharray: none; animation: none; }
         &.is-down { animation: none; }
         @media (prefers-reduced-motion: reduce) { animation: none; stroke-dasharray: none; }
     }

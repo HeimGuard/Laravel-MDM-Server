@@ -336,6 +336,7 @@ class NetworkMap
             // A device of the portal with that address is the gateway (a router added as ping-only).
             $known = $byId->first(fn (Device $device) => isset($network['members'][$device->id]) && $network['members'][$device->id]['address'] === $gateway);
             $this->networks[$key]['gatewayName'] = $known?->displayName;
+            $this->networks[$key]['gatewayId'] = $known?->id;
             // The router is one device: the gateway node stands for it, it is not drawn a second time among the devices.
             if ($known !== null) {
                 $gatewayNodes[$known->id][$id] = true;
@@ -418,6 +419,8 @@ class NetworkMap
             foreach (array_keys($nodeIds) as $nodeId) {
                 $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
                 $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
+                // The cable from that port to the card of the gateway (network-map.js).
+                $this->nodes[$nodeId]['plug'] = ['switch' => array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id, 'port' => $device->switch_port];
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
             }
         }
@@ -487,6 +490,7 @@ class NetworkMap
                 },
             ])->sortBy(fn ($member) => ip2long($member['address']) ?: PHP_INT_MAX)->values()->all(),
             'gatewayName' => $network['gatewayName'] ?? null,
+            'gatewayId' => $network['gatewayId'] ?? null,
             'relays' => collect($network['members'])->keys()->filter(fn ($id) => ! $byId[$id]->isPingOnly && ! $byId[$id]->offline && $byId[$id]->signsRequests)->map(fn ($id) => $byId[$id]->displayName)->values()->all(),
             'anchor' => self::anchor($key),
             'unknown' => collect($network['unknown'] ?? [])->map(fn (NetworkNeighbour $neighbour) => [
