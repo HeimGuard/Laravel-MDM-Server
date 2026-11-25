@@ -12,15 +12,16 @@ const SPAN = { tunnel: 3 };
 const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // The ports of a switch whose ports are read (agents 1.37.0+): a button each, by the speed of its link.
-function portsHtml(card) {
+// `wan`: the port the router reaches the internet by (read from its default route): marked with a dot.
+function portsHtml(card, wan = null) {
     if (!card.ports.length) {
         return `<span class="nm-sub">${esc(card.empty)}</span>`;
     }
     // A port set by hand (link -1) is not read: no speed, no state.
     const speed = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
 
-    return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}"`
-        + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
+    return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}${wan !== null && Number(wan) === port.port ? ' is-wan' : ''}"`
+        + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}${wan !== null && Number(wan) === port.port ? ' · WAN' : ''}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
 }
 
 function nodeHtml(node) {
@@ -32,7 +33,7 @@ function nodeHtml(node) {
         + '</span>';
     // A switch is not a link as a whole (its ports are buttons): the head is.
     if (node.switch) {
-        return `<a class="nm-head" href="${esc(node.url)}">${head}</a>${portsHtml(node.switch)}`;
+        return `<a class="nm-head" href="${esc(node.url)}">${head}</a>${portsHtml(node.switch, node.wan ?? null)}`;
     }
 
     return head;
@@ -645,6 +646,11 @@ export function createNetworkMap(root, data) {
         }
         // Links from the bottom of the upper node to the top of the lower one; down ones faint.
         for (const edge of map.edges) {
+            // A gateway plugged into a port of the gateway above it has the cable from that port: no second (virtual) link beside it.
+            const plugged = nodes.get(edge.to)?.kind === 'gateway' ? nodes.get(edge.to).plug : null;
+            if (plugged && plugged.switch === edge.from && nodes.get(edge.from)?.switch?.ports.some((p) => p.port === Number(plugged.port))) {
+                continue;
+            }
             if (placed(edge.to) && placed(edge.from) && box.has(edge.from) && box.has(edge.to)) {
                 routes.push({ bundle: edge.from + (edge.type === 'tunnel' ? ':tunnel' : ''), a: box.get(edge.from), b: box.get(edge.to),
                     cls: `nm-link is-${esc(edge.type)}${edge.up ? '' : ' is-down'}`, title: edge.label ? `<title>${esc(edge.label)}</title>` : '' });
@@ -808,10 +814,19 @@ export function createNetworkMap(root, data) {
             const start = button
                 ? { x: at.left + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: at.top + el.clientTop + button.offsetTop + button.offsetHeight }
                 : { x: at.x, y: at.bottom };
-            const middle = (gate.top + gate.bottom) / 2;
-            const sideX = gate.x < start.x ? gate.right + 14 : gate.left - 14;
-            const across = at.bottom + 10;
-            const raw = [[start.x, start.y], [start.x, across], [sideX, across], [sideX, middle], [sideX < gate.x ? gate.left : gate.right, middle]];
+            let raw;
+            if (gate.top >= at.bottom + 12) {
+                // Below the card of the owner: down from the port, across between them, down into the top of the card, onto its WAN port when it is known.
+                const wan = node.wan ? elements.get(node.id).querySelector(`.nm-port[data-port="${Number(node.wan)}"]`) : null;
+                const endX = wan ? gate.left + elements.get(node.id).clientLeft + wan.offsetLeft + wan.offsetWidth / 2 : gate.x;
+                const across = (at.bottom + gate.top) / 2;
+                raw = [[start.x, start.y], [start.x, across], [endX, across], [endX, gate.top]];
+            } else {
+                const middle = (gate.top + gate.bottom) / 2;
+                const sideX = gate.x < start.x ? gate.right + 14 : gate.left - 14;
+                raw = [[start.x, start.y], [start.x, at.bottom + 10], [sideX, at.bottom + 10], [sideX, middle], [sideX < gate.x ? gate.left : gate.right, middle]];
+            }
+            // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
             const port = owner.switch.ports.find((p) => p.port === Number(node.plug.port));
             bars.push(`<path class="nm-link is-port ${SPEED(port?.link ?? 0)}${nodes.get(node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path>`);

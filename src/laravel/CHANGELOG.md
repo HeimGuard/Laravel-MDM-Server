@@ -13,6 +13,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Fixed
+- Network map: a router plugged into a port of the gateway above it has the cable from that port, no second link beside it, and the cable ends on the WAN port of the router (the one its default route leaves by: a dot and `WAN` in the tooltip, agents 1.41.0+).
 - Network map: a modem that is a plain device with ports (alone in a network of its own) and has a router plugged into it, or in front of it by the default route, is the gateway of that router: the router hangs under it instead of the cards overlapping the frame of the LAN.
 
 ### Changed

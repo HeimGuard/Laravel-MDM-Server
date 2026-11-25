@@ -320,6 +320,8 @@ label.mdm-tag {
         &.is-down { border-style: dashed; opacity: .75; }
         &.has-devices { background: var(--hg-surface-raised); }
         &.has-errors { box-shadow: 0 0 0 2px var(--hg-critical); }
+        // The port a router reaches the internet by (its default route): a dot on the corner.
+        &.is-wan { position: relative; &::after { content: ''; position: absolute; top: -.2rem; right: -.2rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--hg-info); } }
         &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
     }
 }

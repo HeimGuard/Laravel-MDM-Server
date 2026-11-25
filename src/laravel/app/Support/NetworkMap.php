@@ -446,6 +446,10 @@ class NetworkMap
             foreach (array_keys($nodeIds) as $nodeId) {
                 $wan = __('Way out: :interface via :via', ['interface' => $uplink['interface'] ?? __('interface'), 'via' => $uplink['via']]);
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$wan : $wan;
+                // The port of its card it leaves by (the number of the interface is the number of the port): marked on the card and where the cable ends.
+                if (isset($uplink['index']) && is_int($uplink['index'])) {
+                    $this->nodes[$nodeId]['wan'] = $uplink['index'];
+                }
                 if ($front !== null) {
                     $parent = array_key_first($gatewayNodes[$front->id] ?? []) ?? $this->promote($front, $this->nodes[$nodeId]['group'] ?? null, $gatewayNodes);
                     if ($parent !== null) {
