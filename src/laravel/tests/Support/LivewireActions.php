@@ -109,6 +109,7 @@ final class LivewireActions
             ],
             L\Networks\SwitchPort::class => [
                 // The devices plugged into a port of a switch: like the ping settings, any signed-in user.
+                'pickRemote' => $ui,
                 'save' => $user,
             ],
             L\Notifications\Page::class => [
