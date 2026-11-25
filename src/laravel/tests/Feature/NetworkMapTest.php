@@ -175,6 +175,23 @@ class NetworkMapTest extends TestCase
         $this->assertSame(2, NetworkSite::query()->count());
     }
 
+    public function test_a_public_address_nobody_was_behind_for_a_week_is_not_on_the_map_but_stays_stored(): void
+    {
+        config(['mdm.public_address' => '89.24.10.5']);
+        $this->travelTo(now()->subDays(8));
+        NetworkSite::record(['31.30.4.122']);
+        $this->travelBack();
+        NetworkSite::record(['89.24.10.5']);
+        $this->agent('OFFICE', '89.24.10.5', [$this->nic('eth0', 'lan', '10.0.0.2')]);
+
+        $map = NetworkMap::build();
+
+        $this->assertFalse(collect($map['nodes'])->keyBy('id')->has('site:31.30.4.122'));
+        $this->assertFalse(collect($map['edges'])->keyBy('id')->has('internet>site:31.30.4.122'));
+        // Never discarded: the address is still known (it is seen again when a device is behind it).
+        $this->assertSame(2, NetworkSite::query()->count());
+    }
+
     public function test_a_device_without_the_gateway_mac_going_over_the_public_address_joins_its_lan(): void
     {
         // The LAN's public address is the server's (it is in it), here from MDM_PUBLIC_ADDRESS.

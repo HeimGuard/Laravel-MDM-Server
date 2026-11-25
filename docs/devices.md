@@ -128,8 +128,14 @@ off (the device stays). The window shows what the device says about itself once 
   - **The version:** the agent tries v2c, then v1 (v1 has no GetBulk: it walks with GetNext). The one that answered is remembered (cache, a day)
     and sent as `snmp.version` (0 = v1, 1 = v2c) so the agent tries it first; the answer carries `version`.
   - **What it is:** name and description (the inventory `snmp` / `system`: `name`, `descr`, `version`, only the changes), shown on the card.
-  - **The ports:** the Ethernet interfaces (`ifType` 6), the port is the ifIndex. A device without any (a UPS, a printer without an `ifTable`) has the
-    system line and no ports.
+  - **The ports:** the Ethernet interfaces (`ifType` 6) that are no virtual ones; the port is the ifIndex and the name is `ifName` (else
+    `ifDescr`), shown after the number on the card and in the dropdown of the port. A Linux router (Turris, OpenWrt) reports everything of the type Ethernet:
+    its ports (`lan0`…, `wan`), the ports of its CPU (`eth0`…), bridges (`br-lan`), VLANs (`lan0.10`), Wi-Fi (`wlan0`) and virtual interfaces (`veth…`).
+    `SwitchService::VIRTUAL_INTERFACES` leaves out the loopback, bridges, VLANs, Wi-Fi, tunnels and containers by name, and `eth0`, `eth1`… when
+    the device names its ports `lan0`, `lan1`… (three or more: they are its CPU). The SNMP window lists **every Ethernet interface it has read** (the
+    inventory `snmp` / `interfaces`) with a tick for the ports: tick any off or on against the default, no names to write (the settings `switch.hidden` and
+    `switch.shown` keep only what differs from the default). The values of an interface that is switched off later stay as history, it is not shown. A
+    device that tells no names keeps all its Ethernet interfaces. The agent reads the names as two more columns (15 of 16), no newer agent is needed.
   - **Which device is plugged into which port**, when the MAC table is there (below).
 - The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
   returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names
@@ -148,4 +154,17 @@ off (the device stays). The window shows what the device says about itself once 
     its address is learned on another port). One you take off its port is marked `off` and is not paired again.
   - The tables are kept in the cache for an hour; the devices are looked at again when a table changes, or every 10 minutes.
 - Not covered (simple on purpose): SNMP v3, a port without `ifType` 6 (a LAG, a VLAN). A switch without a MAC table (TP-Link Easy Smart too) is plugged by hand.
+
+#### Ports by hand (no agent version needed)
+
+A ping-only device that nothing reads (no SNMP, no TP-Link page: an unmanaged switch, a modem, a patch panel) gets ports from the item **Ports** of its menu
+(`Livewire\ManualPorts`): only how many (1 to 64; empty = none, setting `switch.ports`, `HasDeviceSettings::switch_ports`).
+- `SwitchService::manualPorts` / `reads` / `enabled`: a device that is read (SNMP, TP-Link) keeps its own ports, the number set by hand is ignored (and the window says so).
+- The ports are numbers with the link `SwitchService::MANUAL_LINK` (-1, "Not read"): on the map they have the plain colour, no speed, and their cable is a plain line
+  (`is-manual`); no packets, no alert for a cable (nothing is read, `plugState` is null). Fewer ports than before take the devices on the missing ones off them.
+- What is plugged into a port is chosen by hand, as for any port (click it on the map). The choice contains the devices of its network and **the routers
+  (gateways) of the other networks of the same site** (`SwitchService::candidates`: a modem behind or beside the router has its address in another network, but its cable
+  is in a port of this one).
+- A **gateway that is a device of the portal** and is plugged into a port has the cable drawn from that port to its card (`plug` of the gateway node, `network-map.js`).
+- A gateway plugged into a port of **another gateway** (a modem that is the WAN of the router: `Turris` into a port of `Archer`) hangs under it: the map drops its link from the public address and links it from the modem (`NetworkMap`, "the way out"), so the chain is Internet → address → modem → router → its LAN. Nothing is read for it, it is what you set.
 

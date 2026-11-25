@@ -5,6 +5,8 @@
     $snmp = (string) $device->switch_type === \App\Services\SwitchService::SNMP;
     // What an SNMP device says about itself (name, description) and the version that answered.
     $info = $snmp ? \App\Services\SwitchService::info($device) : null;
+    // Set by hand (nothing reads it): the ports and what is plugged into them, no link and no packets.
+    $manual = ! \App\Services\SwitchService::reads($device);
     $plugged = $ports === null ? collect() : \App\Models\Device::query()->whereSettingIn('lan.switch_device_id', [$device->id])->get()->groupBy(fn ($other) => $other->switch_port);
 @endphp
 @if (\App\Services\SwitchService::enabled($device))
@@ -12,7 +14,9 @@
         <div class="card-body">
             <div class="d-flex align-items-center mb-2">
                 <h2 class="h6 fw-semibold mb-0 me-auto">{{ __('Ports') }}</h2>
-                @if ($ports !== null)
+                @if ($ports !== null && $manual)
+                    <span class="small text-body-secondary">{{ __('Set by hand') }}</span>
+                @elseif ($ports !== null)
                     <span class="small text-body-secondary">{{ __(':up of :total connected', ['up' => collect($ports)->where('link', '>=', 2)->count(), 'total' => count($ports)]) }}</span>
                 @endif
             </div>
@@ -29,29 +33,33 @@
                         <thead>
                             <tr class="text-body-secondary">
                                 <th>{{ __('Port') }}</th>
-                                <th>{{ __('Link') }}</th>
-                                <th class="text-end">{{ __('Bad packets') }}</th>
-                                <th class="d-none d-md-table-cell text-end">TX</th>
-                                <th class="d-none d-md-table-cell text-end">RX</th>
+                                @unless ($manual)
+                                    <th>{{ __('Link') }}</th>
+                                    <th class="text-end">{{ __('Bad packets') }}</th>
+                                    <th class="d-none d-md-table-cell text-end">TX</th>
+                                    <th class="d-none d-md-table-cell text-end">RX</th>
+                                @endunless
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($ports as $port)
                                 <tr wire:key="switch-port-{{ $port['port'] }}">
                                     <td class="fw-medium text-nowrap">
-                                        {{ $port['port'] }}
+                                        {{ $port['port'] }}@if (! empty($port['name']))<span class="text-body-secondary fw-normal ms-1">{{ $port['name'] }}</span>@endif
                                         @foreach ($plugged->get($port['port'], collect()) as $other)
                                             <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Plugged into :switch, port :port', ['switch' => $device->displayName, 'port' => $port['port']]) }}">
                                                 <x-badge color="secondary" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
                                             </a>
                                         @endforeach
                                     </td>
-                                    <td>
-                                        <span class="badge text-bg-{{ $port['link'] >= 2 ? 'success' : 'secondary' }} fw-medium">{{ __(\App\Services\SwitchService::LINKS[$port['link']] ?? 'Down') }}</span>
-                                    </td>
-                                    <td class="text-end {{ $port['bad'] > 0 ? 'text-warning' : 'text-body-secondary' }}">{{ number_format($port['bad'], 0, '', ' ') }}</td>
-                                    <td class="d-none d-md-table-cell text-end text-body-secondary">{{ $port['tx'] === null ? '—' : number_format($port['tx'], 0, '', ' ') }}</td>
-                                    <td class="d-none d-md-table-cell text-end text-body-secondary">{{ $port['rx'] === null ? '—' : number_format($port['rx'], 0, '', ' ') }}</td>
+                                    @unless ($manual)
+                                        <td>
+                                            <span class="badge text-bg-{{ $port['link'] >= 2 ? 'success' : 'secondary' }} fw-medium">{{ \App\Services\SwitchService::linkName($port['link']) }}</span>
+                                        </td>
+                                        <td class="text-end {{ $port['bad'] > 0 ? 'text-warning' : 'text-body-secondary' }}">{{ number_format($port['bad'], 0, '', ' ') }}</td>
+                                        <td class="d-none d-md-table-cell text-end text-body-secondary">{{ $port['tx'] === null ? '—' : number_format($port['tx'], 0, '', ' ') }}</td>
+                                        <td class="d-none d-md-table-cell text-end text-body-secondary">{{ $port['rx'] === null ? '—' : number_format($port['rx'], 0, '', ' ') }}</td>
+                                    @endunless
                                 </tr>
                             @endforeach
                         </tbody>

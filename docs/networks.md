@@ -16,11 +16,11 @@
    site; one that reaches it over a VPN of its own (a private address none of its other interfaces
    has) is not, and without a reported address its networks are at **Unknown address**. A public
    address devices were seen behind stays on the map when nobody is there anymore, faint, with
-   when it was seen last. `MDM_DETECT_PUBLIC_ADDRESS=false` stops the agents asking too.
+   when it was seen last, for a week (`NetworkSite::MAP_DAYS`): it has no devices and no activity after that, so it is left out of the map (the row stays, the address is shown again as soon as a device is behind it). `MDM_DETECT_PUBLIC_ADDRESS=false` stops the agents asking too.
 3. **Gateways**: the default gateway of the interfaces (agents 1.15.0+, with its MAC from the
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
-   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. An open network has no node of its own
+   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. A network of one device is not drawn at all: the device hangs from what is above it and its card has the name of the network after its address. An open network has no node of its own
    (a VPN keeps it): what is above it, the gateway or the public address, stands for it, and its devices are in a dashed frame (the name of the network and the number of its
    devices on the bottom edge; a click on it closes the network, it is the node of the network again, and a click on the node opens it). The devices
    plugged into its ports hang under its card in one row centred under it (the first half left of the middle, the others right; the middle is free for
@@ -45,7 +45,7 @@
 
 **A switch** whose ports are read (a ping-only device read over SNMP or from its web page, see
 [Devices](devices.md#switch-without-snmp-ports-agents-1370)) is a card of its own among the devices of its network: its ports are buttons,
-coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link) with a ring for bad packets, and
+coloured by the speed of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed without a link; the legend has all four) with a red ring for bad packets, and
 a dropdown on hover shows the link, the bad packets, the packets sent and received and the devices plugged into them. The devices plugged into
 a port hang under the card of the switch in a row of their own (the card in the middle of its column, on the link of the column), each with a
 right-angled link with rounded corners from its port, in the colour of the link (green 1000 Mb/s, blue 100 Mb/s, orange 10 Mb/s, dashed

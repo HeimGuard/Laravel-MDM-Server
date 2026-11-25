@@ -1,0 +1,125 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Query\Builder;
+
+/**
+ * IP addresses (IPv4 and IPv6) for the cast `App\Casts\Ip`: the 32 hexadecimal characters of an address and the range of a network for the queries.
+ */
+class IpAddressService
+{
+    /** "192.168.1.1" => 3232235777, null when it is no IPv4 address (a leading zero or a short form is not one either). */
+    public static function toLong(string $ip): ?int
+    {
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false ? null : (int) ip2long($ip);
+    }
+
+    /** 3232235777 => "192.168.1.1". */
+    public static function toIp(int $number): string
+    {
+        return long2ip($number);
+    }
+
+    /** "fe80::1" => its 32 hexadecimal characters (lower case, zero-padded), null when it is no IPv6 address (the 32 characters themselves are accepted). */
+    public static function ipv6ToHex(string $ip): ?string
+    {
+        if (preg_match('/^[0-9a-f]{32}$/', $ip) === 1) {
+            return $ip;
+        }
+        $binary = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false ? false : inet_pton($ip);
+
+        return $binary === false ? null : bin2hex($binary);
+    }
+
+    /** The 32 characters to the compressed text ("fe80::1"). */
+    public static function hexToIpv6(string $hex): string
+    {
+        return (string) inet_ntop((string) hex2bin(str_pad($hex, 32, '0', STR_PAD_LEFT)));
+    }
+
+    /**
+     * The first and the last address of "fe80::/64" as 32 characters, null for no IPv6 network.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public static function cidrToRangeV6(string $cidr): ?array
+    {
+        $parts = explode('/', $cidr);
+        $hex = self::ipv6ToHex($parts[0]);
+        $prefix = $parts[1] ?? '128';
+        if ($hex === null || count($parts) > 2 || ! ctype_digit($prefix) || (int) $prefix > 128) {
+            return null;
+        }
+        $bytes = str_split($hex, 2);
+        $start = '';
+        $end = '';
+        for ($i = 0; $i < 16; $i++) {
+            // How many bits of this byte are in the network: 8 .. 0.
+            $bits = max(0, min(8, (int) $prefix - $i * 8));
+            $mask = ($bits === 0 ? 0 : (0xFF << (8 - $bits)) & 0xFF);
+            $byte = hexdec($bytes[$i]);
+            $start .= sprintf('%02x', $byte & $mask);
+            $end .= sprintf('%02x', ($byte & $mask) | (~$mask & 0xFF));
+        }
+
+        return [$start, $end];
+    }
+
+    /** The prefix of an IPv4 address among the 32 characters (the IPv4-mapped IPv6 address, `::ffff:a.b.c.d`). */
+    private const V4_PREFIX = '00000000000000000000ffff';
+
+    /** An address of either family as its 32 characters (an IPv4 one as the IPv4-mapped one), null when it is no IP address (the 32 characters themselves are accepted). */
+    public static function toHex(string $ip): ?string
+    {
+        $number = self::toLong($ip);
+
+        return $number === null ? self::ipv6ToHex($ip) : self::V4_PREFIX.sprintf('%08x', $number);
+    }
+
+    /** The 32 characters to the text: "192.168.1.1" for an IPv4-mapped address, the compressed IPv6 one ("fe80::1") for the rest. */
+    public static function fromHex(string $hex): string
+    {
+        $hex = str_pad($hex, 32, '0', STR_PAD_LEFT);
+
+        return str_starts_with($hex, self::V4_PREFIX) ? self::toIp((int) hexdec(substr($hex, 24))) : self::hexToIpv6($hex);
+    }
+
+    /**
+     * The first and the last address of a network of either family ("192.168.1.0/24", "fe80::/64") as 32 characters (an IPv4 network is the IPv4-mapped
+     * range: the prefix of 96 bits and its own), null for no network.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public static function hexRange(string $cidr): ?array
+    {
+        $parts = explode('/', $cidr);
+        if (self::toLong($parts[0]) === null) {
+            return self::cidrToRangeV6($cidr);
+        }
+        $prefix = $parts[1] ?? '32';
+        if (count($parts) > 2 || ! ctype_digit($prefix) || (int) $prefix > 32) {
+            return null;
+        }
+
+        return self::cidrToRangeV6('::ffff:'.$parts[0].'/'.(96 + (int) $prefix));
+    }
+
+    /** The address (of either family) is in the network (of the same family). */
+    public static function within(string $cidr, string $ip): bool
+    {
+        $range = self::hexRange($cidr);
+        $hex = self::toHex($ip);
+
+        return $range !== null && $hex !== null && strcmp($hex, $range[0]) >= 0 && strcmp($hex, $range[1]) <= 0;
+    }
+
+    /** The rows whose address (a column with the cast `Ip`) is in the network, of either family: one `between`. A bad network matches nothing. */
+    public static function whereWithin(EloquentBuilder|Builder $query, string $column, string $cidr): EloquentBuilder|Builder
+    {
+        $range = self::hexRange($cidr);
+
+        return $range === null ? $query->whereRaw('1 = 0') : $query->whereBetween($column, $range);
+    }
+}

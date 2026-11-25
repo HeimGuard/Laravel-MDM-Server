@@ -103,6 +103,13 @@
                             <i class="dropdown-ico fas fa-stream fa-fw"></i>{{ __('SNMP') }}
                         </button>
                     </li>
+                    {{-- The ports of a device that nothing reads, set by hand. --}}
+                    <li>
+                        <button class="dropdown-item" type="button"
+                            x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'manual-ports', title: @js(__('Ports of :device', ['device' => $selectedDevice->displayName])), parameters: {deviceId: {{ $selectedDevice->id }}}})">
+                            <i class="dropdown-ico fas fa-grip-horizontal fa-fw"></i>{{ __('Ports') }}
+                        </button>
+                    </li>
                     {{-- The web login of a TP-Link switch: only for a TP-Link MAC address (or one read this way already). --}}
                     @if (\App\Services\SwitchService::isTpLink($selectedDevice) || (string) $selectedDevice->switch_type === \App\Services\SwitchService::TPLINK)
                         <li>

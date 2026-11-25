@@ -16,7 +16,8 @@ function portsHtml(card) {
     if (!card.ports.length) {
         return `<span class="nm-sub">${esc(card.empty)}</span>`;
     }
-    const speed = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
+    // A port set by hand (link -1) is not read: no speed, no state.
+    const speed = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
 
     return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}"`
         + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
@@ -194,6 +195,11 @@ export function createNetworkMap(root, data) {
         }
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
+        // A network of one device is not drawn (no frame, no node): the device is enough, the name of its network is after its address.
+        const bare = new Set([...collapsed.keys()].filter((network) => (members.get(network) || []).length === 1 && ['device', 'server'].includes(nodes.get(members.get(network)[0])?.kind)));
+        for (const network of bare) {
+            elements.get(members.get(network)[0])?.querySelector('.nm-sub')?.append(` · ${nodes.get(network).label}`);
+        }
         // A gateway with several networks: the devices plugged into its ports hang under it for one of them only (the one with the most devices),
         // the others have a cable from the port like a device of another network.
         const primary = new Map();
@@ -228,7 +234,7 @@ export function createNetworkMap(root, data) {
         const LEVEL = 8;
         // The room inside the frame of a network round its devices.
         const FRAME = 24;
-        const SPEED = (link) => (link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
+        const SPEED = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-linkdown');
         // The devices under a switch in a row, each linked from its port: right-angled with rounded corners like the other links, the
         // bars of the links that run over other ports (the ones that go farthest) the lowest, so none crosses another.
         const portLinks = (id, el, elLeft, elTop, rowLeft, centres = null) => {
@@ -410,7 +416,7 @@ export function createNetworkMap(root, data) {
         const slotWidth = (network) => {
             const hungRow = primary.get(collapsed.get(network)) === network ? (planOf(collapsed.get(network))?.half ?? 0) * 2 : 0;
 
-            return Math.max(grids.get(network).width, hungRow) + FRAME * 2;
+            return Math.max(grids.get(network).width, hungRow) + (bare.has(network) ? 0 : FRAME * 2);
         };
         const networksOf = (gateway) => {
             const list = [...collapsed].filter(([network, above]) => above === gateway && grids.has(network)).map(([network]) => network);
@@ -448,7 +454,7 @@ export function createNetworkMap(root, data) {
         // A grid is one block of its real size under its network: dagre centers the network over it.
         for (const [network, grid] of grids) {
             // (the frame of an open network is round it: room for it)
-            graph.setNode(grid.id, collapsed.has(network) ? { width: slotWidth(network), height: grid.height + FRAME * 2 } : { width: grid.width, height: grid.height });
+            graph.setNode(grid.id, collapsed.has(network) ? { width: slotWidth(network), height: grid.height + (bare.has(network) ? 0 : FRAME * 2) } : { width: grid.width, height: grid.height });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
             graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
@@ -646,10 +652,18 @@ export function createNetworkMap(root, data) {
         }
         // The links of one parent share a bar (the tree); the bars of different parents (and tunnels)
         // that would lie on each other run side by side in lanes.
+        // The links that come into the frame of an open network bend 16 above its top edge (the cables of the devices hung from a gateway bend 16 under
+        // it), not wherever the layout left the room: the bars of the network, and the links of a device to its other networks (a VPN).
+        const FRAME_BEND = 16;
+        const hungNetwork = (network) => collapsed.has(network) && Boolean(box.get(collapsed.get(network))?.rowBottom) && primary.get(collapsed.get(network)) === network;
+        const frameTopOf = (network) => (hungNetwork(network) ? box.get(collapsed.get(network)).bottom + 14 : (gridBox.get(network)?.top ?? 0) - FRAME);
+        const framed = (network) => collapsed.has(network) && gridBox.has(network) && !hungNetwork(network) && !bare.has(network);
         const LANE = 9;
         const bars_ = new Map();
         for (const route of routes) {
-            route.base = route.a.bottom + 32;
+            // (the lanes of the bars side by side go up from there, not into the frame)
+            route.up = framed(route.bundle);
+            route.base = route.up ? frameTopOf(route.bundle) - FRAME_BEND : route.a.bottom + 32;
             if (Math.abs(route.a.x - route.b.x) >= 0.5) {
                 const key = Math.round(route.base);
                 const group = bars_.get(key) || new Map();
@@ -674,7 +688,7 @@ export function createNetworkMap(root, data) {
         const drawn = routes.map((route) => {
             const lane = bars_.get(Math.round(route.base))?.get(route.bundle)?.lane || 0;
 
-            return `<path class="${route.cls}" d="${curve(elbow(route.a, route.b, route.base + lane * LANE))}">${route.title}</path>`;
+            return `<path class="${route.cls}" d="${curve(elbow(route.a, route.b, route.base + (route.up ? -lane : lane) * LANE))}">${route.title}</path>`;
         });
 
         // The other networks of a device: faint, clear while the device or the network is pointed at.
@@ -702,7 +716,8 @@ export function createNetworkMap(root, data) {
             }
             // Into the middle of the device's top, where its other links come in: across over the grid
             // for its first row, else across the gap above it.
-            const y = dev.top - grid.top < 1 ? grid.top - 20 : dev.top - GAP.y / 2;
+            const network = main.get(edge.to);
+            const y = dev.top - grid.top < 1 ? (framed(network) ? frameTopOf(network) - FRAME_BEND : grid.top - 20) : dev.top - GAP.y / 2;
             const right = sides.get(edge.to) === 'right';
             const entryX = dev.x;
             const channel = right ? grid.right + 14 : grid.left - 14;
@@ -720,7 +735,7 @@ export function createNetworkMap(root, data) {
         for (const network of collapsed.keys()) {
             const grid = grids.get(network);
             const at = gridBox.get(network);
-            if (!grid || !at) {
+            if (!grid || !at || bare.has(network)) {
                 continue;
             }
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';
@@ -778,6 +793,28 @@ export function createNetworkMap(root, data) {
             // No point twice in a row (the corner of a link of no length would not be drawn).
             const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
             bars.push(`<path class="nm-link is-port ${SPEED(r.port?.link ?? 0)}${nodes.get(r.node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(r.at.owner)}" data-port="${Number(r.node.plug.port)}" d="${curve(points)}"></path>`);
+        }
+        // A gateway that is a device of the portal and is plugged into a port of a switch (a modem behind or beside the router): the cable from
+        // the port down, across and up into the side of its card (its card is not in a grid, it hangs under the address of the site).
+        for (const node of map.nodes) {
+            const owner = node.kind === 'gateway' && node.plug ? nodes.get(node.plug.switch) : null;
+            if (!owner?.switch || !box.has(node.id) || !box.has(owner.id)) {
+                continue;
+            }
+            const el = elements.get(owner.id);
+            const at = box.get(owner.id);
+            const gate = box.get(node.id);
+            const button = el.querySelector(`.nm-port[data-port="${Number(node.plug.port)}"]`);
+            const start = button
+                ? { x: at.left + el.clientLeft + button.offsetLeft + button.offsetWidth / 2, y: at.top + el.clientTop + button.offsetTop + button.offsetHeight }
+                : { x: at.x, y: at.bottom };
+            const middle = (gate.top + gate.bottom) / 2;
+            const sideX = gate.x < start.x ? gate.right + 14 : gate.left - 14;
+            const across = at.bottom + 10;
+            const raw = [[start.x, start.y], [start.x, across], [sideX, across], [sideX, middle], [sideX < gate.x ? gate.left : gate.right, middle]];
+            const points = raw.filter((point, i) => i === 0 || point[0] !== raw[i - 1][0] || point[1] !== raw[i - 1][1]);
+            const port = owner.switch.ports.find((p) => p.port === Number(node.plug.port));
+            bars.push(`<path class="nm-link is-port ${SPEED(port?.link ?? 0)}${nodes.get(node.id).state === 'up' ? '' : ' is-down'}" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path><path class="nm-link-hit" data-owner="${esc(owner.id)}" data-port="${Number(node.plug.port)}" d="${curve(points)}"></path>`);
         }
         svg.innerHTML = `<g>${frames.join('')}${bars.join('')}${drawn.join('')}</g><g class="nm-side"></g>`;
         const sideLayer = svg.querySelector('.nm-side');

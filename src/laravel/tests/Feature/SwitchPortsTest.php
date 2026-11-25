@@ -192,6 +192,84 @@ class SwitchPortsTest extends TestCase
         $this->assertNull(SwitchService::parseSnmp("1.3.6.1.2.1.2.2.1.3.1 53\nnot a line"));
     }
 
+    /** The interface table of a Linux router (the Turris): the physical ports and everything else of the type Ethernet. */
+    private function routerBody(): string
+    {
+        $c = SwitchService::SNMP_COLUMNS;
+        $lines = [];
+        $all = [[1, 'lo', 24], [2, 'eth0', 6], [3, 'lan0', 6], [4, 'lan1', 6], [5, 'lan2', 6], [6, 'lan3', 6], [7, 'lan4', 6], [8, 'wan', 6], [9, 'br-lan', 6], [10, 'wlan0', 6], [11, 'lan0.10', 6], [12, 'veth1a2b', 6]];
+        foreach ($all as [$index, $name, $type]) {
+            array_push($lines, $c['type'].".$index $type", $c['status'].".$index 1", $c['fast'].".$index 1000", $c['if_name'].".$index x:".bin2hex($name));
+        }
+
+        return implode("\n", $lines);
+    }
+
+    public function test_the_ports_of_a_router_are_found_without_its_cpu_bridges_wifi_and_virtual_interfaces(): void
+    {
+        $body = $this->routerBody();
+
+        // The 6 ports of the router (lan0-4 and wan): not the CPU (eth0, it names its ports lan0…), the bridge, Wi-Fi, the VLAN, the virtual one, the loopback.
+        $ports = SwitchService::parseSnmp($body);
+        $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'], array_column($ports, 'name'));
+        $this->assertSame([3, 4, 5, 6, 7, 8], array_column($ports, 'port'));
+        // Every Ethernet interface is known with whether it is a port by default (for the window).
+        $all = collect(SwitchService::snmpInterfaces($body))->pluck('port_by_default', 'name');
+        $this->assertSame(['eth0' => false, 'lan0' => true, 'wan' => true, 'br-lan' => false, 'wlan0' => false, 'lan0.10' => false, 'veth1a2b' => false], $all->only(['eth0', 'lan0', 'wan', 'br-lan', 'wlan0', 'lan0.10', 'veth1a2b'])->all());
+        // The user switches one on and one off: what was ticked against the default (names, any case).
+        $this->assertSame(['eth0', 'lan0', 'lan1', 'lan2', 'lan3', 'wan'], array_column(SwitchService::parseSnmp($body, 'LAN4', 'eth0'), 'name'));
+        // A device that does not name its ports like that keeps its eth0, eth1…
+        $c = SwitchService::SNMP_COLUMNS;
+        $server = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['if_name'].'.1 x:'.bin2hex('eth0')."\n".$c['type'].'.2 6'."\n".$c['if_name'].'.2 x:'.bin2hex('eth1')."\n".$c['type'].'.3 6'."\n".$c['if_name'].'.3 x:'.bin2hex('docker0'));
+        $this->assertSame(['eth0', 'eth1'], array_column($server, 'name'));
+        // ifDescr when there is no ifName; no names at all: every Ethernet interface, as before.
+        $byDescr = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['status'].'.1 1'."\n".$c['if_descr'].'.1 x:'.bin2hex('lan9'));
+        $this->assertSame(['lan9'], array_column($byDescr, 'name'));
+        $this->assertCount(2, SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['type'].'.2 6'));
+        // The agent walks the columns of the names too (at most 16 columns).
+        $this->assertLessThanOrEqual(16, count(SwitchService::SNMP_COLUMNS));
+    }
+
+    public function test_an_interface_switched_off_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void
+    {
+        Cache::flush();
+        $switch = $this->snmpSwitch();
+        $relay = $this->relay('1.39.0');
+        $read = fn () => SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $this->routerBody(), 'error' => null, 'version' => 1]]);
+
+        $this->assertSame(1, $read());
+        $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'], array_column(SwitchService::ports($switch->fresh()), 'name'));
+        $this->assertSame(6.0, $switch->fresh()->latestValue('switch.ports.up'));
+        // The window knows all the interfaces and which is a port.
+        $this->assertCount(11, SwitchService::interfaces($switch->fresh()));
+
+        // lan4 is switched off and eth0 on: the values of lan4 stay as history, it is not shown.
+        $switch->forceFill(['switch_hidden' => 'lan4', 'switch_shown' => 'eth0'])->save();
+        $this->assertSame(1, $read());
+        $this->assertSame(['eth0', 'lan0', 'lan1', 'lan2', 'lan3', 'wan'], array_column(SwitchService::ports($switch->fresh()), 'name'));
+        $card = SwitchService::mapCard($switch->fresh(), collect());
+        $this->assertStringContainsString('(eth0)', $card['ports'][0]['heading']);
+        $this->assertStringContainsString('eth0', $card['ports'][0]['title']);
+    }
+
+    public function test_the_interfaces_are_ticked_in_the_snmp_window_against_their_defaults(): void
+    {
+        Cache::flush();
+        $this->actingAs(User::factory()->create());
+        $switch = $this->snmpSwitch();
+        SwitchService::record($this->relay('1.39.0'), [['id' => $switch->id, 'status' => 200, 'body' => $this->routerBody(), 'error' => null, 'version' => 1]]);
+
+        $window = Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $switch->id])->assertSet('include', ['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan']);
+        // br-lan on, lan1 off.
+        $window->set('include', ['lan0', 'lan2', 'lan3', 'lan4', 'wan', 'br-lan'])->call('save')->assertHasNoErrors();
+
+        $fresh = $switch->fresh();
+        $this->assertSame(['lan1', 'br-lan'], [$fresh->switch_hidden, $fresh->switch_shown]);
+        // Ticked as by default again: nothing is kept.
+        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $switch->id])->set('include', ['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'])->call('save');
+        $this->assertTrue(blank($switch->fresh()->switch_hidden) && blank($switch->fresh()->switch_shown));
+    }
+
     public function test_an_snmp_switch_gets_the_columns_and_the_community_for_its_own_key_only(): void
     {
         $switch = $this->snmpSwitch();
@@ -509,6 +587,110 @@ class SwitchPortsTest extends TestCase
         $this->assertSame($router->id, $gateway['switch']['id']);
         $this->assertSame([1, 2, 3, 5], array_column($gateway['switch']['ports'], 'port'));
         $this->assertSame([6, 0, 5, 5], array_column($gateway['switch']['ports'], 'link'));
+    }
+
+    public function test_ports_set_by_hand_show_on_the_card_without_a_link_and_devices_are_plugged_into_them(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $modem = $this->switchDevice(false, 'modem');
+        $printer = $this->printer();
+        $this->assertFalse(SwitchService::enabled($modem));
+
+        Livewire::test(\App\Livewire\ManualPorts::class, ['deviceId' => $modem->id])
+            ->set('ports', '100')
+            ->call('save')
+            ->assertHasErrors('ports')
+            ->set('ports', '4')
+            ->call('save')
+            ->assertDispatched('closeModal');
+
+        $modem = $modem->fresh();
+        $this->assertTrue(SwitchService::enabled($modem));
+        $this->assertFalse(SwitchService::reads($modem));
+        $this->assertSame([1, 2, 3, 4], array_column(SwitchService::ports($modem), 'port'));
+        $this->assertSame([SwitchService::MANUAL_LINK], array_unique(array_column(SwitchService::ports($modem), 'link')));
+        // Nothing to read: no request for an agent.
+        $relay = $this->relay();
+        $this->assertNull(SwitchService::probe($modem, $relay));
+
+        // The devices are plugged into them by hand, and the card of the map has them.
+        SwitchService::assign($modem, 2, [$printer->id]);
+        $card = collect(\App\Support\NetworkMap::build()['nodes'])->keyBy('id')['device:'.$modem->id]['switch'];
+        $this->assertCount(4, $card['ports']);
+        $this->assertSame('Not read', collect($card['ports'])->firstWhere('port', 2)['link_name']);
+        $this->assertSame([$printer->displayName], array_column(collect($card['ports'])->firstWhere('port', 2)['devices'], 'name'));
+
+        // Fewer ports: the device on a port that is gone is taken off it. Empty: no ports.
+        SwitchService::setPorts($modem, 1);
+        $this->assertNull($printer->fresh()->switch_id);
+        SwitchService::setPorts($modem, null);
+        $this->assertFalse(SwitchService::enabled($modem->fresh()));
+    }
+
+    public function test_the_ports_of_a_device_that_is_read_cannot_be_set_by_hand_and_the_reading_wins(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $switch = $this->switchDevice();
+        $switch->forceFill(['switch_ports' => 8])->save();
+
+        $this->assertSame(0, SwitchService::manualPorts($switch->fresh()));
+        $this->assertNull(SwitchService::ports($switch->fresh()));
+        Livewire::test(\App\Livewire\ManualPorts::class, ['deviceId' => $switch->id])->assertSee('cannot be set by hand');
+    }
+
+    public function test_a_router_of_another_network_of_the_site_can_be_plugged_into_a_port(): void
+    {
+        $switch = $this->switchDevice();
+        $relay = $this->relay();
+        SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => self::PAGE, 'error' => null]]);
+        // The modem is the gateway of another network (192.168.2.0/24) the agent of that network reports; its address is not in the network of the switch.
+        $second = $this->relay('1.37.0', 'relay2');
+        $data = json_decode(json_encode($second->data), true);
+        $data['machine']['Networks'][0] = ['Name' => 'eth1', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'Mac' => 'AA-BB-CC-DD-EE-02', 'IPAddresses' => ['192.168.2.5'],
+            'Addresses' => [['Address' => '192.168.2.5', 'PrefixLength' => 24]], 'Gateway' => '192.168.2.1', 'GatewayMac' => 'AA-BB-CC-00-00-02'];
+        $second->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $modem = new Device;
+        $modem->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24])->save();
+
+        $this->assertContains($modem->id, array_column(SwitchService::candidates($switch, 3), 'id'));
+        $this->assertSame(1, SwitchService::assign($switch, 3, [$modem->id]));
+
+        // The gateway node has the cable: its port on the switch card (network-map.js draws it).
+        $nodes = collect(\App\Support\NetworkMap::build()['nodes']);
+        $gateway = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Archer');
+        $this->assertSame(['switch' => 'device:'.$switch->id, 'port' => 3], $gateway['plug']);
+    }
+
+    public function test_a_router_plugged_into_the_port_of_a_modem_hangs_under_it_not_under_the_public_address(): void
+    {
+        $lan = $this->relay();
+        $data = json_decode(json_encode($lan->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $lan->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $second = $this->relay('1.37.0', 'relay2');
+        $data = json_decode(json_encode($second->data), true);
+        $data['machine']['Networks'][0] = ['Name' => 'eth1', 'Type' => 'lan', 'Connected' => true, 'Status' => 'Up', 'Mac' => 'AA-BB-CC-DD-EE-02', 'IPAddresses' => ['192.168.2.5'],
+            'Addresses' => [['Address' => '192.168.2.5', 'PrefixLength' => 24]], 'Gateway' => '192.168.2.1', 'GatewayMac' => 'AA-BB-CC-00-00-02'];
+        $second->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24])->save();
+        $archer = new Device;
+        $archer->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24, 'switch_ports' => 4])->save();
+
+        // Turris is the router of the LAN, plugged into a port of the modem: the WAN of Turris.
+        $this->assertContains($turris->id, array_column(SwitchService::candidates($archer->fresh(), 1), 'id'));
+        SwitchService::assign($archer->fresh(), 1, [$turris->id]);
+
+        $map = \App\Support\NetworkMap::build();
+        $nodes = collect($map['nodes']);
+        $modemNode = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Archer');
+        $routerNode = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Turris');
+        $edges = collect($map['edges']);
+        // The router has its modem for the way out, not a link of its own from the public address.
+        $this->assertTrue($edges->contains(fn (array $edge) => $edge['from'] === $modemNode['id'] && $edge['to'] === $routerNode['id']));
+        $this->assertFalse($edges->contains(fn (array $edge) => str_starts_with($edge['from'], 'site:') && $edge['to'] === $routerNode['id']));
+        $this->assertSame(['switch' => $modemNode['id'], 'port' => 1], $routerNode['plug']);
     }
 
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void

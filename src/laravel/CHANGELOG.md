@@ -7,6 +7,23 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Added
+- Ports by hand: a ping-only device without SNMP and TP-Link (an unmanaged switch, a modem) gets its ports from the item **Ports** of the device menu (how many); they show on the network map without a link and the devices are plugged into them by hand.
+- Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
+
+### Changed
+- Network map: a network of one device is not drawn (no frame, no node), only the device, with the name of its network after its address on its card.
+
+### Changed
+- Network map: a public address without devices that nobody has been behind for a week is not on the map any more (it stays stored and is shown again when a device is behind it).
+- Network map: the links that come into the frame of a network (the bars of the network, the link of a device to its other network such as a VPN) bend 16 px above its top edge, the cables of the devices hung from a gateway 16 px under it.
+- Network map: the colours of the ports match the legend: it has 10M (orange) too, and the ring for bad packets is red on every port (it was orange, like 10M) and in the legend, on a port of the colour of its speed.
+
+### Fixed
+- SNMP: a router read over SNMP (the Turris) showed 15 ports instead of its 6: every Ethernet interface counted, with the ports of its CPU, bridges, VLANs and Wi-Fi. The names of the interfaces are read
+  now (shown after the number of the port), the virtual ones (bridges, VLANs, Wi-Fi, tunnels, containers) and the CPU (`eth0`… of a router that names its ports `lan0`…) are left out, and the SNMP window lists all
+  the interfaces with a tick for the ports: any can be switched on or off.
+
 ### Fixed
 - Network map: a gateway with several networks (a router with a guest network) no longer draws them over one another: the one with the devices hung under the gateway is under it, the others stand right of it, each in a frame,
   and the gateway reserves the room of all of them.

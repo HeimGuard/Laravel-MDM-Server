@@ -282,8 +282,8 @@ class NetworkMap
                 badges: [trans_choice(':count device|:count devices', $count)], extra: ['group' => $site]);
             $this->edge('internet', 'site:'.$site, 'wan', true);
         }
-        // The public addresses devices were behind before, nobody there now: faint, with when.
-        foreach (NetworkSite::query()->whereNotIn('address', $sites)->orderBy('address')->get() as $known) {
+        // The public addresses devices were behind before, nobody there now: faint, with when; not after a week (they have no devices and no activity).
+        foreach (NetworkSite::query()->whereNotIn('address', $sites)->where('last_seen_at', '>=', now()->subDays(NetworkSite::MAP_DAYS))->orderBy('address')->get() as $known) {
             $this->node('site:'.$known->address, 'site', $known->address, __('public · last seen :time', ['time' => $known->last_seen_at->diffForHumans()]),
                 'fas fa-building', 'secondary', state: 'down', badges: [trans_choice(':count device|:count devices', 0)], extra: ['group' => $known->address]);
             $this->edge('internet', 'site:'.$known->address, 'wan', false);
@@ -336,6 +336,7 @@ class NetworkMap
             // A device of the portal with that address is the gateway (a router added as ping-only).
             $known = $byId->first(fn (Device $device) => isset($network['members'][$device->id]) && $network['members'][$device->id]['address'] === $gateway);
             $this->networks[$key]['gatewayName'] = $known?->displayName;
+            $this->networks[$key]['gatewayId'] = $known?->id;
             // The router is one device: the gateway node stands for it, it is not drawn a second time among the devices.
             if ($known !== null) {
                 $gatewayNodes[$known->id][$id] = true;
@@ -418,6 +419,16 @@ class NetworkMap
             foreach (array_keys($nodeIds) as $nodeId) {
                 $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
                 $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
+                // The cable from that port to the card of the gateway (network-map.js).
+                $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;
+                $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];
+                // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one,
+                // so this gateway hangs under it, not under the public address.
+                if ($owner !== $nodeId && isset($this->nodes[$owner]) && $this->nodes[$owner]['kind'] === 'gateway' && ($this->nodes[$owner]['group'] ?? null) === ($this->nodes[$nodeId]['group'] ?? null)) {
+                    $site = 'site:'.$this->nodes[$nodeId]['group'];
+                    unset($this->edges[$site.'>'.$nodeId]);
+                    $this->edge($owner, $nodeId, 'uplink', true);
+                }
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
             }
         }
@@ -487,6 +498,7 @@ class NetworkMap
                 },
             ])->sortBy(fn ($member) => ip2long($member['address']) ?: PHP_INT_MAX)->values()->all(),
             'gatewayName' => $network['gatewayName'] ?? null,
+            'gatewayId' => $network['gatewayId'] ?? null,
             'relays' => collect($network['members'])->keys()->filter(fn ($id) => ! $byId[$id]->isPingOnly && ! $byId[$id]->offline && $byId[$id]->signsRequests)->map(fn ($id) => $byId[$id]->displayName)->values()->all(),
             'anchor' => self::anchor($key),
             'unknown' => collect($network['unknown'] ?? [])->map(fn (NetworkNeighbour $neighbour) => [

@@ -52,6 +52,19 @@ Polymorphic key-value (`HasSettings`). A ping-only device is pinged at, and an a
 
 The model keeps `$device->ping_address`, `wake_mac`, ... as attributes (`HasDeviceSettings`).
 
+## IP addresses (the type is ready, no table uses it yet)
+
+`App\Casts\Ip` (and `IpAddressService`) stores an address of either family so that a network is **one range on an index** (`whereBetween`), the same on SQLite and PostgreSQL:
+`char(32)` (`$table->char('ip', 32)->index()`), `'ip' => Ip::class`. The column holds the 128 bits as 32 hexadecimal characters (lower case, zero-padded); an IPv4 address
+is stored as the IPv4-mapped IPv6 one (`::ffff:a.b.c.d`: `192.168.1.1` = `00000000000000000000ffffc0a80101`), so both families are in one column and sort in one order.
+The model reads and writes the text (`192.168.1.1`, `fe80::1`); what is no IP address is refused (not stored as 0).
+
+    IpAddressService::whereWithin($query, 'ip', '192.168.1.0/24')   // or 'fe80::/64'
+    IpAddressService::within('192.168.1.0/24', $ip)                  // in PHP
+
+A network of one family never contains an address of the other (`0.0.0.0/0` has no IPv6 address in it). Tests: `tests/Unit/IpAddressCastTest.php`, `tests/Feature/IpAddressQueryTest.php`.
+**Not used anywhere yet**, on purpose: see Open.
+
 ## `value_definitions` and `value_samples`
 
 Numbers (an enum as a code). A definition is one measured value of one model (`valuable_*`, `key`, `name`); `name` is empty
@@ -167,3 +180,8 @@ execution of a command is `device_commands`, of a script `script_runs`. No new t
 
 - Raw logs: they are not stored (only the events). The exception is syslog: a message no parser reads is kept in the cache for a day (the same message is one
   entry with a `count`, `SyslogUnparsedService`) and shown in the table of the events as an event of the type `syslog`; it is never in `events`.
+- **TODO: IP addresses as `Ip` (a range search by network).** Today they are text: `network_neighbours.ip`, `port_scan_results.ip`, `security_findings.target_ip` (`string(15)`),
+  `network_sites.address`, `devices.public_ip` (`string(45)`), the setting `lan.address` (ping address) and addresses inside JSON. One table at a time, each with a migration that
+  converts the data and has a `down()` (run with data on PostgreSQL both ways), and the places that compare or search by `LIKE` / `ip2long` (`NetworkMap`, `NetworkNeighbour`, `Device`,
+  `Syslog`) moved to `whereWithin`. A setting (`lan.address`) is a `settings` row, not a column: it needs its own answer (the cast cannot be on it). Suggested order: `network_neighbours`,
+  `port_scan_results`, `security_findings`, then `network_sites` and `devices.public_ip`.
