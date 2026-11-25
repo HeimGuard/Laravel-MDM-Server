@@ -10,7 +10,7 @@
     $plugged = $ports === null ? collect() : \App\Models\Device::query()->whereSettingIn('lan.switch_device_id', [$device->id])->get()->groupBy(fn ($other) => $other->switch_port);
 @endphp
 @if (\App\Services\SwitchService::enabled($device))
-    <div class="card mt-3">
+    <div class="card mt-3" x-on:devices-changed.window="$wire.$refresh()">
         <div class="card-body">
             <div class="d-flex align-items-center mb-2">
                 <h2 class="h6 fw-semibold mb-0 me-auto">{{ __('Ports') }}</h2>
@@ -45,7 +45,8 @@
                             @foreach ($ports as $port)
                                 <tr wire:key="switch-port-{{ $port['port'] }}">
                                     <td class="fw-medium text-nowrap">
-                                        {{ $port['label'] }}@if (! empty($port['name']) && $port['name'] !== $port['label'])<span class="text-body-secondary fw-normal ms-1">{{ $port['name'] }}</span>@endif
+                                        <button class="btn btn-link btn-sm p-0 fw-medium text-decoration-none align-baseline" title="{{ __('Click to choose the devices on this port') }}" type="button"
+                                            x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'networks.switch-port', title: @js(__(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['label']])), parameters: {deviceId: {{ $device->id }}, port: {{ (int) $port['port'] }}}})">{{ $port['label'] }}</button>@if (! empty($port['name']) && $port['name'] !== $port['label'])<span class="text-body-secondary fw-normal ms-1">{{ $port['name'] }}</span>@endif
                                         @foreach ($plugged->get($port['port'], collect()) as $other)
                                             <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Plugged into :switch, port :port', ['switch' => $device->displayName, 'port' => $port['label']]) }}">
                                                 <x-badge color="secondary" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
@@ -66,7 +67,8 @@
                             @foreach ($plugged->filter(fn ($others, $number) => $number !== '' && ! in_array((int) $number, array_column($ports, 'port'), true)) as $number => $others)
                                 <tr class="text-body-secondary" wire:key="switch-port-missing-{{ $number }}">
                                     <td class="fw-medium text-nowrap" colspan="{{ $manual ? 1 : 5 }}">
-                                        {{ $number }}<span class="fw-normal ms-1">{{ __('Not a port now') }}</span>
+                                        <button class="btn btn-link btn-sm p-0 fw-medium text-decoration-none align-baseline" title="{{ __('Click to choose the devices on this port') }}" type="button"
+                                            x-on:click="Livewire.dispatch('openModal', {livewireComponents: 'networks.switch-port', title: @js(__(':switch: port :port', ['switch' => $device->displayName, 'port' => $number])), parameters: {deviceId: {{ $device->id }}, port: {{ (int) $number }}}})">{{ $number }}</button><span class="fw-normal ms-1">{{ __('Not a port now') }}</span>
                                         @foreach ($others as $other)
                                             <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Not a port of this device now: click to take the device off it') }}">
                                                 <x-badge color="warning" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
