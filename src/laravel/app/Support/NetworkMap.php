@@ -420,7 +420,15 @@ class NetworkMap
                 $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
                 $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
                 // The cable from that port to the card of the gateway (network-map.js).
-                $this->nodes[$nodeId]['plug'] = ['switch' => array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id, 'port' => $device->switch_port];
+                $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;
+                $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];
+                // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one,
+                // so this gateway hangs under it, not under the public address.
+                if ($owner !== $nodeId && isset($this->nodes[$owner]) && $this->nodes[$owner]['kind'] === 'gateway' && ($this->nodes[$owner]['group'] ?? null) === ($this->nodes[$nodeId]['group'] ?? null)) {
+                    $site = 'site:'.$this->nodes[$nodeId]['group'];
+                    unset($this->edges[$site.'>'.$nodeId]);
+                    $this->edge($owner, $nodeId, 'uplink', true);
+                }
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
             }
         }

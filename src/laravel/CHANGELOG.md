@@ -9,7 +9,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ### Added
 - Ports by hand: a ping-only device without SNMP and TP-Link (an unmanaged switch, a modem) gets its ports from the item **Ports** of the device menu (how many); they show on the network map without a link and the devices are plugged into them by hand.
-- Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card.
+- Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Changed
 - Network map: a network of one device is not drawn (no frame, no node), only the device, with the name of its network after its address on its card.

@@ -166,4 +166,5 @@ A ping-only device that nothing reads (no SNMP, no TP-Link page: an unmanaged sw
   (gateways) of the other networks of the same site** (`SwitchService::candidates`: a modem behind or beside the router has its address in another network, but its cable
   is in a port of this one).
 - A **gateway that is a device of the portal** and is plugged into a port has the cable drawn from that port to its card (`plug` of the gateway node, `network-map.js`).
+- A gateway plugged into a port of **another gateway** (a modem that is the WAN of the router: `Turris` into a port of `Archer`) hangs under it: the map drops its link from the public address and links it from the modem (`NetworkMap`, "the way out"), so the chain is Internet → address → modem → router → its LAN. Nothing is read for it, it is what you set.
 
