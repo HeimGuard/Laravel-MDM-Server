@@ -624,8 +624,8 @@ class NetworkMap
     /**
      * A device that is in front of a gateway (a modem whose address is in a network of its own, the way out of a router) becomes a gateway of that
      * site: its card (with the ports set by hand or read) is the gateway node under the public address, the router hangs under it (hangUnder). Its
-     * device node goes, and so does its network when it was the only one in it (the network of one device is not drawn anyway); a network with
-     * more in it hangs under the new gateway. Returns the id of the gateway node, null when it cannot be one (no node, no ports). It is in the site of the router behind it.
+     * device node goes, and so does its network. Only a device that is alone in its networks (a modem outside the LAN of the router) is one: a switch of a
+     * LAN with other devices is not. Returns the id of the gateway node, null when it cannot be one (no node, no ports). It is in the site of the router behind it.
      *
      * @param  array<int, array<string, bool>>  $gatewayNodes
      */
@@ -635,28 +635,26 @@ class NetworkMap
         if ($site === null || ! isset($this->nodes[$deviceNode]) || empty($this->nodes[$deviceNode]['switch'])) {
             return null;
         }
+        // Only a device that is alone in its networks (a modem outside the LAN of the router): a switch of a LAN with other devices in it is no gateway of a
+        // router plugged into it (that is the LAN side of the router, the cable only).
+        $inEdges = array_filter($this->edges, fn (array $edge) => $edge['to'] === $deviceNode);
+        foreach ($inEdges as $edge) {
+            if (array_filter($this->edges, fn (array $other) => $other['from'] === $edge['from'] && $other['to'] !== $deviceNode) !== []) {
+                return null;
+            }
+        }
         $old = $this->nodes[$deviceNode];
         $id = 'gw:'.$site.'|device:'.$device->id;
         $this->node($id, 'gateway', $device->displayName, $device->ping_address, 'fas fa-route', 'success', state: $old['state'] ?? 'up', url: $old['url'] ?? null, badges: [__('gateway')],
             extra: ['title' => $old['title'] ?? null, 'group' => $site, 'switch' => $old['switch'], 'plug' => $old['plug'] ?? null]);
         $this->edge('site:'.$site, $id, 'uplink', ($old['state'] ?? 'up') === 'up');
         $gatewayNodes[$device->id][$id] = true;
-        // The networks the device was in: one of its own goes (nothing else in it), the others hang under the gateway.
-        foreach (array_filter($this->edges, fn (array $edge) => $edge['to'] === $deviceNode) as $edge) {
-            $network = $edge['from'];
-            $others = array_filter($this->edges, fn (array $other) => $other['from'] === $network && $other['to'] !== $deviceNode);
-            unset($this->edges[$edge['id']]);
-            if ($others === []) {
-                foreach (array_filter($this->edges, fn (array $up) => $up['to'] === $network) as $up) {
-                    unset($this->edges[$up['id']]);
-                }
-                unset($this->nodes[$network]);
-            } else {
-                foreach (array_filter($this->edges, fn (array $up) => $up['to'] === $network && str_starts_with($up['from'], 'site:')) as $up) {
-                    unset($this->edges[$up['id']]);
-                }
-                $this->edge($id, $network, 'uplink', true);
+        // Its networks had nothing else in them: they go with it (a network of one device is not drawn anyway).
+        foreach ($inEdges as $edge) {
+            foreach (array_filter($this->edges, fn (array $up) => $up['to'] === $edge['from']) as $up) {
+                unset($this->edges[$up['id']]);
             }
+            unset($this->edges[$edge['id']], $this->nodes[$edge['from']]);
         }
         // What was plugged into its ports (and the cable of the card) belongs to the gateway now.
         foreach ($this->nodes as $key => $node) {
