@@ -25,6 +25,7 @@ async function settle(page, ms = 900) {
 
 async function shot(page, name) {
     await settle(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: `${out}/${name}.png` });
     console.log('saved', name);
 }
@@ -65,10 +66,10 @@ async function step(page, name, work) {
 
 (async () => {
     const browser = await chromium.launch();
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: 'dark' });
     await context.addCookies([{ name: 'theme', value: 'dark', url: base }]);
     const page = await context.newPage();
-    page.on('pageerror', (error) => console.log('page error:', error.message));
+    page.on('pageerror', (error) => console.log('page error:', error.message, '|', String(error.stack || '').split('\n').slice(1, 3).join(' ').trim(), '|', page.url()));
 
     // The first account (while there is none, /setup creates it).
     await page.goto(`${base}/setup`);
@@ -85,14 +86,9 @@ async function step(page, name, work) {
         await device(page, 'nas');
         await shot(page, 'device');
     });
-    await step(page, 'device-updates', async () => {
-        // The first device that has the tab of updates (it is shown only when there are some).
-        for (const name of ['asus-pc-2', 'nas', 'laptop-anna']) {
-            if (await device(page, name, 'Updates')) {
-                return shot(page, 'device-updates');
-            }
-        }
-        throw new Error('no device has updates');
+    await step(page, 'device-drives', async () => {
+        await device(page, 'nas', 'Drives');
+        await shot(page, 'device-drives');
     });
     await step(page, 'ping', async () => {
         await device(page, 'Tiskárna');
@@ -114,11 +110,15 @@ async function step(page, name, work) {
         await page.goto(`${base}/networks`);
         await page.locator('.network-map').waitFor({ timeout: 20000 });
         await page.waitForTimeout(1500);
+        // Everything in the picture, not the part the map opened with.
+        await page.locator('[data-zoom="fit"]').click();
+        await page.waitForTimeout(800);
         await shot(page, 'networks');
     });
     // The list of the networks with their unknown devices.
     await step(page, 'network-discovery', async () => {
-        await page.getByRole('link', { name: /^\s*Networks/ }).or(page.getByRole('button', { name: /^\s*Networks/ })).first().click({ timeout: 10000 });
+        await page.getByText(/^\s*Network table/).first().click({ timeout: 10000 });
+        await page.waitForTimeout(800);
         await shot(page, 'network-discovery');
     });
     for (const [name, path] of [['notifications', '/notifications'], ['security', '/security'], ['dashboard', '/dashboard']]) {
@@ -135,7 +135,7 @@ async function step(page, name, work) {
     await step(small, 'mobile', async () => {
         await small.goto(`${base}/devices`);
         await settle(small, 600);
-        await small.getByText(/^\s*nas\s*$/i).first().click({ timeout: 15000 });
+        await small.getByText(/^\s*nas\s*$/i).locator('visible=true').first().click({ timeout: 15000 });
         await shot(small, 'mobile');
     });
 

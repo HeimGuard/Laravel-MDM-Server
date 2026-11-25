@@ -85,6 +85,20 @@ class DeviceSeeder extends Seeder
             'last_http_at' => $online ? now()->addYear() : now()->subDays(2),
         ])->saveQuietly();
 
+        // A day of CPU and memory every 5 minutes for the pages of the device (the charts of Performance).
+        if ($online) {
+            $total = $cores * 2 * 1024 ** 3;
+            $moments = [];
+            for ($minutes = 24 * 60; $minutes >= 0; $minutes -= 5) {
+                $moments[] = [now()->subMinutes($minutes), [
+                    ['key' => 'cpu', 'value' => round(14 + 9 * sin($minutes / 23) + mt_rand(0, 70) / 10, 1), 'unit' => '%'],
+                    ['key' => 'memory.used', 'value' => (int) ($total * (0.52 + 0.06 * sin($minutes / 70))), 'unit' => 'bytes'],
+                    ['key' => 'memory.total', 'value' => $total, 'unit' => 'bytes'],
+                ]];
+            }
+            ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
+        }
+
         return $device->fresh();
     }
 
