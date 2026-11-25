@@ -1,0 +1,146 @@
+name: Agent end to end
+
+# The agent as a user has it, on Linux: installed as a systemd service (the unit the installer writes, with the pwsh of the apt package and of the snap, the
+# snap of the stable channel and of the candidate one), enrolled in a portal that runs here, then **updated by the portal** (the command updateAgent, the new
+# version has the number 99.0.0): the service has to be active after the update and stay so, without a restart in between and without a core dump.
+#
+# What it catches: a pwsh that aborts at its start under systemd (the environment of a service, no HOME), a new version that does not start, an update that does
+# not report to the portal (the agent rolls it back after 5 minutes). The agent is the one of the repository; the portal serves it as it does for a device.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - src/powershell/**
+      - src/laravel/app/Support/AgentScript.php
+      - .github/workflows/agent-e2e.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent:
+    name: agent (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The candidate channel of the snap is the next stable one: it may fail, it is a warning.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'pwsh of the apt package', source: apt, channel: '', experimental: false }
+          - { name: 'snap powershell latest/stable', source: snap, channel: latest/stable, experimental: false }
+          - { name: 'snap powershell latest/candidate', source: snap, channel: latest/candidate, experimental: true }
+    env:
+      APP_ENV: local
+      APP_DEBUG: 'false'
+      APP_URL: http://127.0.0.1:8000
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ${{ github.workspace }}/e2e.sqlite
+      BROADCAST_CONNECTION: log
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+      PHP_CLI_SERVER_WORKERS: '4'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_sqlite, sqlite3, openssl
+          coverage: none
+
+      - name: Start the portal
+        working-directory: src/laravel
+        run: |
+          composer install --no-interaction --no-progress --prefer-dist
+          cp .env.example .env
+          php artisan key:generate
+          touch "$DB_DATABASE"
+          php artisan migrate --force
+          nohup php artisan serve --host=127.0.0.1 --port=8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          # The pages need the built assets (Vite), the agent does not: it is what the portal is waited for with.
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/agent/app.ps1 -o "$RUNNER_TEMP/agent.ps1" && break; sleep 1; done
+          grep -m1 "AgentVersion = " "$RUNNER_TEMP/agent.ps1"
+
+      - name: PowerShell
+        run: |
+          if [ "${{ matrix.source }}" = "snap" ]; then
+            sudo snap wait system seed.loaded || true
+            sudo snap install powershell --classic --channel="${{ matrix.channel }}"
+            PWSH=/snap/bin/pwsh
+          else
+            PWSH=$(command -v pwsh)
+          fi
+          echo "PWSH=$PWSH" >> "$GITHUB_ENV"
+          "$PWSH" -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+
+      - name: Install the agent as a service
+        working-directory: src/laravel
+        run: |
+          CODE=$(php -r 'echo substr(strtoupper(bin2hex(random_bytes(6))), 0, 8);')
+          php artisan tinker --execute="App\Models\Enrolment::forceCreate(['code' => '$CODE', 'expire_at' => now()->addHour()]);"
+          # As a user does it: `sudo pwsh agent.ps1 -ServerUrl ... -EnrolmentCode ... -Install`, the file downloaded from the portal.
+          sudo "$PWSH" -NoLogo -NoProfile -File "$RUNNER_TEMP/agent.ps1" -ServerUrl http://127.0.0.1:8000 -EnrolmentCode "$CODE" -Install
+          systemctl cat heimguard-agent
+          # The unit has the environment a service has: the one that made pwsh 7.7.0 abort was the missing HOME.
+          grep -q '^Environment=HOME=/root' /etc/systemd/system/heimguard-agent.service
+          # No WebSocket here (the portal has no Reverb), the reports are quick.
+          echo '{"realtime": false, "heartbeat_interval": 10, "report_interval": 60, "inventory_interval": 600}' | sudo tee /opt/heimguard/config.json > /dev/null
+          sudo systemctl restart heimguard-agent
+
+      - name: The agent reports to the portal
+        working-directory: src/laravel
+        run: |
+          for i in $(seq 1 60); do
+            VERSION=$(php artisan tinker --execute='echo App\Models\Device::query()->first()?->agent_version;' 2>/dev/null | tail -n1)
+            [ -n "$VERSION" ] && break
+            systemctl is-active --quiet heimguard-agent || { echo "the service stopped"; systemctl status heimguard-agent --no-pager || true; exit 1; }
+            sleep 5
+          done
+          echo "the agent reports version: $VERSION"
+          [ -n "$VERSION" ]
+
+      - name: The portal updates the agent
+        working-directory: src/laravel
+        run: |
+          OLD=$(php artisan tinker --execute='echo App\Models\Device::query()->first()?->agent_version;' | tail -n1)
+          # The portal serves the agent of the repository: its number is higher now.
+          sed -i "s/^\$AgentVersion = '[0-9.]*'/\$AgentVersion = '99.0.0'/" ../powershell/app.ps1
+          php artisan cache:clear
+          php artisan tinker --execute='App\Models\Device::query()->first()->queueCommand("updateAgent");'
+          for i in $(seq 1 60); do
+            NEW=$(php artisan tinker --execute='echo App\Models\Device::query()->first()?->agent_version;' 2>/dev/null | tail -n1)
+            [ "$NEW" = "99.0.0" ] && break
+            sleep 5
+          done
+          echo "before: $OLD, after: $NEW"
+          [ "$NEW" = "99.0.0" ]
+          # The agent restarts itself once to run the new version (systemd starts it again): the restarts counted from here on are the unwanted ones.
+          sleep 20
+          systemctl show -p NRestarts --value heimguard-agent > "$RUNNER_TEMP/restarts"
+
+      - name: The service stays up
+        run: |
+          sleep 90
+          systemctl is-active heimguard-agent
+          BEFORE=$(cat "$RUNNER_TEMP/restarts")
+          AFTER=$(systemctl show -p NRestarts --value heimguard-agent)
+          echo "restarts of the service: $BEFORE, then $AFTER"
+          [ "$AFTER" = "$BEFORE" ]
+          # No core dump (a pwsh that aborts is restarted by systemd every 10 seconds) and no rollback of the update.
+          if sudo journalctl -u heimguard-agent --no-pager | grep -E "code=dumped|signal=ABRT"; then echo "pwsh aborted"; exit 1; fi
+          if sudo grep -E "rolling back" /opt/heimguard/agent.log; then echo "the update was rolled back"; exit 1; fi
+
+      - name: Logs
+        if: always()
+        run: |
+          systemctl status heimguard-agent --no-pager || true
+          sudo journalctl -u heimguard-agent --no-pager | tail -n 60 || true
+          sudo tail -n 60 /opt/heimguard/agent.log || true
+          grep -v -E '\.(css|js|woff2|svg)' "$RUNNER_TEMP/serve.log" | tail -n 30 || true

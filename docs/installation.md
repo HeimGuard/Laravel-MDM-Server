@@ -99,6 +99,21 @@ Get-Content "$env:ProgramData\HeimGuard\agent.log" -Tail 30 -Wait               
 
 Linux: `systemctl status heimguard-agent` and `sudo tail -f /opt/heimguard/agent.log`.
 
+**The service restarts all the time (`code=dumped, signal=ABRT` in `systemctl status`, nothing in `agent.log`).** `pwsh` itself aborts at its start, before it reads
+`app.ps1`: the snap `powershell` 7.7.0 aborted when the service has no `HOME` (a system service of root has none from systemd; run by hand from a terminal it works).
+The unit written by agents from 1.41.1 has `Environment=HOME=/root`, and a running agent adds it to an older unit (`Repair-AgentService`). An agent that cannot start does not
+repair anything: add it by hand and look at what `pwsh` does:
+
+```bash
+sudo env -i /snap/bin/pwsh -NoLogo -NoProfile -NonInteractive -Command '"ok"'; echo "exit: $?"            # as the service: no HOME
+sudo env -i HOME=/root /snap/bin/pwsh -NoLogo -NoProfile -NonInteractive -Command '"ok"'; echo "exit: $?"  # with HOME
+sudo systemctl edit heimguard-agent        # [Service]  Environment=HOME=/root
+sudo systemctl restart heimguard-agent
+```
+
+If both fail, `pwsh` is broken whatever the environment: `sudo snap revert powershell && sudo snap refresh --hold powershell`. An update of the agent that does not report within 5
+minutes is rolled back (`agent.log`: *rolling back*), which does not help when `pwsh` itself does not start.
+
 **Older installations (agents before 1.32.0)** were named Laravel-MDM: the task `Laravel-MDM-Agent`, the service
 `laravel-mdm-agent`, the directory `%ProgramData%\Laravel-MDM` / `/opt/laravel-mdm`. Updated to 1.32.0, the agent
 moves to the new names by itself once it has reached the server: a separate task (`HeimGuard-Agent-Migrate`) or
