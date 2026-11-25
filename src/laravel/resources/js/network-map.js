@@ -194,6 +194,11 @@ export function createNetworkMap(root, data) {
         }
         const shared = new Set(map.edges.filter((edge) => main.has(edge.to) && edge.from !== main.get(edge.to)).map((edge) => edge.to));
 
+        // A network of one device is not drawn (no frame, no node): the device is enough, the name of its network is after its address.
+        const bare = new Set([...collapsed.keys()].filter((network) => (members.get(network) || []).length === 1 && ['device', 'server'].includes(nodes.get(members.get(network)[0])?.kind)));
+        for (const network of bare) {
+            elements.get(members.get(network)[0])?.querySelector('.nm-sub')?.append(` · ${nodes.get(network).label}`);
+        }
         // A gateway with several networks: the devices plugged into its ports hang under it for one of them only (the one with the most devices),
         // the others have a cable from the port like a device of another network.
         const primary = new Map();
@@ -410,7 +415,7 @@ export function createNetworkMap(root, data) {
         const slotWidth = (network) => {
             const hungRow = primary.get(collapsed.get(network)) === network ? (planOf(collapsed.get(network))?.half ?? 0) * 2 : 0;
 
-            return Math.max(grids.get(network).width, hungRow) + FRAME * 2;
+            return Math.max(grids.get(network).width, hungRow) + (bare.has(network) ? 0 : FRAME * 2);
         };
         const networksOf = (gateway) => {
             const list = [...collapsed].filter(([network, above]) => above === gateway && grids.has(network)).map(([network]) => network);
@@ -448,7 +453,7 @@ export function createNetworkMap(root, data) {
         // A grid is one block of its real size under its network: dagre centers the network over it.
         for (const [network, grid] of grids) {
             // (the frame of an open network is round it: room for it)
-            graph.setNode(grid.id, collapsed.has(network) ? { width: slotWidth(network), height: grid.height + FRAME * 2 } : { width: grid.width, height: grid.height });
+            graph.setNode(grid.id, collapsed.has(network) ? { width: slotWidth(network), height: grid.height + (bare.has(network) ? 0 : FRAME * 2) } : { width: grid.width, height: grid.height });
             clusterOf({ id: grid.id, group: nodes.get(network).group, kind: 'grid' });
             graph.setEdge(collapsed.get(network) || network, grid.id, { minlen: 1, weight: 2 });
         }
@@ -651,7 +656,7 @@ export function createNetworkMap(root, data) {
         const FRAME_BEND = 16;
         const hungNetwork = (network) => collapsed.has(network) && Boolean(box.get(collapsed.get(network))?.rowBottom) && primary.get(collapsed.get(network)) === network;
         const frameTopOf = (network) => (hungNetwork(network) ? box.get(collapsed.get(network)).bottom + 14 : (gridBox.get(network)?.top ?? 0) - FRAME);
-        const framed = (network) => collapsed.has(network) && gridBox.has(network) && !hungNetwork(network);
+        const framed = (network) => collapsed.has(network) && gridBox.has(network) && !hungNetwork(network) && !bare.has(network);
         const LANE = 9;
         const bars_ = new Map();
         for (const route of routes) {
@@ -729,7 +734,7 @@ export function createNetworkMap(root, data) {
         for (const network of collapsed.keys()) {
             const grid = grids.get(network);
             const at = gridBox.get(network);
-            if (!grid || !at) {
+            if (!grid || !at || bare.has(network)) {
                 continue;
             }
             const kind = ['wifi', 'cellular', 'vpn'].includes(nodes.get(network).network) ? nodes.get(network).network : 'lan';

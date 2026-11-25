@@ -20,7 +20,7 @@
 3. **Gateways**: the default gateway of the interfaces (agents 1.15.0+, with its MAC from the
    neighbour table). One router of several networks (a LAN and a guest Wi-Fi) is one node.
    A router that is also a ping-only device of the portal is that node (not a second card among the devices); when its ports are read (SNMP,
-   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. An open network has no node of its own
+   see **A switch** below) the gateway node has the card with its ports, a click on a port opens the devices to plug into it. A network of one device is not drawn at all: the device hangs from what is above it and its card has the name of the network after its address. An open network has no node of its own
    (a VPN keeps it): what is above it, the gateway or the public address, stands for it, and its devices are in a dashed frame (the name of the network and the number of its
    devices on the bottom edge; a click on it closes the network, it is the node of the network again, and a click on the node opens it). The devices
    plugged into its ports hang under its card in one row centred under it (the first half left of the middle, the others right; the middle is free for
