@@ -217,7 +217,8 @@ class PortScanTest extends TestCase
 
         $this->assertStringContainsString('Open ports', $html);
         $this->assertStringContainsString('SSH-2.0-&lt;b&gt;x&lt;/b&gt;', $html);
-        $this->assertStringContainsString('Port 22: test finding', $html);
+        // The observations are security findings, not text under the card.
+        $this->assertStringNotContainsString('Port 22: test finding', $html);
 
         // Both overviews use it; the device card no longer has a block of its own for the ports.
         $this->assertStringContainsString('partials.device.open-ports', file_get_contents(resource_path('views/livewire/ping-monitor.blade.php')));
