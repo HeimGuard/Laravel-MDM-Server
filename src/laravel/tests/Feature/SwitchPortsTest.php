@@ -230,6 +230,27 @@ class SwitchPortsTest extends TestCase
         $this->assertLessThanOrEqual(16, count(SwitchService::SNMP_COLUMNS));
     }
 
+    public function test_turris_has_six_ports_lan0_to_lan4_and_the_wan_eth2_not_its_cpu_links(): void
+    {
+        // As Turris answers (its switch chip: eth0 and eth1 are the links of the SoC to it, eth2 is the WAN with the address of the modem's network).
+        $c = SwitchService::SNMP_COLUMNS;
+        $lines = [];
+        foreach ([[1, 'lo', 24], [2, 'eth0', 6], [3, 'eth1', 6], [4, 'eth2', 6], [5, 'lan0', 6], [6, 'lan1', 6], [7, 'lan2', 6], [8, 'lan3', 6], [9, 'lan4', 6], [12, 'br-guest-turris', 6], [13, 'br-lan', 6]] as [$index, $name, $type]) {
+            array_push($lines, $c['type'].".$index $type", $c['status'].".$index 1", $c['if_name'].".$index x:".bin2hex($name));
+        }
+        // The addresses: the LAN on the bridge, the WAN on eth2, the guest network on its bridge.
+        array_push($lines, $c['ip_if'].'.127.0.0.1 1', $c['ip_if'].'.192.168.1.1 13', $c['ip_if'].'.192.168.2.2 4', $c['ip_if'].'.10.111.222.1 12');
+        $body = implode("\n", $lines);
+
+        $this->assertSame(['eth2', 'lan0', 'lan1', 'lan2', 'lan3', 'lan4'], array_column(SwitchService::parseSnmp($body), 'name'));
+        $this->assertSame([4, 5, 6, 7, 8, 9], array_column(SwitchService::parseSnmp($body), 'port'));
+        // Without the addresses (not read yet): as before, the five of the switch chip.
+        $without = implode("\n", array_filter($lines, fn (string $line) => ! str_starts_with($line, $c['ip_if'])));
+        $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4'], array_column(SwitchService::parseSnmp($without), 'name'));
+        // The agent walks at most 16 columns.
+        $this->assertLessThanOrEqual(16, count($c));
+    }
+
     public function test_an_interface_switched_off_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void
     {
         Cache::flush();

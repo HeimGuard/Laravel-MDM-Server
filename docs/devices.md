@@ -132,7 +132,8 @@ off (the device stays). The window shows what the device says about itself once 
     `ifDescr`), shown after the number on the card and in the dropdown of the port. A Linux router (Turris, OpenWrt) reports everything of the type Ethernet:
     its ports (`lan0`…, `wan`), the ports of its CPU (`eth0`…), bridges (`br-lan`), VLANs (`lan0.10`), Wi-Fi (`wlan0`) and virtual interfaces (`veth…`).
     `SwitchService::VIRTUAL_INTERFACES` leaves out the loopback, bridges, VLANs, Wi-Fi, tunnels and containers by name, and `eth0`, `eth1`… when
-    the device names its ports `lan0`, `lan1`… (three or more: they are its CPU). The SNMP window lists **every Ethernet interface it has read** (the
+    the device names its ports `lan0`, `lan1`… (three or more: they are its CPU) **except an interface that has an IPv4 address** (the column `ip_if`, `ipAdEntIfIndex`: the 16th and last column the agent walks).
+    Turris and Omnia: `eth0` and `eth1` are the links of the SoC to its switch chip (no address, not ports), `lan0`–`lan4` are the 5 ports of the chip and `eth2` is the WAN (a card of its own, shared with the SFP; it has the address), so the router has **6 ports**. Without the addresses (not read yet) the WAN is missing until they are. The SNMP window lists **every Ethernet interface it has read** (the
     inventory `snmp` / `interfaces`) with a tick for the ports: tick any off or on against the default, no names to write (the settings `switch.hidden` and
     `switch.shown` keep only what differs from the default). The values of an interface that is switched off later stay as history, it is not shown. A
     device that tells no names keeps all its Ethernet interfaces. The agent reads the names as two more columns (15 of 16), no newer agent is needed.

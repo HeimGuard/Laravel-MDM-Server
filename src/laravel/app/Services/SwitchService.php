@@ -54,6 +54,9 @@ class SwitchService
         'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
         // The names of the interfaces (ifName, else ifDescr): a Linux router has bridges, VLANs, Wi-Fi and the ports of its CPU among its Ethernet interfaces.
         'if_name' => '1.3.6.1.2.1.31.1.1.1.1', 'if_descr' => '1.3.6.1.2.1.2.2.1.2',
+        // The interface of each IPv4 address of the device (ipAdEntIfIndex of IP-MIB, the address is the index): an interface with an address is not
+        // the CPU of a router (the eth2 of Turris is its WAN, eth0 and eth1 have no address). The 16th column, the most the agent walks.
+        'ip_if' => '1.3.6.1.2.1.4.20.1.2',
         // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
         // (index = VLAN and the MAC), and the bridge port => ifIndex of BRIDGE-MIB. Not every switch has them.
         'bridge_port' => '1.3.6.1.2.1.17.1.4.1.2', 'fdb' => '1.3.6.1.2.1.17.4.3.1.2', 'fdb_vlan' => '1.3.6.1.2.1.17.7.1.2.2.1.2',
@@ -316,7 +319,16 @@ class SwitchService
     {
         $interfaces = [];
         $names = [];
+        // The interfaces that have an IPv4 address.
+        $addressed = [];
         foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if ($column === 'ip_if') {
+                if (is_int($value)) {
+                    $addressed[$value] = true;
+                }
+
+                continue;
+            }
             if (! ctype_digit($index) || (int) $index < 1) {
                 continue;
             }
@@ -336,7 +348,8 @@ class SwitchService
                 $ethernet[$index] = $names[$index]['if_name'] ?? $names[$index]['if_descr'] ?? null;
             }
         }
-        // A router that names its ports lan0, lan1…: eth0, eth1… are its CPU.
+        // A router that names its ports lan0, lan1…: eth0, eth1… are its CPU (the links to its switch chip), except the one that has an address: the WAN
+        // (the eth2 of Turris and Omnia, a network card of its own beside the switch chip).
         $cpu = count(array_filter($ethernet, fn (?string $name) => $name !== null && preg_match('/^(lan|port|swp)\d+$/i', $name) === 1)) >= 3;
         $rows = [];
         foreach ($ethernet as $index => $name) {
@@ -345,7 +358,7 @@ class SwitchService
             $rows[] = [
                 'port' => $index,
                 'name' => $name,
-                'port_by_default' => $name === null || ! (self::matches($name, self::VIRTUAL_INTERFACES) || ($cpu && preg_match('/^eth\d+$/i', $name) === 1)),
+                'port_by_default' => $name === null || ! (self::matches($name, self::VIRTUAL_INTERFACES) || ($cpu && ! isset($addressed[$index]) && preg_match('/^eth\d+$/i', $name) === 1)),
                 'enabled' => true,
                 'link' => ($values['status'] ?? 2) !== 1 ? 0 : ($mbit >= 1000 ? 6 : ($mbit >= 100 ? 5 : 3)),
                 'tx' => $values['tx'] ?? 0,
