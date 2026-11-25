@@ -35,13 +35,6 @@
     @else
         <div class="small text-body-secondary">{{ __('Not scanned yet') }}</div>
     @endif
-    @if ($result && $result->findings)
-        <div class="small text-body-secondary mt-2">
-            @foreach ($result->findings as $finding)
-                <div class="text-break">{{ $finding }}</div>
-            @endforeach
-        </div>
-    @endif
     @if ($result)
         <div class="small text-body-secondary mt-2" title="{{ $result->scanned_at }}">{{ __('Scanned :time', ['time' => $result->scanned_at->diffForHumans()]) }}</div>
     @endif

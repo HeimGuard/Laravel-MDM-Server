@@ -20,6 +20,15 @@
             'software' => ['Name', 'Version', 'Publisher', 'Source'],
             'processes' => ['Name', 'User', 'Path', 'CommandLine'],
         ];
+        // Ports a scan from another host reached (the Open ports card of the overview): those the agent lists get a mark,
+        // those it does not list are added (a host without an agent has only these).
+        $outside = collect($scan?->ports ?? [])->keyBy(fn ($port) => (int) $port['port']);
+        $listening = $inventory?->data['listening'] ?? [];
+        $known = collect($listening)->map(fn ($item) => (int) ($item['Port'] ?? 0))->all();
+        $onlyOutside = $outside->reject(fn ($port, $number) => in_array($number, $known, true))
+            ->map(fn ($port) => ['Protocol' => 'tcp', 'Address' => '', 'Port' => $port['port'], 'Process' => $port['service'] ?? '', 'outsideOnly' => true])->values()->all();
+        $listening = array_merge($listening, $onlyOutside);
+        $lists['listening'][1] = count($listening);
         $yesNo = fn ($value) => is_bool($value) ? ($value ? __('Yes') : __('No')) : $value;
     @endphp
 
@@ -79,6 +88,22 @@
 
     @if ($inventory === null && $device->isPingOnly)
         {{-- No agent: the findings of the server's own checks (port scans) and the events above. --}}
+        @if ($outside->isNotEmpty())
+            <div class="fw-medium mb-2">{{ __('Open ports') }}</div>
+            <div class="card card-body py-2 mb-3">
+                <table class="table table-sm align-middle mb-0 small">
+                    <tbody>
+                        @foreach ($outside as $port)
+                            <tr>
+                                <td class="fw-medium" style="width: 4rem">{{ $port['port'] }}</td>
+                                <td class="text-body-secondary">{{ $port['service'] ?? '' }}</td>
+                                <td class="text-end"><span class="badge text-bg-secondary" title="{{ __('Scanned :time', ['time' => $scan->scanned_at->diffForHumans()]) }}">{{ __('Confirmed from outside') }}</span></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
     @elseif ($inventory === null)
         <div class="small text-body-secondary">{{ __('No security inventory yet: it needs agent :version or newer.', ['version' => Device::SECURITY_VERSION]) }}</div>
     @else
@@ -120,15 +145,19 @@
                                             @foreach ($columns[$key] as $field)
                                                 <th class="{{ $loop->index > 1 ? 'd-none d-md-table-cell' : '' }}">{{ __(\Illuminate\Support\Str::headline($field)) }}</th>
                                             @endforeach
+                                            @if ($key === 'listening')<th>{{ __('Seen from outside') }}</th>@endif
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach ($inventory->data[$key] ?? [] as $item)
+                                        @foreach ($key === 'listening' ? $listening : ($inventory->data[$key] ?? []) as $item)
                                             @php($text = mb_strtolower(implode(' ', array_map(fn ($value) => is_scalar($value) ? (string) $value : '', $item))))
                                             <tr wire:key="security-{{ $key }}-{{ $loop->index }}" x-show="!search || @js($text).includes(search.toLowerCase())">
                                                 @foreach ($columns[$key] as $field)
                                                     <td class="text-break {{ $loop->index > 1 ? 'd-none d-md-table-cell text-body-secondary' : '' }} {{ $loop->first ? 'fw-medium' : '' }}">{{ $yesNo($item[$field] ?? null) ?? '—' }}</td>
                                                 @endforeach
+                                                @if ($key === 'listening')
+                                                    <td>@if (isset($outside[(int) ($item['Port'] ?? 0)]))<span class="badge text-bg-success" title="{{ __('Scanned :time', ['time' => $scan->scanned_at->diffForHumans()]) }}">{{ !empty($item['outsideOnly']) ? __('Outside only') : __('Confirmed from outside') }}</span>@else<span class="text-body-secondary">—</span>@endif</td>
+                                                @endif
                                             </tr>
                                         @endforeach
                                     </tbody>

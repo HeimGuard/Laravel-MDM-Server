@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Livewire\Concerns\RemediatesFindings;
 use App\Models\Device;
+use App\Models\PortScanResult;
 use App\Models\SecurityEvent;
 use App\Models\SecurityFinding;
 use App\Models\SecurityInventory;
@@ -62,8 +63,13 @@ class DeviceSecurity extends Component
         $inventory = SecurityInventory::query()->where('device_id', $device->id)->first();
         $open = $device->securityFindings()->with(['rule', 'acknowledger'])->open()->bySeverity()->get();
 
+        // What the last port scan from another host saw on this device's address (the overview card shows the same).
+        $address = $device->portScanAddress();
+        $scan = $address === null ? null : PortScanResult::query()->where('ip', $address)->latest('scanned_at')->first();
+
         return view('livewire.device-security', [
             'device' => $device,
+            'scan' => $scan,
             'inventory' => $inventory,
             'findings' => $open->whereNull('acknowledged_at')->values(),
             'acknowledged' => $open->whereNotNull('acknowledged_at')->values(),
