@@ -779,6 +779,37 @@ class SwitchPortsTest extends TestCase
         $this->assertSame(['switch' => $modemNode['id'], 'port' => 1], $routerNode['plug']);
     }
 
+    public function test_a_modem_that_is_a_plain_device_with_ports_becomes_the_gateway_the_router_hangs_under(): void
+    {
+        $lan = $this->relay();
+        $data = json_decode(json_encode($lan->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $lan->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24])->save();
+        // No agent in the network of the modem: it is a device of a network of its own (192.168.2.0/24), not the gateway of one.
+        $archer = new Device;
+        $archer->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24, 'switch_ports' => 5])->save();
+
+        SwitchService::assign($archer->fresh(), 1, [$turris->id]);
+
+        $map = \App\Support\NetworkMap::build();
+        $nodes = collect($map['nodes'])->keyBy('id');
+        $edges = collect($map['edges']);
+        $modem = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Archer');
+        $router = $nodes->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Turris');
+        $this->assertNotNull($modem, 'the modem is a gateway');
+        $this->assertFalse($nodes->has('device:'.$archer->id));
+        // Its ports are the card of the gateway, the router is plugged into the first one and hangs under it, not under the public address.
+        $this->assertSame([1, 2, 3, 4, 5], array_column($modem['switch']['ports'], 'port'));
+        $this->assertSame(['switch' => $modem['id'], 'port' => 1], $router['plug']);
+        $this->assertTrue($edges->contains(fn (array $edge) => $edge['from'] === $modem['id'] && $edge['to'] === $router['id']));
+        $this->assertFalse($edges->contains(fn (array $edge) => str_starts_with($edge['from'], 'site:') && $edge['to'] === $router['id']));
+        // The network of one device is gone with its device.
+        $this->assertFalse($edges->contains(fn (array $edge) => $edge['to'] === 'device:'.$archer->id));
+    }
+
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void
     {
         $switch = $this->switchDevice();

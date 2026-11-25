@@ -164,7 +164,7 @@ A router read over SNMP says which device is in front of it, so the map does not
 - `SwitchService::uplink` makes `{index, interface, address, via, mac}` of them (Turris: `eth2`, its address `192.168.2.2`, via `192.168.2.1`, MAC `E0:D3:62:78:62:E5`), kept in the inventory `snmp` / `uplink`.
 - `NetworkMap`: when the next hop is a **gateway of the portal** (by its address, or by the MAC of the ARP table against the MAC of the device), the router hangs under it: the link from the public
   address goes, the one from that gateway comes (`hangUnder`), and the title of the card says the way out (`Way out: eth2 via 192.168.2.1`). The same as plugging it into a port of that gateway by hand, without the port.
-- Not covered: a next hop that is a device of the portal but no gateway of a network (the map has no gateway node for it); plug the router into its port by hand then (Ports).
+- A next hop (or the device a router is plugged into by hand) that is a **plain device** of the portal, not the gateway of a network (a modem whose address is in a network of its own, no agent in it): it becomes a gateway of the site (`NetworkMap::promote`): its card with its ports is the gateway node under the public address, its device node goes (and its network when it was alone in it), and the router hangs under it.
 - The WAN interface is a **port** of the router: the one that has an IPv4 address is not taken for the CPU (Turris and Omnia: `eth0`, `eth1` are the links of the SoC to its switch chip, `eth2` is the WAN).
 
 #### Ports by hand (no agent version needed)

@@ -12,6 +12,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Ports by hand: a ping-only device without SNMP and TP-Link (an unmanaged switch, a modem) gets its ports from the item **Ports** of the device menu (how many); they show on the network map without a link and the devices are plugged into them by hand.
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
+### Fixed
+- Network map: a modem that is a plain device with ports (its address in a network of its own) and has a router plugged into it, or in front of it by the default route, is the gateway of that router: the router hangs under it instead of the cards overlapping the frame of the LAN.
+
 ### Changed
 - SNMP: the WAN of a router that names its ports `lan0`, `lan1`… (the `eth2` of Turris and Omnia) is a port: an interface with an IPv4 address is not taken for the CPU any more, so Turris shows its 6 ports (5 LAN + WAN).
 - Network map: a network of one device is not drawn (no frame, no node), only the device, with the name of its network after its address on its card.
