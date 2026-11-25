@@ -624,15 +624,43 @@ class SwitchService
     }
 
     /**
+     * The label of a port as it is written on the device: `lan0` is 0, `wan` and the port a router leaves by (its default route) is WAN, any other name
+     * leaves the number (the ifIndex over SNMP, the number of the port of a switch without names, TP-Link). The number stays the key of the port.
+     */
+    public static function portLabel(?string $name, int $number, bool $wan = false): string
+    {
+        if ($wan || ($name !== null && preg_match('/^wan\d*$/i', $name) === 1)) {
+            return 'WAN';
+        }
+        if ($name !== null && preg_match('/^(?:lan|port|swp|p)[\s_-]?(\d{1,3})$/i', $name, $match) === 1) {
+            return (string) (int) $match[1];
+        }
+
+        return (string) $number;
+    }
+
+    /** The label of the port of a device for the pages ("0" for lan0), the number when the port or its name is not known. */
+    public static function labelOf(Device $device, int $port): string
+    {
+        foreach (self::ports($device) ?? [] as $row) {
+            if ($row['port'] === $port) {
+                return $row['label'];
+            }
+        }
+
+        return (string) $port;
+    }
+
+    /**
      * The last ports of a switch for the pages, null when none were read.
      *
-     * @return array<int, array{port: int, name: ?string, link: int, bad: int, tx: ?int, rx: ?int}>|null
+     * @return array<int, array{port: int, name: ?string, label: string, link: int, bad: int, tx: ?int, rx: ?int}>|null
      */
     public static function ports(Device $device): ?array
     {
         // Set by hand: the numbers only (the link is not read).
         if (self::manualPorts($device) > 0) {
-            return array_map(fn (int $number) => ['port' => $number, 'name' => null, 'link' => self::MANUAL_LINK, 'bad' => 0, 'tx' => null, 'rx' => null], range(1, self::manualPorts($device)));
+            return array_map(fn (int $number) => ['port' => $number, 'name' => null, 'label' => (string) $number, 'link' => self::MANUAL_LINK, 'bad' => 0, 'tx' => null, 'rx' => null], range(1, self::manualPorts($device)));
         }
         $definitions = ValueDefinition::query()->where('valuable_type', $device->getMorphClass())->where('valuable_id', $device->id)
             ->whereIn('key', ['switch.port.link', 'switch.port.bad', 'switch.port.tx', 'switch.port.rx'])->get();
@@ -656,6 +684,11 @@ class SwitchService
             }
         }
         ksort($ports);
+        // The port a router leaves by (its default route over SNMP) is its WAN.
+        $uplink = (string) $device->switch_type === self::SNMP ? ($device->latestInventory('snmp', 'uplink')['index'] ?? null) : null;
+        foreach ($ports as $number => $port) {
+            $ports[$number]['label'] = self::portLabel($port['name'], $number, $uplink === $number);
+        }
 
         return $ports === [] ? null : array_values($ports);
     }
@@ -722,7 +755,7 @@ class SwitchService
                 continue;
             }
             $before = $device->switch_id;
-            $device->forceFill(['switch_id' => $best['switch'], 'switch_port' => $best['port'], 'switch_auto' => 'auto'])->save();
+            $device->forceFill(['switch_id' => $best['switch'], 'switch_port' => $best['port'], 'switch_remote_port' => null, 'switch_auto' => 'auto'])->save();
             foreach (array_unique(array_filter([$before, $best['switch']])) as $id) {
                 LiveUpdates::device($id, 'switch');
             }
@@ -736,14 +769,14 @@ class SwitchService
     /** Takes a device off its port by hand: one that was paired by the MAC address is not paired again (`off`). */
     public static function unplug(Device $device): void
     {
-        $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => $device->switch_auto === 'auto' ? 'off' : null])->save();
+        $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_remote_port' => null, 'switch_auto' => $device->switch_auto === 'auto' ? 'off' : null])->save();
     }
 
     /**
      * The devices that can be plugged into a port of the switch: the ones of its network (the network map) that have no port
      * yet, and the ones already on this port.
      *
-     * @return array<int, array{id: int, name: string, address: string, selected: bool}>
+     * @return array<int, array{id: int, name: string, address: string, selected: bool, remote: ?int, ports: array<int, array{port: int, name: ?string}>}>
      */
     public static function candidates(Device $switch, int $port): array
     {
@@ -761,7 +794,7 @@ class SwitchService
             }
             $here = $device->switch_id === $switch->id && $device->switch_port === $port;
             if ($device->switch_id === null || $here) {
-                $rows[] = ['id' => $device->id, 'name' => $member['name'], 'address' => $member['address'], 'selected' => $here];
+                $rows[] = ['id' => $device->id, 'name' => $member['name'], 'address' => $member['address'], 'selected' => $here, 'remote' => $here ? $device->switch_remote_port : null, 'ports' => self::portNumbers($device)];
             }
         }
         // The routers of the other networks of the same site (a modem behind or beside it: its address is in another network, but the cable is in
@@ -771,7 +804,7 @@ class SwitchService
             $device = Device::query()->where('kind', 'ping')->find($id);
             $here = $device !== null && $device->switch_id === $switch->id && $device->switch_port === $port;
             if ($device !== null && ($device->switch_id === null || $here)) {
-                $rows[] = ['id' => $device->id, 'name' => $device->displayName, 'address' => (string) $device->ping_address, 'selected' => $here];
+                $rows[] = ['id' => $device->id, 'name' => $device->displayName, 'address' => (string) $device->ping_address, 'selected' => $here, 'remote' => $here ? $device->switch_remote_port : null, 'ports' => self::portNumbers($device)];
             }
         }
 
@@ -780,23 +813,28 @@ class SwitchService
 
     /**
      * Sets which devices are on a port: the selected ones (of the candidates) are plugged into it, the ones that were on it and are not
-     * selected any more are not. Returns how many devices changed.
+     * selected any more are not. Each can say the port of its own the cable goes into (`$remote`, device id => port; optional, none = not said).
+     * Returns how many devices changed.
      *
      * @param  array<int, mixed>  $selected  device ids
+     * @param  array<int|string, mixed>  $remote
      */
-    public static function assign(Device $switch, int $port, array $selected): int
+    public static function assign(Device $switch, int $port, array $selected, array $remote = []): int
     {
         $selected = array_map('intval', $selected);
         $changed = 0;
         foreach (self::candidates($switch, $port) as $candidate) {
             $device = Device::find($candidate['id']);
             $wanted = in_array($candidate['id'], $selected, true);
-            if ($device === null || $wanted === $candidate['selected']) {
+            // The port of the device: a number from 1 to 64, else not said.
+            $number = (int) ($remote[$candidate['id']] ?? 0);
+            $number = $number >= 1 && $number <= self::MAX_PORTS ? $number : null;
+            if ($device === null || ($wanted === $candidate['selected'] && (! $wanted || $number === $candidate['remote']))) {
                 continue;
             }
             if ($wanted) {
                 // By hand now: the MAC table does not move it any more.
-                $device->forceFill(['switch_id' => $switch->id, 'switch_port' => $port, 'switch_auto' => null])->save();
+                $device->forceFill(['switch_id' => $switch->id, 'switch_port' => $port, 'switch_remote_port' => $number, 'switch_auto' => null])->save();
             } else {
                 self::unplug($device);
             }
@@ -809,11 +847,17 @@ class SwitchService
         return $changed;
     }
 
+    /** The ports of a device that has them (read or set by hand), for the choice of its port: [port, name]. */
+    public static function portNumbers(Device $device): array
+    {
+        return $device->isPingOnly && self::enabled($device) ? array_map(fn (array $port) => ['port' => $port['port'], 'name' => $port['name'] ?? null, 'label' => $port['label']], self::ports($device) ?? []) : [];
+    }
+
     /** The devices of a deleted switch are not plugged into it any more (a setting has no foreign key). */
     public static function forget(Device $switch): void
     {
         Device::query()->whereSettingIn('lan.switch_device_id', [$switch->id])->get()
-            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_auto' => null])->save());
+            ->each(fn (Device $device) => $device->forceFill(['switch_id' => null, 'switch_port' => null, 'switch_remote_port' => null, 'switch_auto' => null])->save());
         Cache::forget(self::macsKey($switch));
     }
 
@@ -837,9 +881,9 @@ class SwitchService
             $ports[] = $port + [
                 'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->all(),
                 'link_name' => $link,
-                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]).($port['name'] ? ' ('.$port['name'].')' : ''),
+                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['label']]).($port['name'] && $port['name'] !== $port['label'] ? ' ('.$port['name'].')' : ''),
                 'title' => implode(' · ', array_filter([
-                    __('Port :port', ['port' => $port['port']]), $port['name'], $link,
+                    __('Port :port', ['port' => $port['label']]), $port['name'] !== $port['label'] ? $port['name'] : null, $link,
                     $port['bad'] > 0 ? trans_choice(':count bad packet|:count bad packets', $port['bad']) : null,
                     $on === [] ? null : implode(', ', $on),
                 ])),

@@ -281,6 +281,29 @@ class SwitchPortsTest extends TestCase
         $this->assertArrayHasKey('arp_mac', SwitchService::snmpColumns($new));
     }
 
+    public function test_the_ports_are_labelled_as_on_the_device_lan0_is_0_and_the_port_the_router_leaves_by_is_wan(): void
+    {
+        Cache::flush();
+        $this->assertSame(['0', '4', 'WAN', 'WAN', '4', '3', '3', '1'], [
+            SwitchService::portLabel('lan0', 5), SwitchService::portLabel('lan4', 9), SwitchService::portLabel('eth2', 4, true), SwitchService::portLabel('wan', 8),
+            SwitchService::portLabel('eth2', 4), SwitchService::portLabel(null, 3), SwitchService::portLabel('Port 3', 3), SwitchService::portLabel('GigabitEthernet0/1', 1),
+        ]);
+
+        $relay = $this->relay('1.41.0');
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24,
+            'switch_type' => 'snmp', 'switch_password' => SwitchService::storePassword('public')])->save();
+        SwitchService::record($relay, [['id' => $turris->id, 'status' => 200, 'body' => $this->turrisBody(), 'error' => null, 'version' => 1]]);
+
+        $ports = collect(SwitchService::ports($turris->fresh()))->keyBy('port');
+        // The ifIndex stays the key of a port; the label is what is written on the device (WAN, then LAN0 to LAN4).
+        $this->assertSame(['WAN', '0', '1', '2', '3', '4'], $ports->pluck('label')->values()->all());
+        $this->assertSame([4, 5, 6, 7, 8, 9], $ports->keys()->all());
+        $this->assertSame('0', SwitchService::labelOf($turris->fresh(), 5));
+        // A switch without names (TP-Link): the number.
+        $this->assertSame('3', SwitchService::labelOf($this->switchDevice(true, 'tp'), 3));
+    }
+
     public function test_a_router_whose_next_hop_is_another_gateway_hangs_under_it_by_what_it_reads(): void
     {
         Cache::flush();
@@ -808,6 +831,48 @@ class SwitchPortsTest extends TestCase
         $this->assertFalse($edges->contains(fn (array $edge) => str_starts_with($edge['from'], 'site:') && $edge['to'] === $router['id']));
         // The network of one device is gone with its device.
         $this->assertFalse($edges->contains(fn (array $edge) => $edge['to'] === 'device:'.$archer->id));
+    }
+
+    public function test_the_port_of_the_device_the_cable_goes_into_is_optional_and_is_forgotten_with_the_cable(): void
+    {
+        $switch = $this->switchDevice();
+        $printer = $this->printer();
+        $this->relay();
+
+        // Not said: none.
+        SwitchService::assign($switch, 3, [$printer->id]);
+        $this->assertNull($printer->fresh()->switch_remote_port);
+        // Said (a number from 1 to 64): kept, and the choice of the port shows it.
+        $this->assertSame(1, SwitchService::assign($switch, 3, [$printer->id], [$printer->id => '2']));
+        $this->assertSame(2, $printer->fresh()->switch_remote_port);
+        $this->assertSame([2], array_column(array_filter(SwitchService::candidates($switch, 3), fn (array $row) => $row['id'] === $printer->id), 'remote'));
+        // The same again changes nothing; out of range is not said.
+        $this->assertSame(0, SwitchService::assign($switch, 3, [$printer->id], [$printer->id => 2]));
+        $this->assertSame(1, SwitchService::assign($switch, 3, [$printer->id], [$printer->id => 99]));
+        $this->assertNull($printer->fresh()->switch_remote_port);
+        // Taken off the port: no port of its own either.
+        SwitchService::assign($switch, 3, [$printer->id], [$printer->id => 4]);
+        SwitchService::assign($switch, 3, []);
+        $this->assertNull($printer->fresh()->switch_remote_port);
+        $this->assertNull($printer->fresh()->switch_id);
+    }
+
+    public function test_the_port_said_by_hand_is_the_wan_port_of_the_router_on_the_map(): void
+    {
+        $lan = $this->relay();
+        $data = json_decode(json_encode($lan->data), true);
+        $data['machine']['Networks'][0]['Gateway'] = '192.168.1.1';
+        $data['machine']['Networks'][0]['GatewayMac'] = 'AA-BB-CC-00-00-01';
+        $lan->forceFill(['data' => json_encode($data)])->saveQuietly();
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24])->save();
+        $archer = new Device;
+        $archer->forceFill(['kind' => 'ping', 'name' => 'Archer', 'os' => '', 'token' => hash('sha256', 'archer'), 'ping_address' => '192.168.2.1', 'ping_prefix' => 24, 'switch_ports' => 5])->save();
+
+        SwitchService::assign($archer->fresh(), 1, [$turris->id], [$turris->id => 4]);
+
+        $router = collect(\App\Support\NetworkMap::build()['nodes'])->first(fn (array $node) => $node['kind'] === 'gateway' && $node['label'] === 'Turris');
+        $this->assertSame(4, $router['wan']);
     }
 
     public function test_the_card_of_the_ports_shows_the_devices_plugged_into_a_port_as_links(): void

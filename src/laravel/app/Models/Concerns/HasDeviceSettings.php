@@ -29,6 +29,8 @@ trait HasDeviceSettings
         'switch_port' => ['lan.switch_port', SettingDataType::INT, 'any'],
         // How it got there: 'auto' (found in the MAC table of the switch), 'off' (taken off by hand: not paired by the MAC again), none (set by hand).
         'switch_auto' => ['lan.switch_auto', SettingDataType::STRING, 'any'],
+        // The port of the device itself the cable goes into (optional, set by hand with the port of the switch): the WAN of a router, the uplink of a switch.
+        'switch_remote_port' => ['lan.switch_remote_port', SettingDataType::INT, 'any'],
         // The interfaces of an SNMP device the user switched off (hidden) or on (shown) against the default (names; SwitchService::parseSnmp).
         'switch_hidden' => ['switch.hidden', SettingDataType::STRING, 'ping'],
         'switch_shown' => ['switch.shown', SettingDataType::STRING, 'ping'],
