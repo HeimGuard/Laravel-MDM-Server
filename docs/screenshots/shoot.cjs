@@ -25,7 +25,14 @@ async function settle(page, ms = 900) {
 
 async function shot(page, name) {
     await settle(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    // From the top: the page and every box that scrolled (the list of the devices scrolls the selected one into view).
+    await page.evaluate(() => {
+        window.scrollTo(0, 0);
+        document.querySelectorAll('*').forEach((element) => {
+            if (element.scrollTop > 0) element.scrollTop = 0;
+        });
+    });
+    await page.waitForTimeout(200);
     await page.screenshot({ path: `${out}/${name}.png` });
     console.log('saved', name);
 }
@@ -113,6 +120,16 @@ async function step(page, name, work) {
         // Everything in the picture, not the part the map opened with.
         await page.locator('[data-zoom="fit"]').click();
         await page.waitForTimeout(800);
+        // Then closer to the network (the wheel zooms where the pointer is): the text of the cards is readable in the README.
+        const frame = await page.locator('.nm-frame-label').first().boundingBox();
+        if (frame) {
+            await page.mouse.move(frame.x + 380, frame.y - 40);
+            for (let i = 0; i < 3; i++) {
+                await page.mouse.wheel(0, -250);
+                await page.waitForTimeout(250);
+            }
+            await page.waitForTimeout(500);
+        }
         await shot(page, 'networks');
     });
     // The list of the networks with their unknown devices.
@@ -135,7 +152,11 @@ async function step(page, name, work) {
     await step(small, 'mobile', async () => {
         await small.goto(`${base}/devices`);
         await settle(small, 600);
-        await small.getByText(/^\s*nas\s*$/i).locator('visible=true').first().click({ timeout: 15000 });
+        try {
+            await small.getByText(/^\s*nas\s*$/i).locator('visible=true').first().click({ timeout: 8000 });
+        } catch (error) {
+            console.log('mobile: the list only:', String(error.message).split('\n')[0]);
+        }
         await shot(small, 'mobile');
     });
 
