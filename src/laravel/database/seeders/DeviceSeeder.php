@@ -81,9 +81,24 @@ class DeviceSeeder extends Seeder
         $device->forceFill([
             'public_key' => ['n' => base64_encode(ltrim($key['rsa']['n'], "\0")), 'e' => base64_encode(ltrim($key['rsa']['e'], "\0"))],
             'key_registered_at' => now(),
+            'public_ip' => '31.30.4.122',
             'last_seen_at' => $online ? now()->addYear() : now()->subDays(2),
             'last_http_at' => $online ? now()->addYear() : now()->subDays(2),
         ])->saveQuietly();
+
+        // A day of CPU and memory for the charts of Performance: every 30 seconds the last hour, every 5 minutes before.
+        if ($online) {
+            $total = $cores * 2 * 1024 ** 3;
+            $moments = [];
+            for ($seconds = 24 * 3600; $seconds >= 0; $seconds -= $seconds > 3600 ? 300 : 30) {
+                $moments[] = [now()->subSeconds($seconds), [
+                    ['key' => 'cpu', 'value' => round(14 + 9 * sin($seconds / 1400) + mt_rand(0, 70) / 10, 1), 'unit' => '%'],
+                    ['key' => 'memory.used', 'value' => (int) ($total * (0.52 + 0.05 * sin($seconds / 4200) + mt_rand(0, 12) / 1000)), 'unit' => 'bytes'],
+                    ['key' => 'memory.total', 'value' => $total, 'unit' => 'bytes'],
+                ]];
+            }
+            ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
+        }
 
         return $device->fresh();
     }

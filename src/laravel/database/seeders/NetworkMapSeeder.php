@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Device;
 use App\Services\SwitchService;
+use App\Support\PingUsage;
 use App\Support\ValueRecorder;
 use Illuminate\Database\Seeder;
 
@@ -60,6 +61,14 @@ class NetworkMapSeeder extends Seeder
         if ($snmp !== null) {
             $device->recordInventory('snmp', 'system', $snmp + ['version' => '2c']);
         }
+
+        // A day of checks every 5 minutes (every 30 seconds the last hour) for the chart of the response time; an offline device did not answer for 6 hours.
+        $moments = [];
+        for ($seconds = 24 * 3600; $seconds >= 0; $seconds -= $seconds > 3600 ? 300 : 30) {
+            $up = $online || $seconds > 6 * 3600;
+            $moments[] = [now()->subSeconds($seconds), PingUsage::values($up, $up ? round(mt_rand(5, 40) / 10, 1) : null)];
+        }
+        ValueRecorder::recordMany($device->getMorphClass(), $device->id, $moments);
 
         return $device->fresh();
     }

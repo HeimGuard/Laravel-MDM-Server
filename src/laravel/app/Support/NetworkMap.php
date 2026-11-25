@@ -419,6 +419,7 @@ class NetworkMap
             foreach (array_keys($nodeIds) as $nodeId) {
                 $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
                 $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
+                $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
                 // The cable from that port to the card of the gateway (network-map.js).
                 $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;
                 $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];

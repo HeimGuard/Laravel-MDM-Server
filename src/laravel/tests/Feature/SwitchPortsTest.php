@@ -363,7 +363,10 @@ class SwitchPortsTest extends TestCase
 
         $this->assertSame(161, $probe['port']);
         $this->assertArrayNotHasKey('steps', $probe);
-        $this->assertSame(array_values(SwitchService::SNMP_COLUMNS), $probe['snmp']['columns']);
+        // The 1.39.0 agent walks 16 columns: the ones of the way out are for agents from 1.41.0 (SNMP_ROUTE_VERSION).
+        $this->assertSame(array_values(SwitchService::snmpColumns($relay)), $probe['snmp']['columns']);
+        $this->assertCount(16, $probe['snmp']['columns']);
+        $this->assertSame(count(SwitchService::SNMP_COLUMNS), count(SwitchService::snmpColumns($this->relay('1.41.0', 'route'))));
         $this->assertStringNotContainsString('public', json_encode($probe));
         $this->assertTrue(openssl_private_decrypt(base64_decode($probe['snmp']['secret']), $plain, $this->deviceKey(), OPENSSL_PKCS1_OAEP_PADDING));
         $this->assertSame(['community' => 'public'], json_decode($plain, true));

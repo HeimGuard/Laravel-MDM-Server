@@ -1,4 +1,8 @@
-# HeimGuard
+<p align="center">
+  <img src="src/laravel/public/favicon.svg" alt="HeimGuard" width="220">
+</p>
+
+<h1 align="center">HeimGuard</h1>
 
 A simple, self-hosted portal for keeping an eye on your Windows and Linux (Debian / Ubuntu)
 computers: free disk space, pending updates, services, Docker containers, disk health and more.
@@ -68,9 +72,20 @@ Details: [Installing the agent](docs/installation.md).
 
 ## Screenshots
 
-| Networks | Notifications |
+Dark mode (the portal follows the theme of the browser). They are taken by the workflow *Screenshots* from the seeded demo data
+(`php artisan db:seed`), see [`docs/screenshots/shoot.cjs`](docs/screenshots/shoot.cjs).
+
+| Networks | Network table |
 |---|---|
-| ![Networks](docs/screenshots/networks.png) | ![Notifications](docs/screenshots/notifications.png) |
+| ![Networks](docs/screenshots/networks.png) | ![Network table](docs/screenshots/network-discovery.png) |
+| **A router with its ports (SNMP)** | **A ping-only device** |
+| ![A router with its ports](docs/screenshots/device-ports.png) | ![A ping-only device](docs/screenshots/ping.png) |
+| **Notifications** | **Dashboard** |
+| ![Notifications](docs/screenshots/notifications.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| **Adding a device** | **Drives of a device** |
+| ![Adding a device](docs/screenshots/enrolment.png) | ![Drives of a device](docs/screenshots/device-drives.png) |
+| **Login** | **On a phone** |
+| ![Login](docs/screenshots/login.png) | <img alt="On a phone" src="docs/screenshots/mobile.png" width="240"> |
 
 ## Repository structure
 

@@ -53,7 +53,7 @@ pull request and by hand. Two jobs:
   |-------|-----------|
   | push to `master` | `master` and `latest` |
   | tag `v1.33.1` | `1.33.1` and `1.33` (the `v` is dropped; no `latest`) |
-  | pull request | `pr-<number>`, not pushed |
+  | pull request | `pr-<number>`, not pushed; **only when it changes `src/docker/`, the workflow, `composer.*` or `package*.json`** (job `changes`): the tests already run the whole suite and the build of the assets, so the image is not built a second time for a pull request, it is built once when it is merged |
 
 So `latest` and `master` follow every merge into master, and a tag adds the fixed `X.Y.Z` and the moving `X.Y` of the
 same code. Nothing else happens on a tag: no GitHub release is created and nothing is deployed. A server updates

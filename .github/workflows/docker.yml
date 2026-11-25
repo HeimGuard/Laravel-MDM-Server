@@ -225,8 +225,31 @@ jobs:
         run: vendor/bin/pint --test
         continue-on-error: true
 
+  # Does the pull request change what only the build of the image can break (the Dockerfile and what it installs)? The tests
+  # of the same run already run the build of the assets and the whole suite, so a pull request does not build the image a
+  # second time: it is built (and pushed) once, when it is merged, unless it touches these files. A push is always built.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(src/docker/|\.github/workflows/docker\.yml$|src/laravel/(composer\.(json|lock)|package(-lock)?\.json)$)'; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
-    needs: [tests, slow, lint]
+    needs: [tests, slow, lint, changes]
+    if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: write
