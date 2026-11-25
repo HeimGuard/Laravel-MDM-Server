@@ -77,4 +77,6 @@ to test and what has broken tests before. Read it instead of searching the code 
 ## Git
 
 - Develop on the branch the session names, push there, open a pull request only when asked.
+- **A pull request that is open and not a draft is watched** (`subscribe_pr_activity`, never polling): when its CI (the `tests` check and the rest that are required) passes, merge it. A failing check is fixed on the branch (never skipped, never a test
+  disabled to get green); `tests-pgsql` is allowed to fail (`continue-on-error`). Not merged: a draft, a pull request that is not mine, one whose checks are still running or failed.
 - No `Co-Authored-By:` or `Claude-Session:` line (or session link) in commit messages, pull request descriptions or any other message.
