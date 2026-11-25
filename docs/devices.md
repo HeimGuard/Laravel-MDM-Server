@@ -131,10 +131,11 @@ off (the device stays). The window shows what the device says about itself once 
   - **The ports:** the Ethernet interfaces (`ifType` 6) that are no virtual ones; the port is the ifIndex and the name is `ifName` (else
     `ifDescr`), shown after the number on the card and in the dropdown of the port. A Linux router (Turris, OpenWrt) reports everything of the type Ethernet:
     its ports (`lan0`…, `wan`), the ports of its CPU (`eth0`…), bridges (`br-lan`), VLANs (`lan0.10`), Wi-Fi (`wlan0`) and virtual interfaces (`veth…`).
-    `SwitchService::VIRTUAL_INTERFACES` leaves out the loopback, bridges, VLANs, Wi-Fi, tunnels and containers by name; the **Interfaces to ignore** of
-    the SNMP window (names, `*` is any characters, commas, spaces or lines; the setting `switch.hidden`) is for the rest, for example `eth*` for the CPU. The
-    window shows what is read as ports now. The values of an interface that is ignored later stay as history, it is not shown. A device that tells no names
-    keeps all its Ethernet interfaces. The agent reads the names as two more columns (15 of 16), no newer agent is needed.
+    `SwitchService::VIRTUAL_INTERFACES` leaves out the loopback, bridges, VLANs, Wi-Fi, tunnels and containers by name, and `eth0`, `eth1`… when
+    the device names its ports `lan0`, `lan1`… (three or more: they are its CPU). The SNMP window lists **every Ethernet interface it has read** (the
+    inventory `snmp` / `interfaces`) with a tick for the ports: tick any off or on against the default, no names to write (the settings `switch.hidden` and
+    `switch.shown` keep only what differs from the default). The values of an interface that is switched off later stay as history, it is not shown. A
+    device that tells no names keeps all its Ethernet interfaces. The agent reads the names as two more columns (15 of 16), no newer agent is needed.
   - **Which device is plugged into which port**, when the MAC table is there (below).
 - The probe has `snmp` instead of `steps`: `{port: 161, snmp: {secret, columns[], version?}}`. The agent (`Invoke-SnmpWalk`) walks each column and
   returns numbers as `oid value` and strings as `oid x:hex` (255 bytes at most) in `body`. It reads nothing else: only the columns the server names

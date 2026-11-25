@@ -62,8 +62,8 @@ class SwitchService
     /** The columns of the interface table (one row per ifIndex). */
     /**
      * Interfaces of the type Ethernet that are no ports of a switch (names, `*` is any characters, any case): the loopback, bridges, VLANs (`eth0.10`,
-     * `lan@eth0`), Wi-Fi, tunnels, virtual machines and containers. The ports of the CPU of a router (`eth0`) are no more than a name, they are not
-     * left out: the user can add them to the interfaces to ignore of the device.
+     * `lan@eth0`), Wi-Fi, tunnels, virtual machines and containers. Not ports either, by default: `eth0`, `eth1`… of a router that names its ports `lan0`,
+     * `lan1`… (cpuPorts: they are the CPU). Each of them can be switched on in the SNMP window, and any other interface off.
      */
     public const VIRTUAL_INTERFACES = ['lo', 'br*', 'bridge*', 'veth*', 'docker*', 'virbr*', 'vnet*', 'lxc*', 'macvlan*', 'tun*', 'tap*', 'wg*', 'tailscale*', 'zt*', 'vlan*',
         '*.*', '*@*', 'ifb*', 'dummy*', 'bond*', 'teql*', 'gre*', 'sit*', 'ip6*', 'wlan*', 'wl[0-9]*', 'ath*', 'phy*'];
@@ -213,6 +213,25 @@ class SwitchService
         Cache::forget(self::loginKey($device));
     }
 
+    /**
+     * The Ethernet interfaces of an SNMP device with whether each is a port now (what the user switched on or off counts), for its window: [port, name, link,
+     * port_by_default, is_port]. Empty before the first answer.
+     *
+     * @return array<int, array{port: int, name: ?string, link: int, port_by_default: bool, is_port: bool}>
+     */
+    public static function interfaces(Device $device): array
+    {
+        $off = self::patterns((string) $device->switch_hidden);
+        $on = self::patterns((string) $device->switch_shown);
+
+        return array_map(function (array $row) use ($off, $on) {
+            $name = $row['name'] ?? null;
+            $row['is_port'] = $name === null ? (bool) $row['port_by_default'] : ($row['port_by_default'] ? ! self::matches($name, $off) : self::matches($name, $on));
+
+            return $row;
+        }, (array) (($device->latestInventory('snmp', 'interfaces') ?? [])['interfaces'] ?? []));
+    }
+
     /** What the device said about itself, null before the first answer: name, descr, version. */
     public static function info(Device $device): ?array
     {
@@ -253,15 +272,14 @@ class SwitchService
     }
 
     /**
-     * The ports in the answer of an SNMP walk (lines `oid value` of the columns of SNMP_COLUMNS): the Ethernet interfaces
-     * (ifType 6) that are no virtual ones (VIRTUAL_INTERFACES) and are not among the ones the user ignores ($hidden, names with `*`,
-     * separated by commas, spaces or lines); the port is the ifIndex, the name ifName (else ifDescr). Down unless ifOperStatus is up; the link code is the speed
-     * (ifHighSpeed, else ifSpeed): 1000 Mb/s and more 1000M full, 100 Mb/s 100M full, less 10M full (the duplex is not read, full is assumed).
-     * Null when there are no such interfaces in it.
+     * All the Ethernet interfaces (ifType 6) in the answer of an SNMP walk (lines `oid value` of the columns of SNMP_COLUMNS), with what is
+     * known of them and whether they are a port by default: the port is the ifIndex, the name ifName (else ifDescr). Down unless ifOperStatus is
+     * up; the link code is the speed (ifHighSpeed, else ifSpeed): 1000 Mb/s and more 1000M full, 100 Mb/s 100M full, less 10M full (the duplex
+     * is not read, full is assumed).
      *
-     * @return array<int, array{port: int, name: ?string, enabled: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>|null
+     * @return array<int, array{port: int, name: ?string, port_by_default: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>
      */
-    public static function parseSnmp(string $body, string $hidden = ''): ?array
+    public static function snmpInterfaces(string $body): array
     {
         $interfaces = [];
         $names = [];
@@ -279,17 +297,22 @@ class SwitchService
             }
         }
         ksort($interfaces);
-        $ignored = array_merge(self::VIRTUAL_INTERFACES, self::patterns($hidden));
-        $rows = [];
+        $ethernet = [];
         foreach ($interfaces as $index => $values) {
-            $name = $names[$index]['if_name'] ?? $names[$index]['if_descr'] ?? null;
-            if (($values['type'] ?? null) !== 6 || ($name !== null && self::matches($name, $ignored)) || count($rows) >= self::MAX_PORTS) {
-                continue;
+            if (($values['type'] ?? null) === 6) {
+                $ethernet[$index] = $names[$index]['if_name'] ?? $names[$index]['if_descr'] ?? null;
             }
+        }
+        // A router that names its ports lan0, lan1…: eth0, eth1… are its CPU.
+        $cpu = count(array_filter($ethernet, fn (?string $name) => $name !== null && preg_match('/^(lan|port|swp)\d+$/i', $name) === 1)) >= 3;
+        $rows = [];
+        foreach ($ethernet as $index => $name) {
+            $values = $interfaces[$index];
             $mbit = $values['fast'] ?? intdiv($values['speed'] ?? 0, 1000000);
             $rows[] = [
                 'port' => $index,
                 'name' => $name,
+                'port_by_default' => $name === null || ! (self::matches($name, self::VIRTUAL_INTERFACES) || ($cpu && preg_match('/^eth\d+$/i', $name) === 1)),
                 'enabled' => true,
                 'link' => ($values['status'] ?? 2) !== 1 ? 0 : ($mbit >= 1000 ? 6 : ($mbit >= 100 ? 5 : 3)),
                 'tx' => $values['tx'] ?? 0,
@@ -297,6 +320,29 @@ class SwitchService
                 'rx' => $values['rx'] ?? 0,
                 'rx_bad' => $values['rx_bad'] ?? 0,
             ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The ports in the answer of an SNMP walk: the Ethernet interfaces that are ports by default (snmpInterfaces) except the ones the user
+     * switched off ($off, names) and with the ones the user switched on ($on, names). Null when there are none.
+     *
+     * @return array<int, array{port: int, name: ?string, enabled: bool, link: int, tx: int, tx_bad: int, rx: int, rx_bad: int}>|null
+     */
+    public static function parseSnmp(string $body, string $off = '', string $on = ''): ?array
+    {
+        $off = self::patterns($off);
+        $on = self::patterns($on);
+        $rows = [];
+        foreach (self::snmpInterfaces($body) as $row) {
+            $name = $row['name'];
+            $port = $name === null ? $row['port_by_default'] : ($row['port_by_default'] ? ! self::matches($name, $off) : self::matches($name, $on));
+            if ($port && count($rows) < self::MAX_PORTS) {
+                unset($row['port_by_default']);
+                $rows[] = $row;
+            }
         }
 
         return $rows === [] ? null : $rows;
@@ -416,9 +462,11 @@ class SwitchService
             $device = Device::query()->where('kind', 'ping')->find($id);
             $body = $device !== null && is_string($probe['body'] ?? null) ? $probe['body'] : null;
             $snmp = $device !== null && (string) $device->switch_type === self::SNMP;
-            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body, (string) $device->switch_hidden) : self::parse($body));
+            $ports = $body === null ? null : ($snmp ? self::parseSnmp($body, (string) $device->switch_hidden, (string) $device->switch_shown) : self::parse($body));
             if ($snmp && $body !== null) {
                 self::discovered($device, $body, $probe['version'] ?? null);
+                // Every Ethernet interface with its name and whether it is a port by default (the window lets the user switch each on or off).
+                $device->recordInventory('snmp', 'interfaces', ['interfaces' => array_map(fn (array $row) => ['port' => $row['port'], 'name' => $row['name'], 'link' => $row['link'], 'port_by_default' => $row['port_by_default']], self::snmpInterfaces($body))]);
             }
             if ($ports === null) {
                 // The next request logs in again.

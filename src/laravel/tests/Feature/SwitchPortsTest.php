@@ -197,35 +197,40 @@ class SwitchPortsTest extends TestCase
     {
         $c = SwitchService::SNMP_COLUMNS;
         $lines = [];
-        foreach ([[1, 'lo', 24], [2, 'eth0', 6], [3, 'lan0', 6], [4, 'lan1', 6], [5, 'br-lan', 6], [6, 'wlan0', 6], [7, 'lan0.10', 6], [8, 'veth1a2b', 6], [9, 'wan', 6]] as [$index, $name, $type]) {
+        $all = [[1, 'lo', 24], [2, 'eth0', 6], [3, 'lan0', 6], [4, 'lan1', 6], [5, 'lan2', 6], [6, 'lan3', 6], [7, 'lan4', 6], [8, 'wan', 6], [9, 'br-lan', 6], [10, 'wlan0', 6], [11, 'lan0.10', 6], [12, 'veth1a2b', 6]];
+        foreach ($all as [$index, $name, $type]) {
             array_push($lines, $c['type'].".$index $type", $c['status'].".$index 1", $c['fast'].".$index 1000", $c['if_name'].".$index x:".bin2hex($name));
         }
 
         return implode("\n", $lines);
     }
 
-    public function test_the_interfaces_that_are_no_ports_are_left_out_and_the_ports_have_their_names(): void
+    public function test_the_ports_of_a_router_are_found_without_its_cpu_bridges_wifi_and_virtual_interfaces(): void
     {
         $body = $this->routerBody();
 
-        // Bridges, Wi-Fi, VLANs and virtual interfaces are no ports; the CPU of the router (eth0) is a name like any other.
+        // The 6 ports of the router (lan0-4 and wan): not the CPU (eth0, it names its ports lan0…), the bridge, Wi-Fi, the VLAN, the virtual one, the loopback.
         $ports = SwitchService::parseSnmp($body);
-        $this->assertSame(['eth0', 'lan0', 'lan1', 'wan'], array_column($ports, 'name'));
-        $this->assertSame([2, 3, 4, 9], array_column($ports, 'port'));
-        // The user ignores the CPU (a name with * is any characters, separators are commas, spaces and lines).
-        $this->assertSame(['lan0', 'lan1', 'wan'], array_column(SwitchService::parseSnmp($body, "ETH*\nbogus"), 'name'));
-        $this->assertSame(['lan0', 'wan'], array_column(SwitchService::parseSnmp($body, "eth* lan1\nbogus"), 'name'));
-        // ifDescr when there is no ifName.
+        $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'], array_column($ports, 'name'));
+        $this->assertSame([3, 4, 5, 6, 7, 8], array_column($ports, 'port'));
+        // Every Ethernet interface is known with whether it is a port by default (for the window).
+        $all = collect(SwitchService::snmpInterfaces($body))->pluck('port_by_default', 'name');
+        $this->assertSame(['eth0' => false, 'lan0' => true, 'wan' => true, 'br-lan' => false, 'wlan0' => false, 'lan0.10' => false, 'veth1a2b' => false], $all->only(['eth0', 'lan0', 'wan', 'br-lan', 'wlan0', 'lan0.10', 'veth1a2b'])->all());
+        // The user switches one on and one off: what was ticked against the default (names, any case).
+        $this->assertSame(['eth0', 'lan0', 'lan1', 'lan2', 'lan3', 'wan'], array_column(SwitchService::parseSnmp($body, 'LAN4', 'eth0'), 'name'));
+        // A device that does not name its ports like that keeps its eth0, eth1…
         $c = SwitchService::SNMP_COLUMNS;
+        $server = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['if_name'].'.1 x:'.bin2hex('eth0')."\n".$c['type'].'.2 6'."\n".$c['if_name'].'.2 x:'.bin2hex('eth1')."\n".$c['type'].'.3 6'."\n".$c['if_name'].'.3 x:'.bin2hex('docker0'));
+        $this->assertSame(['eth0', 'eth1'], array_column($server, 'name'));
+        // ifDescr when there is no ifName; no names at all: every Ethernet interface, as before.
         $byDescr = SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['status'].'.1 1'."\n".$c['if_descr'].'.1 x:'.bin2hex('lan9'));
         $this->assertSame(['lan9'], array_column($byDescr, 'name'));
-        // A device that tells no names: all the Ethernet interfaces, as before.
         $this->assertCount(2, SwitchService::parseSnmp($c['type'].'.1 6'."\n".$c['type'].'.2 6'));
         // The agent walks the columns of the names too (at most 16 columns).
         $this->assertLessThanOrEqual(16, count(SwitchService::SNMP_COLUMNS));
     }
 
-    public function test_an_interface_that_is_ignored_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void
+    public function test_an_interface_switched_off_later_is_not_shown_any_more_and_the_names_are_in_the_card(): void
     {
         Cache::flush();
         $switch = $this->snmpSwitch();
@@ -233,29 +238,36 @@ class SwitchPortsTest extends TestCase
         $read = fn () => SwitchService::record($relay, [['id' => $switch->id, 'status' => 200, 'body' => $this->routerBody(), 'error' => null, 'version' => 1]]);
 
         $this->assertSame(1, $read());
-        $this->assertSame([[2, 'eth0'], [3, 'lan0'], [4, 'lan1'], [9, 'wan']], array_map(fn (array $port) => [$port['port'], $port['name']], SwitchService::ports($switch->fresh())));
+        $this->assertSame(['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'], array_column(SwitchService::ports($switch->fresh()), 'name'));
+        $this->assertSame(6.0, $switch->fresh()->latestValue('switch.ports.up'));
+        // The window knows all the interfaces and which is a port.
+        $this->assertCount(11, SwitchService::interfaces($switch->fresh()));
 
-        // The CPU is ignored from now on: it is not read, the old values stay as history but it is not shown.
-        $switch->forceFill(['switch_hidden' => 'eth*'])->save();
+        // lan4 is switched off and eth0 on: the values of lan4 stay as history, it is not shown.
+        $switch->forceFill(['switch_hidden' => 'lan4', 'switch_shown' => 'eth0'])->save();
         $this->assertSame(1, $read());
-        $this->assertSame([3, 4, 9], array_column(SwitchService::ports($switch->fresh()), 'port'));
-        $this->assertSame(3.0, $switch->fresh()->latestValue('switch.ports.up'));
+        $this->assertSame(['eth0', 'lan0', 'lan1', 'lan2', 'lan3', 'wan'], array_column(SwitchService::ports($switch->fresh()), 'name'));
         $card = SwitchService::mapCard($switch->fresh(), collect());
-        $this->assertStringContainsString('(lan0)', $card['ports'][0]['heading']);
-        $this->assertStringContainsString('lan0', $card['ports'][0]['title']);
+        $this->assertStringContainsString('(eth0)', $card['ports'][0]['heading']);
+        $this->assertStringContainsString('eth0', $card['ports'][0]['title']);
     }
 
-    public function test_the_interfaces_to_ignore_are_saved_in_the_snmp_window(): void
+    public function test_the_interfaces_are_ticked_in_the_snmp_window_against_their_defaults(): void
     {
+        Cache::flush();
         $this->actingAs(User::factory()->create());
-        $nas = $this->pingDevice('nas', '00:11:22:33:44:55');
+        $switch = $this->snmpSwitch();
+        SwitchService::record($this->relay('1.39.0'), [['id' => $switch->id, 'status' => 200, 'body' => $this->routerBody(), 'error' => null, 'version' => 1]]);
 
-        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $nas->id])
-            ->set('community', 'public')->set('hidden', "eth*\nbr-lan; wlan0")->call('save')->assertHasNoErrors();
+        $window = Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $switch->id])->assertSet('include', ['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan']);
+        // br-lan on, lan1 off.
+        $window->set('include', ['lan0', 'lan2', 'lan3', 'lan4', 'wan', 'br-lan'])->call('save')->assertHasNoErrors();
 
-        $this->assertSame('eth*, br-lan, wlan0', $nas->fresh()->switch_hidden);
-        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $nas->id])->assertSet('hidden', 'eth*, br-lan, wlan0')->set('hidden', '')->call('save');
-        $this->assertTrue(blank($nas->fresh()->switch_hidden));
+        $fresh = $switch->fresh();
+        $this->assertSame(['lan1', 'br-lan'], [$fresh->switch_hidden, $fresh->switch_shown]);
+        // Ticked as by default again: nothing is kept.
+        Livewire::test(\App\Livewire\SnmpSettings::class, ['deviceId' => $switch->id])->set('include', ['lan0', 'lan1', 'lan2', 'lan3', 'lan4', 'wan'])->call('save');
+        $this->assertTrue(blank($switch->fresh()->switch_hidden) && blank($switch->fresh()->switch_shown));
     }
 
     public function test_an_snmp_switch_gets_the_columns_and_the_community_for_its_own_key_only(): void

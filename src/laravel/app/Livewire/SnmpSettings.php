@@ -20,8 +20,8 @@ class SnmpSettings extends Component
 
     public string $community = '';
 
-    /** The interfaces of the device that are no ports: names, `*` is any characters, separated by commas, spaces or lines (SwitchService::parseSnmp). */
-    public string $hidden = '';
+    /** The names of the interfaces ticked as ports (the ones it has read: SwitchService::interfaces). */
+    public array $include = [];
 
     public function mount(int $deviceId): void
     {
@@ -29,7 +29,7 @@ class SnmpSettings extends Component
         $this->deviceId = $device->id;
         // The community is shown (it is read only, every signed-in user is a trusted operator).
         $this->community = (string) $device->switch_type === SwitchService::SNMP ? (string) SwitchService::password($device) : '';
-        $this->hidden = (string) $device->switch_hidden;
+        $this->include = collect(SwitchService::interfaces($device))->where('is_port', true)->pluck('name')->filter()->values()->all();
     }
 
     public function save(): void
@@ -42,18 +42,7 @@ class SnmpSettings extends Component
 
             return;
         }
-        $hidden = trim((string) preg_replace('/[ \t]*[\r\n,;]+[ \t]*/', ', ', trim($this->hidden)));
-        if (mb_strlen($hidden) > 300 || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f]/', $hidden)) {
-            $this->addError('hidden', __('Enter the names of the interfaces separated by commas.'));
-
-            return;
-        }
-        if ($hidden !== (string) $device->switch_hidden) {
-            // The next reading takes the ports without them (their history stays).
-            $device->forceFill(['switch_hidden' => $hidden === '' ? null : $hidden])->save();
-            Audit::device($device, 'settings', __('SNMP settings changed'));
-            LiveUpdates::device($device->id, 'settings');
-        }
+        $this->saveInterfaces($device);
         $snmp = (string) $device->switch_type === SwitchService::SNMP;
         // Empty: off (only what SNMP set; the web login of a TP-Link switch stays); the same community is not stored again.
         if ($community === '' ? $snmp : (! $snmp || SwitchService::password($device) !== $community)) {
@@ -65,6 +54,41 @@ class SnmpSettings extends Component
         $this->dispatch('closeModal');
     }
 
+    /**
+     * What the user ticked against the default of each interface it has read: the ones that are ports by default and are not ticked are switched off, the
+     * others that are ticked on (names; nothing changes before the first reading).
+     */
+    private function saveInterfaces(Device $device): void
+    {
+        $interfaces = SwitchService::interfaces($device);
+        if ($interfaces === []) {
+            return;
+        }
+        $off = [];
+        $on = [];
+        foreach ($interfaces as $row) {
+            $name = $row['name'];
+            if ($name === null) {
+                continue;
+            }
+            $ticked = in_array($name, $this->include, true);
+            // A name as a pattern of its own (a space is any character, the characters of the patterns are escaped).
+            $pattern = str_replace(' ', '?', addcslashes($name, '*?[]\\'));
+            if ($row['port_by_default'] && ! $ticked) {
+                $off[] = $pattern;
+            } elseif (! $row['port_by_default'] && $ticked) {
+                $on[] = $pattern;
+            }
+        }
+        $changes = ['switch_hidden' => $off === [] ? null : implode(', ', $off), 'switch_shown' => $on === [] ? null : implode(', ', $on)];
+        if ($changes['switch_hidden'] !== ((string) $device->switch_hidden === '' ? null : $device->switch_hidden) || $changes['switch_shown'] !== ((string) $device->switch_shown === '' ? null : $device->switch_shown)) {
+            // The next reading takes the ports with them (the history of the ones that go stays).
+            $device->forceFill($changes)->save();
+            Audit::device($device, 'settings', __('SNMP settings changed'));
+            LiveUpdates::device($device->id, 'settings');
+        }
+    }
+
     public function render()
     {
         $device = Device::query()->where('kind', 'ping')->findOrFail($this->deviceId);
@@ -72,8 +96,8 @@ class SnmpSettings extends Component
         return view('livewire.snmp-settings', [
             'info' => (string) $device->switch_type === SwitchService::SNMP ? SwitchService::info($device) : null,
             'replaces' => (string) $device->switch_type === SwitchService::TPLINK,
-            // What it reports as ports now (the name and the number of each): to see what to ignore.
-            'ports' => (string) $device->switch_type === SwitchService::SNMP ? (SwitchService::ports($device) ?? []) : [],
+            // The Ethernet interfaces it has read, each ticked when it is a port.
+            'interfaces' => (string) $device->switch_type === SwitchService::SNMP ? SwitchService::interfaces($device) : [],
         ]);
     }
 }

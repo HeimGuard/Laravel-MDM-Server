@@ -6,15 +6,23 @@
             @error('community') <div class="invalid-feedback">{{ $message }}</div> @enderror
             <div class="form-text">{{ __('The SNMP community (version 1 or 2c) of the device; leave it empty to turn SNMP off. The agent of its network finds out the rest: the version, what the device is, its ports and, when it has the table, which device is plugged into which port (agents :version or newer).', ['version' => \App\Services\SwitchService::SNMP_VERSION]) }}</div>
         </div>
-        <div class="col-12">
-            <label class="form-label" for="snmp-settings-hidden">{{ __('Interfaces to ignore') }}</label>
-            <textarea class="form-control font-monospace @error('hidden') is-invalid @enderror" id="snmp-settings-hidden" placeholder="eth*, br-lan" rows="2" wire:model="hidden"></textarea>
-            @error('hidden') <div class="invalid-feedback">{{ $message }}</div> @enderror
-            <div class="form-text">{{ __('Names of the interfaces that are no ports, separated by commas (* is any characters). Bridges, VLANs, Wi-Fi and virtual interfaces are left out without it; a router often has its CPU as eth0, eth1…') }}</div>
-            @if (count($ports) > 0)
-                <div class="form-text">{{ __('Read as ports: :ports', ['ports' => collect($ports)->map(fn ($port) => ($port['name'] ?? '#'.$port['port']).' ('.$port['port'].')')->implode(', ')]) }}</div>
-            @endif
-        </div>
+        @if (count($interfaces) > 0)
+            <div class="col-12">
+                <div class="form-label">{{ __('Interfaces') }}</div>
+                <div class="border rounded p-2" style="max-height: 14rem; overflow: auto">
+                    @foreach ($interfaces as $row)
+                        <div class="form-check d-flex align-items-center gap-2">
+                            <input class="form-check-input mt-0" id="snmp-if-{{ $row['port'] }}" type="checkbox" value="{{ $row['name'] }}" wire:model="include" @disabled($row['name'] === null)>
+                            <label class="form-check-label small" for="snmp-if-{{ $row['port'] }}">
+                                <span class="fw-medium">{{ $row['name'] ?? '#'.$row['port'] }}</span>
+                                <span class="text-body-secondary">({{ $row['port'] }}) · {{ __(\App\Services\SwitchService::LINKS[$row['link']] ?? 'Down') }}@if (! $row['port_by_default']) · {{ __('not a port by default') }}@endif</span>
+                            </label>
+                        </div>
+                    @endforeach
+                </div>
+                <div class="form-text">{{ __('Tick what is a port. Bridges, VLANs, Wi-Fi and virtual interfaces are off by default, and so are the eth0, eth1… of a router that names its ports lan0, lan1…') }}</div>
+            </div>
+        @endif
         @if ($replaces)
             <div class="col-12 small text-warning">{{ __('The device is read from its TP-Link web page now: a community replaces that.') }}</div>
         @endif
