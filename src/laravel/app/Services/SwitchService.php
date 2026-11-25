@@ -850,7 +850,7 @@ class SwitchService
     /** The ports of a device that has them (read or set by hand), for the choice of its port: [port, name]. */
     public static function portNumbers(Device $device): array
     {
-        return $device->isPingOnly && self::enabled($device) ? array_map(fn (array $port) => ['port' => $port['port'], 'name' => $port['name'] ?? null, 'label' => $port['label']], self::ports($device) ?? []) : [];
+        return $device->isPingOnly && self::enabled($device) ? array_map(fn (array $port) => ['port' => $port['port'], 'name' => $port['name'] ?? null, 'label' => $port['label'], 'link' => $port['link']], self::ports($device) ?? []) : [];
     }
 
     /** The devices of a deleted switch are not plugged into it any more (a setting has no foreign key). */

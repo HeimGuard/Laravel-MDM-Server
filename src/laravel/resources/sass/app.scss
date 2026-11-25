@@ -310,20 +310,24 @@ label.mdm-tag {
     max-width: 52rem;
 
     .nm-head { display: flex; align-items: center; gap: .5rem; color: inherit; text-decoration: none; white-space: nowrap; }
-    .nm-ports { display: flex; flex-wrap: wrap; gap: .3rem; }
-    .nm-port {
-        min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; border: 2px solid var(--hg-offline); border-radius: .75rem;
-        background: transparent; color: var(--bs-body-color); font-size: .7rem; font-weight: 600; line-height: 1; cursor: pointer;
-        &.is-gig { border-color: var(--hg-ok); }
-        &.is-fast { border-color: var(--hg-info); }
-        &.is-slow { border-color: var(--hg-high); }
-        &.is-down { border-style: dashed; opacity: .75; }
-        &.has-devices { background: var(--hg-surface-raised); }
-        &.has-errors { box-shadow: 0 0 0 2px var(--hg-critical); }
-        // The port a router reaches the internet by (its default route): a dot on the corner.
-        &.is-wan { position: relative; &::after { content: ''; position: absolute; top: -.2rem; right: -.2rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--hg-info); } }
-        &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
-    }
+}
+
+// The ports as buttons: on the card of a switch (colour = speed of the link, ring = bad packets, a dot = the WAN) and in the dialog of a port (the port to click).
+.nm-ports { display: flex; flex-wrap: wrap; gap: .3rem; }
+.nm-port {
+    min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; border: 2px solid var(--hg-offline); border-radius: .75rem;
+    background: transparent; color: var(--bs-body-color); font-size: .7rem; font-weight: 600; line-height: 1; cursor: pointer;
+    &.is-gig { border-color: var(--hg-ok); }
+    &.is-fast { border-color: var(--hg-info); }
+    &.is-slow { border-color: var(--hg-high); }
+    &.is-down { border-style: dashed; opacity: .75; }
+    &.has-devices { background: var(--hg-surface-raised); }
+    &.has-errors { box-shadow: 0 0 0 2px var(--hg-critical); }
+    // The port a router reaches the internet by (its default route): a dot on the corner.
+    &.is-wan { position: relative; &::after { content: ''; position: absolute; top: -.2rem; right: -.2rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--hg-info); } }
+    &:hover, &:focus-visible { border-color: var(--bs-primary); outline: 0; }
+    // Picked in the dialog of a port (the port of the device the cable goes into).
+    &.is-picked { background: var(--hg-ok); color: #06210a; border-color: var(--hg-ok); }
 }
 
 // The frame round the devices of a network the gateway stands for (its name on the bottom edge).

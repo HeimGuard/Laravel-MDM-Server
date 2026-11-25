@@ -10,10 +10,15 @@
             </label>
             {{-- The port of the device itself the cable goes into: optional, only for a device that has ports (read or set by hand), the ports as boxes to click (a second click takes it back). --}}
             @if ($candidate['ports'] !== [] && in_array($candidate['id'], array_map('intval', $selected), true))
-                <div class="ms-4 mt-1 mb-2 d-flex flex-wrap gap-1" role="group" aria-label="{{ __('Its port (optional)') }}">
+                <div class="ms-4 mt-1 mb-2 nm-ports" role="group" aria-label="{{ __('Its port (optional)') }}">
                     @foreach ($candidate['ports'] as $remotePort)
-                        @php($picked = (int) ($remote[$candidate['id']] ?? 0) === $remotePort['port'])
-                        <button class="btn btn-sm rounded-pill px-2 py-0 {{ $picked ? 'btn-success' : 'btn-outline-secondary' }}" title="{{ $remotePort['name'] && $remotePort['name'] !== $remotePort['label'] ? $remotePort['name'] : __('Its port (optional)') }}" type="button" wire:click="pickRemote({{ $candidate['id'] }}, {{ $remotePort['port'] }})" wire:key="remote-{{ $candidate['id'] }}-{{ $remotePort['port'] }}">{{ $remotePort['label'] }}</button>
+                        @php
+                            $link = $remotePort['link'];
+                            $speed = $link < 0 ? 'is-manual' : ($link === 6 ? 'is-gig' : ($link >= 4 ? 'is-fast' : ($link >= 2 ? 'is-slow' : 'is-down')));
+                            $picked = (int) ($remote[$candidate['id']] ?? 0) === $remotePort['port'];
+                        @endphp
+                        {{-- The same boxes as on the card of the device (colour = link, dashed = down, a dot = the WAN): the port the cable goes into is clicked. --}}
+                        <button class="nm-port {{ $speed }}{{ $remotePort['label'] === 'WAN' ? ' is-wan' : '' }}{{ $picked ? ' is-picked' : '' }}" title="{{ $remotePort['name'] && $remotePort['name'] !== $remotePort['label'] ? $remotePort['name'] : __('Its port (optional)') }}" type="button" wire:click="pickRemote({{ $candidate['id'] }}, {{ $remotePort['port'] }})" wire:key="remote-{{ $candidate['id'] }}-{{ $remotePort['port'] }}">{{ $remotePort['label'] }}</button>
                     @endforeach
                 </div>
             @endif
