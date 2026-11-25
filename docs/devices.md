@@ -168,6 +168,12 @@ A router read over SNMP says which device is in front of it, so the map does not
 - On the map the cable of a router plugged into a port of the gateway above it runs from that port straight down into the **WAN port** of the router (`wan` of its node = the ifIndex of the default route; marked with a dot, `is-wan`), and the link of the hierarchy is not drawn beside it (one physical cable, no virtual link). The port can also be **said by hand** in the dialog of the port of the gateway above (click the port, tick the device, and the optional *Its port*: a choice of its ports, or a number for a device without ports; setting `lan.switch_remote_port`, `switch_remote_port`); that wins over the default route and is forgotten with the cable.
 - The WAN interface is a **port** of the router: the one that has an IPv4 address is not taken for the CPU (Turris and Omnia: `eth0`, `eth1` are the links of the SoC to its switch chip, `eth2` is the WAN).
 
+#### Labels of the ports
+
+The key of a port is its number (the ifIndex over SNMP, the number of the port of a TP-Link page) and it stays so (settings, history, plugging). The **label** is what the pages show
+(`SwitchService::portLabel`, the `label` of `ports()`): `lanN` / `portN` / `swpN` is N, `wan` and the port a router leaves by (its default route, `snmp` / `uplink`) is `WAN`, anything else is the number.
+So Turris shows WAN, 0 to 4 as written on its case, not 4 to 9. A TP-Link Easy Smart switch has numbers only (its page has no names), so its labels are 1 to N.
+
 #### Ports by hand (no agent version needed)
 
 A ping-only device that nothing reads (no SNMP, no TP-Link page: an unmanaged switch, a modem, a patch panel) gets ports from the item **Ports** of its menu

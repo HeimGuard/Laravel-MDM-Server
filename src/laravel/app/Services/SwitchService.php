@@ -624,15 +624,43 @@ class SwitchService
     }
 
     /**
+     * The label of a port as it is written on the device: `lan0` is 0, `wan` and the port a router leaves by (its default route) is WAN, any other name
+     * leaves the number (the ifIndex over SNMP, the number of the port of a switch without names, TP-Link). The number stays the key of the port.
+     */
+    public static function portLabel(?string $name, int $number, bool $wan = false): string
+    {
+        if ($wan || ($name !== null && preg_match('/^wan\d*$/i', $name) === 1)) {
+            return 'WAN';
+        }
+        if ($name !== null && preg_match('/^(?:lan|port|swp|p)[\s_-]?(\d{1,3})$/i', $name, $match) === 1) {
+            return (string) (int) $match[1];
+        }
+
+        return (string) $number;
+    }
+
+    /** The label of the port of a device for the pages ("0" for lan0), the number when the port or its name is not known. */
+    public static function labelOf(Device $device, int $port): string
+    {
+        foreach (self::ports($device) ?? [] as $row) {
+            if ($row['port'] === $port) {
+                return $row['label'];
+            }
+        }
+
+        return (string) $port;
+    }
+
+    /**
      * The last ports of a switch for the pages, null when none were read.
      *
-     * @return array<int, array{port: int, name: ?string, link: int, bad: int, tx: ?int, rx: ?int}>|null
+     * @return array<int, array{port: int, name: ?string, label: string, link: int, bad: int, tx: ?int, rx: ?int}>|null
      */
     public static function ports(Device $device): ?array
     {
         // Set by hand: the numbers only (the link is not read).
         if (self::manualPorts($device) > 0) {
-            return array_map(fn (int $number) => ['port' => $number, 'name' => null, 'link' => self::MANUAL_LINK, 'bad' => 0, 'tx' => null, 'rx' => null], range(1, self::manualPorts($device)));
+            return array_map(fn (int $number) => ['port' => $number, 'name' => null, 'label' => (string) $number, 'link' => self::MANUAL_LINK, 'bad' => 0, 'tx' => null, 'rx' => null], range(1, self::manualPorts($device)));
         }
         $definitions = ValueDefinition::query()->where('valuable_type', $device->getMorphClass())->where('valuable_id', $device->id)
             ->whereIn('key', ['switch.port.link', 'switch.port.bad', 'switch.port.tx', 'switch.port.rx'])->get();
@@ -656,6 +684,11 @@ class SwitchService
             }
         }
         ksort($ports);
+        // The port a router leaves by (its default route over SNMP) is its WAN.
+        $uplink = (string) $device->switch_type === self::SNMP ? ($device->latestInventory('snmp', 'uplink')['index'] ?? null) : null;
+        foreach ($ports as $number => $port) {
+            $ports[$number]['label'] = self::portLabel($port['name'], $number, $uplink === $number);
+        }
 
         return $ports === [] ? null : array_values($ports);
     }
@@ -817,7 +850,7 @@ class SwitchService
     /** The ports of a device that has them (read or set by hand), for the choice of its port: [port, name]. */
     public static function portNumbers(Device $device): array
     {
-        return $device->isPingOnly && self::enabled($device) ? array_map(fn (array $port) => ['port' => $port['port'], 'name' => $port['name'] ?? null], self::ports($device) ?? []) : [];
+        return $device->isPingOnly && self::enabled($device) ? array_map(fn (array $port) => ['port' => $port['port'], 'name' => $port['name'] ?? null, 'label' => $port['label']], self::ports($device) ?? []) : [];
     }
 
     /** The devices of a deleted switch are not plugged into it any more (a setting has no foreign key). */
@@ -848,9 +881,9 @@ class SwitchService
             $ports[] = $port + [
                 'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->all(),
                 'link_name' => $link,
-                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['port']]).($port['name'] ? ' ('.$port['name'].')' : ''),
+                'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $port['label']]).($port['name'] && $port['name'] !== $port['label'] ? ' ('.$port['name'].')' : ''),
                 'title' => implode(' · ', array_filter([
-                    __('Port :port', ['port' => $port['port']]), $port['name'], $link,
+                    __('Port :port', ['port' => $port['label']]), $port['name'] !== $port['label'] ? $port['name'] : null, $link,
                     $port['bad'] > 0 ? trans_choice(':count bad packet|:count bad packets', $port['bad']) : null,
                     $on === [] ? null : implode(', ', $on),
                 ])),

@@ -45,9 +45,9 @@
                             @foreach ($ports as $port)
                                 <tr wire:key="switch-port-{{ $port['port'] }}">
                                     <td class="fw-medium text-nowrap">
-                                        {{ $port['port'] }}@if (! empty($port['name']))<span class="text-body-secondary fw-normal ms-1">{{ $port['name'] }}</span>@endif
+                                        {{ $port['label'] }}@if (! empty($port['name']) && $port['name'] !== $port['label'])<span class="text-body-secondary fw-normal ms-1">{{ $port['name'] }}</span>@endif
                                         @foreach ($plugged->get($port['port'], collect()) as $other)
-                                            <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Plugged into :switch, port :port', ['switch' => $device->displayName, 'port' => $port['port']]) }}">
+                                            <a class="text-decoration-none ms-1" href="{{ route('devices', ['selectedDeviceId' => $other->id]) }}" title="{{ __('Plugged into :switch, port :port', ['switch' => $device->displayName, 'port' => $port['label']]) }}">
                                                 <x-badge color="secondary" size="sm" variant="subtle" icon="fas fa-link">{{ $other->displayName }}</x-badge>
                                             </a>
                                         @endforeach

@@ -21,7 +21,7 @@ function portsHtml(card, wan = null) {
     const speed = (link) => (link < 0 ? 'is-manual' : link === 6 ? 'is-gig' : link >= 4 ? 'is-fast' : link >= 2 ? 'is-slow' : 'is-down');
 
     return '<span class="nm-ports">' + card.ports.map((port) => `<button type="button" class="nm-port ${speed(port.link)}${port.bad > 0 ? ' has-errors' : ''}${port.devices.length ? ' has-devices' : ''}${wan !== null && Number(wan) === port.port ? ' is-wan' : ''}"`
-        + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}${wan !== null && Number(wan) === port.port ? ' · WAN' : ''}" aria-label="${esc(port.title)}">${esc(port.port)}</button>`).join('') + '</span>';
+        + ` data-switch="${esc(card.id)}" data-port="${esc(port.port)}" data-heading="${esc(port.heading)}" title="${esc(port.title)}${wan !== null && Number(wan) === port.port ? ' · WAN' : ''}" aria-label="${esc(port.title)}">${esc(port.label ?? port.port)}</button>`).join('') + '</span>';
 }
 
 function nodeHtml(node) {

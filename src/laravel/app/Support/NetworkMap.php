@@ -384,14 +384,14 @@ class NetworkMap
             // Plugged into a switch: its port on the card.
             $into = $device->switch_id !== null ? $byId->get($device->switch_id) : null;
             if ($into !== null && $device->switch_port !== null) {
-                $badges[] = __('port :port', ['port' => $device->switch_port]);
+                $badges[] = __('port :port', ['port' => SwitchService::labelOf($into, $device->switch_port)]);
             }
             $this->node('device:'.$device->id, 'device', $device->displayName,
                 $addresses ?: ($device->offline ? __('offline') : null), $switch ? 'fas fa-network-wired' : $device->typeIcon,
                 $device->isPingOnly ? 'success' : 'primary', state: $state,
                 url: route('devices', ['selectedDeviceId' => $device->id]), badges: $badges,
                 extra: ['isolated' => $isolated, 'ping' => $device->isPingOnly, 'switch' => $switch,
-                    'title' => $into !== null && $device->switch_port !== null ? __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]) : null,
+                    'title' => $into !== null && $device->switch_port !== null ? __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => SwitchService::labelOf($into, $device->switch_port)]) : null,
                     // The card of that switch lays it out under the port (network-map.js).
                     // (a router that is the gateway: its card is the node of the gateway)
                     'plug' => $into !== null && $device->switch_port !== null ? ['switch' => array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id, 'port' => $device->switch_port] : null,
@@ -417,8 +417,9 @@ class NetworkMap
                 continue;
             }
             foreach (array_keys($nodeIds) as $nodeId) {
-                $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $device->switch_port]);
-                $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $device->switch_port]);
+                $label = SwitchService::labelOf($into, $device->switch_port);
+                $plug = __('Plugged into :switch, port :port', ['switch' => $into->displayName, 'port' => $label]);
+                $this->nodes[$nodeId]['badges'][] = __('port :port', ['port' => $label]);
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$plug : $plug;
                 // The cable from that port to the card of the gateway (network-map.js).
                 $owner = array_key_first($gatewayNodes[$into->id] ?? []) ?? 'device:'.$into->id;

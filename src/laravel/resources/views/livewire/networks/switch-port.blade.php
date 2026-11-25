@@ -15,7 +15,7 @@
                         <select aria-label="{{ __('Its port (optional)') }}" class="form-select form-select-sm w-auto" wire:model="remote.{{ $candidate['id'] }}">
                             <option value="">{{ __('Its port (optional)') }}</option>
                             @foreach ($candidate['ports'] as $remotePort)
-                                <option value="{{ $remotePort['port'] }}">{{ $remotePort['port'] }}@if ($remotePort['name']) · {{ $remotePort['name'] }}@endif</option>
+                                <option value="{{ $remotePort['port'] }}">{{ $remotePort['label'] }}@if ($remotePort['name'] && $remotePort['name'] !== $remotePort['label']) · {{ $remotePort['name'] }}@endif</option>
                             @endforeach
                         </select>
                     @else

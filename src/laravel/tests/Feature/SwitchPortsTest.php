@@ -281,6 +281,29 @@ class SwitchPortsTest extends TestCase
         $this->assertArrayHasKey('arp_mac', SwitchService::snmpColumns($new));
     }
 
+    public function test_the_ports_are_labelled_as_on_the_device_lan0_is_0_and_the_port_the_router_leaves_by_is_wan(): void
+    {
+        Cache::flush();
+        $this->assertSame(['0', '4', 'WAN', 'WAN', '4', '3', '3', '1'], [
+            SwitchService::portLabel('lan0', 5), SwitchService::portLabel('lan4', 9), SwitchService::portLabel('eth2', 4, true), SwitchService::portLabel('wan', 8),
+            SwitchService::portLabel('eth2', 4), SwitchService::portLabel(null, 3), SwitchService::portLabel('Port 3', 3), SwitchService::portLabel('GigabitEthernet0/1', 1),
+        ]);
+
+        $relay = $this->relay('1.41.0');
+        $turris = new Device;
+        $turris->forceFill(['kind' => 'ping', 'name' => 'Turris', 'os' => '', 'token' => hash('sha256', 'turris'), 'ping_address' => '192.168.1.1', 'ping_prefix' => 24,
+            'switch_type' => 'snmp', 'switch_password' => SwitchService::storePassword('public')])->save();
+        SwitchService::record($relay, [['id' => $turris->id, 'status' => 200, 'body' => $this->turrisBody(), 'error' => null, 'version' => 1]]);
+
+        $ports = collect(SwitchService::ports($turris->fresh()))->keyBy('port');
+        // The ifIndex stays the key of a port; the label is what is written on the device (WAN, then LAN0 to LAN4).
+        $this->assertSame(['WAN', '0', '1', '2', '3', '4'], $ports->pluck('label')->values()->all());
+        $this->assertSame([4, 5, 6, 7, 8, 9], $ports->keys()->all());
+        $this->assertSame('0', SwitchService::labelOf($turris->fresh(), 5));
+        // A switch without names (TP-Link): the number.
+        $this->assertSame('3', SwitchService::labelOf($this->switchDevice(true, 'tp'), 3));
+    }
+
     public function test_a_router_whose_next_hop_is_another_gateway_hangs_under_it_by_what_it_reads(): void
     {
         Cache::flush();
