@@ -427,6 +427,10 @@ class NetworkMap
                     $owner = $this->promote($into, $this->nodes[$nodeId]['group'] ?? null, $gatewayNodes) ?? $owner;
                 }
                 $this->nodes[$nodeId]['plug'] = ['switch' => $owner, 'port' => $device->switch_port];
+                // The port of the router the cable goes into, when it was said by hand (it wins over the default route).
+                if ($device->switch_remote_port !== null) {
+                    $this->nodes[$nodeId]['wan'] = $device->switch_remote_port;
+                }
                 // Plugged into the port of another gateway of the portal (a modem that is the WAN of this router): the traffic goes out through that one.
                 $this->hangUnder($nodeId, $owner);
             }
@@ -448,7 +452,7 @@ class NetworkMap
                 $this->nodes[$nodeId]['title'] = ($this->nodes[$nodeId]['title'] ?? null) ? $this->nodes[$nodeId]['title'].' · '.$wan : $wan;
                 // The port of its card it leaves by (the number of the interface is the number of the port): marked on the card and where the cable ends.
                 if (isset($uplink['index']) && is_int($uplink['index'])) {
-                    $this->nodes[$nodeId]['wan'] = $uplink['index'];
+                    $this->nodes[$nodeId]['wan'] ??= $uplink['index'];
                 }
                 if ($front !== null) {
                     $parent = array_key_first($gatewayNodes[$front->id] ?? []) ?? $this->promote($front, $this->nodes[$nodeId]['group'] ?? null, $gatewayNodes);
