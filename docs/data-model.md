@@ -52,6 +52,13 @@ Polymorphic key-value (`HasSettings`). A ping-only device is pinged at, and an a
 
 The model keeps `$device->ping_address`, `wake_mac`, ... as attributes (`HasDeviceSettings`).
 
+## IP addresses as numbers
+
+An IPv4 address that is searched by network is stored as a number, not as text: `unsignedBigInteger` (what `ip2long` gives, 192.168.1.1 = 3232235777) with the cast
+`App\Casts\IpAddress` (`'ip' => IpAddress::class`): the model reads and writes the dotted text, the column holds the number. A network is then one range on an index,
+`IpAddressService::whereInNetwork($query, 'ip', '192.168.1.0/24')` (`whereBetween`), and the same on SQLite and PostgreSQL. The cast refuses what is no IPv4 address
+(it does not store 0). **IPv4 only**: an IPv6 address stays in a text column. Not applied to the tables yet (each needs a migration that converts the data and a `down()`).
+
 ## `value_definitions` and `value_samples`
 
 Numbers (an enum as a code). A definition is one measured value of one model (`valuable_*`, `key`, `name`); `name` is empty
