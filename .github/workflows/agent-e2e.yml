@@ -64,8 +64,8 @@ jobs:
           touch "$DB_DATABASE"
           php artisan migrate --force
           nohup php artisan serve --host=127.0.0.1 --port=8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
-          for i in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8000/setup && break; sleep 1; done
-          curl -fs http://127.0.0.1:8000/agent/app.ps1 -o "$RUNNER_TEMP/agent.ps1"
+          # The pages need the built assets (Vite), the agent does not: it is what the portal is waited for with.
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/agent/app.ps1 -o "$RUNNER_TEMP/agent.ps1" && break; sleep 1; done
           grep -m1 "AgentVersion = " "$RUNNER_TEMP/agent.ps1"
 
       - name: PowerShell
@@ -84,7 +84,7 @@ jobs:
         working-directory: src/laravel
         run: |
           CODE=$(php -r 'echo substr(strtoupper(bin2hex(random_bytes(6))), 0, 8);')
-          php artisan tinker --execute="App\Models\Enrolment::create(['code' => '$CODE', 'expire_at' => now()->addHour()]);"
+          php artisan tinker --execute="App\Models\Enrolment::forceCreate(['code' => '$CODE', 'expire_at' => now()->addHour()]);"
           # As a user does it: `sudo pwsh agent.ps1 -ServerUrl ... -EnrolmentCode ... -Install`, the file downloaded from the portal.
           sudo "$PWSH" -NoLogo -NoProfile -File "$RUNNER_TEMP/agent.ps1" -ServerUrl http://127.0.0.1:8000 -EnrolmentCode "$CODE" -Install
           systemctl cat heimguard-agent
