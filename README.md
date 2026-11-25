@@ -72,9 +72,20 @@ Details: [Installing the agent](docs/installation.md).
 
 ## Screenshots
 
-| Networks | Notifications |
+Dark mode (the portal follows the theme of the browser). They are taken by the workflow *Screenshots* from the seeded demo data
+(`php artisan db:seed`), see [`docs/screenshots/shoot.cjs`](docs/screenshots/shoot.cjs).
+
+| Networks | Network table |
 |---|---|
-| ![Networks](docs/screenshots/networks.png) | ![Notifications](docs/screenshots/notifications.png) |
+| ![Networks](docs/screenshots/networks.png) | ![Network table](docs/screenshots/network-discovery.png) |
+| **A router with its ports (SNMP)** | **A ping-only device** |
+| ![A router with its ports](docs/screenshots/device-ports.png) | ![A ping-only device](docs/screenshots/ping.png) |
+| **Security** | **Notifications** |
+| ![Security](docs/screenshots/security.png) | ![Notifications](docs/screenshots/notifications.png) |
+| **Dashboard** | **Adding a device** |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Adding a device](docs/screenshots/enrolment.png) |
+| **Login** | **On a phone** |
+| ![Login](docs/screenshots/login.png) | <img alt="On a phone" src="docs/screenshots/mobile.png" width="240"> |
 
 ## Repository structure
 
