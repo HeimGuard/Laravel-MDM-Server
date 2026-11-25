@@ -54,10 +54,19 @@ class SwitchService
         'rx' => '1.3.6.1.2.1.2.2.1.11', 'rx_bad' => '1.3.6.1.2.1.2.2.1.14', 'tx' => '1.3.6.1.2.1.2.2.1.17', 'tx_bad' => '1.3.6.1.2.1.2.2.1.20',
         // The names of the interfaces (ifName, else ifDescr): a Linux router has bridges, VLANs, Wi-Fi and the ports of its CPU among its Ethernet interfaces.
         'if_name' => '1.3.6.1.2.1.31.1.1.1.1', 'if_descr' => '1.3.6.1.2.1.2.2.1.2',
+        // The interface of each IPv4 address of the device (ipAdEntIfIndex of IP-MIB, the address is the index): an interface with an address is not
+        // the CPU of a router (the eth2 of Turris is its WAN, eth0 and eth1 have no address). The 16th column, the most the agent walks.
+        'ip_if' => '1.3.6.1.2.1.4.20.1.2',
+        // The way out (agents 1.41.0+, more than 16 columns): the interface of the routes (ipCidrRouteIfIndex: the default route 0.0.0.0/0 has the next hop in its index)
+        // and the ARP table (ipNetToMediaPhysAddress: the MAC of every neighbour, the interface and the address in the index): which device is in front of a router.
+        'ip_route' => '1.3.6.1.2.1.4.24.4.1.5', 'arp_mac' => '1.3.6.1.2.1.4.22.1.2',
         // The table of MAC addresses (the last ones: a long table does not push the interfaces out): BRIDGE-MIB (index = the MAC), Q-BRIDGE-MIB
         // (index = VLAN and the MAC), and the bridge port => ifIndex of BRIDGE-MIB. Not every switch has them.
         'bridge_port' => '1.3.6.1.2.1.17.1.4.1.2', 'fdb' => '1.3.6.1.2.1.17.4.3.1.2', 'fdb_vlan' => '1.3.6.1.2.1.17.7.1.2.2.1.2',
     ];
+
+    /** Agents from this version walk up to 24 columns (it was 16): the ones of the way out are sent to them only. */
+    public const SNMP_ROUTE_VERSION = '1.41.0';
 
     /** The columns of the interface table (one row per ifIndex). */
     /**
@@ -161,7 +170,7 @@ class SwitchService
             // The version that answered last goes first (the agent tries the other one when it does not answer).
             $version = Cache::get(self::versionKey($device));
 
-            return $secret === null ? null : ['port' => 161, 'snmp' => ['secret' => $secret, 'columns' => array_values(self::SNMP_COLUMNS)] + ($version === null ? [] : ['version' => $version])];
+            return $secret === null ? null : ['port' => 161, 'snmp' => ['secret' => $secret, 'columns' => array_values(self::snmpColumns($relay))] + ($version === null ? [] : ['version' => $version])];
         }
         $steps = [['method' => 'GET', 'path' => self::PAGE]];
         if (! Cache::has(self::loginKey($device))) {
@@ -174,6 +183,17 @@ class SwitchService
         }
 
         return ['port' => 80, 'steps' => $steps];
+    }
+
+    /** The columns an agent is asked to walk: all of them, the ones of the way out only for an agent that walks more than 16. */
+    public static function snmpColumns(Device $relay): array
+    {
+        $columns = self::SNMP_COLUMNS;
+        if (version_compare((string) $relay->agent_version, self::SNMP_ROUTE_VERSION, '<')) {
+            unset($columns['ip_route'], $columns['arp_mac']);
+        }
+
+        return $columns;
     }
 
     /** Fields (strings) encrypted with the public key of the agent (RSA-OAEP), null when it cannot be done. */
@@ -316,7 +336,16 @@ class SwitchService
     {
         $interfaces = [];
         $names = [];
+        // The interfaces that have an IPv4 address.
+        $addressed = [];
         foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if ($column === 'ip_if') {
+                if (is_int($value)) {
+                    $addressed[$value] = true;
+                }
+
+                continue;
+            }
             if (! ctype_digit($index) || (int) $index < 1) {
                 continue;
             }
@@ -336,7 +365,8 @@ class SwitchService
                 $ethernet[$index] = $names[$index]['if_name'] ?? $names[$index]['if_descr'] ?? null;
             }
         }
-        // A router that names its ports lan0, lan1…: eth0, eth1… are its CPU.
+        // A router that names its ports lan0, lan1…: eth0, eth1… are its CPU (the links to its switch chip), except the one that has an address: the WAN
+        // (the eth2 of Turris and Omnia, a network card of its own beside the switch chip).
         $cpu = count(array_filter($ethernet, fn (?string $name) => $name !== null && preg_match('/^(lan|port|swp)\d+$/i', $name) === 1)) >= 3;
         $rows = [];
         foreach ($ethernet as $index => $name) {
@@ -345,7 +375,7 @@ class SwitchService
             $rows[] = [
                 'port' => $index,
                 'name' => $name,
-                'port_by_default' => $name === null || ! (self::matches($name, self::VIRTUAL_INTERFACES) || ($cpu && preg_match('/^eth\d+$/i', $name) === 1)),
+                'port_by_default' => $name === null || ! (self::matches($name, self::VIRTUAL_INTERFACES) || ($cpu && ! isset($addressed[$index]) && preg_match('/^eth\d+$/i', $name) === 1)),
                 'enabled' => true,
                 'link' => ($values['status'] ?? 2) !== 1 ? 0 : ($mbit >= 1000 ? 6 : ($mbit >= 100 ? 5 : 3)),
                 'tx' => $values['tx'] ?? 0,
@@ -419,6 +449,46 @@ class SwitchService
                 }
             }
         }
+    }
+
+    /**
+     * The way out of a router in the answer of an SNMP walk: its default route (0.0.0.0/0: the next hop is in the index of the route) with the interface it leaves by (its
+     * name and its own address there) and the MAC address of the next hop from the ARP table. Null without a default route (nothing in front of it, or an agent that does
+     * not read the routes).
+     *
+     * @return array{index: int, interface: ?string, address: ?string, via: string, mac: ?string}|null
+     */
+    public static function uplink(string $body): ?array
+    {
+        $route = null;
+        $addresses = [];
+        $macs = [];
+        $names = [];
+        foreach (self::snmpLines($body) as [$column, $index, $value]) {
+            if ($column === 'ip_route' && is_int($value) && preg_match('/^0\.0\.0\.0\.0\.0\.0\.0\.\d+\.(\d+\.\d+\.\d+\.\d+)$/', $index, $match) === 1 && filter_var($match[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                $route ??= ['index' => $value, 'via' => $match[1]];
+            } elseif ($column === 'ip_if' && is_int($value) && filter_var($index, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                $addresses[$value][] = $index;
+            } elseif ($column === 'arp_mac' && is_string($value) && strlen($value) === 6 && preg_match('/^(\d+)\.(\d+\.\d+\.\d+\.\d+)$/', $index, $match) === 1) {
+                $macs[$match[1].'|'.$match[2]] = strtoupper(implode(':', str_split(bin2hex($value), 2)));
+            } elseif (in_array($column, ['if_name', 'if_descr'], true) && ctype_digit($index) && is_string($value)) {
+                $name = trim((string) preg_replace('/[\x00-\x20\x7f]+/', ' ', mb_convert_encoding($value, 'UTF-8', 'UTF-8')));
+                if ($name !== '') {
+                    $names[(int) $index][$column] = mb_substr($name, 0, 64);
+                }
+            }
+        }
+        if ($route === null) {
+            return null;
+        }
+
+        return [
+            'index' => $route['index'],
+            'interface' => $names[$route['index']]['if_name'] ?? $names[$route['index']]['if_descr'] ?? null,
+            'address' => $addresses[$route['index']][0] ?? null,
+            'via' => $route['via'],
+            'mac' => $macs[$route['index'].'|'.$route['via']] ?? null,
+        ];
     }
 
     /**
@@ -500,6 +570,10 @@ class SwitchService
                 self::discovered($device, $body, $probe['version'] ?? null);
                 // Every Ethernet interface with its name and whether it is a port by default (the window lets the user switch each on or off).
                 $device->recordInventory('snmp', 'interfaces', ['interfaces' => array_map(fn (array $row) => ['port' => $row['port'], 'name' => $row['name'], 'link' => $row['link'], 'port_by_default' => $row['port_by_default']], self::snmpInterfaces($body))]);
+            }
+            if ($snmp && $body !== null && ($uplink = self::uplink($body)) !== null) {
+                $device->recordInventory('snmp', 'uplink', $uplink);
+                LiveUpdates::device($device->id, 'switch');
             }
             if ($ports === null) {
                 // The next request logs in again.

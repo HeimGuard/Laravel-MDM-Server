@@ -745,6 +745,8 @@
     "SNMP": "SNMP",
     "SNMP of :device": "SNMP zařízení :device",
     "Ports of :device": "Porty zařízení :device",
+    "Way out: :interface via :via": "Cesta ven: :interface přes :via",
+    "interface": "rozhraní",
     "Not read": "Nečteno",
     "Number of ports": "Počet portů",
     "Set by hand": "Nastaveno ručně",
