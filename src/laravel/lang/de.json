@@ -745,6 +745,8 @@
     "SNMP": "SNMP",
     "SNMP of :device": "SNMP von :device",
     "Ports of :device": "Ports von :device",
+    "Not a port now": "Kein Port mehr",
+    "Not a port of this device now: click to take the device off it": "Dieses Gerät hat diesen Port nicht mehr: klicke, um das Gerät davon zu lösen",
     "Its port (optional)": "Sein Port (optional)",
     "Way out: :interface via :via": "Weg nach außen: :interface über :via",
     "interface": "Schnittstelle",

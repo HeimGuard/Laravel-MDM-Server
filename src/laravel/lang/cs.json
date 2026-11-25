@@ -745,6 +745,8 @@
     "SNMP": "SNMP",
     "SNMP of :device": "SNMP zařízení :device",
     "Ports of :device": "Porty zařízení :device",
+    "Not a port now": "Už to není port",
+    "Not a port of this device now: click to take the device off it": "Na tomto zařízení už takový port není: klikni a zařízení z něj odeber",
     "Its port (optional)": "Jeho port (nepovinné)",
     "Way out: :interface via :via": "Cesta ven: :interface přes :via",
     "interface": "rozhraní",

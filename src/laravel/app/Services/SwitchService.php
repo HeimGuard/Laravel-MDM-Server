@@ -890,6 +890,22 @@ class SwitchService
             ];
         }
 
+        // Devices plugged into a port the card does not have (a port that was one once: the numbers of the interfaces changed, a port that is switched off now): a
+        // placeholder port of its own, so there is a button that opens the dialog to take the device off it.
+        if ($ports !== []) {
+            $known = array_column($ports, 'port');
+            foreach ($plugged->filter(fn (Device $other) => $other->switch_port !== null && ! in_array($other->switch_port, $known, true))->groupBy('switch_port')->sortKeys() as $number => $onPort) {
+                $number = (int) $number;
+                $ports[] = [
+                    'port' => $number, 'name' => null, 'label' => (string) $number, 'link' => 0, 'bad' => 0, 'tx' => null, 'rx' => null, 'missing' => true,
+                    'devices' => $onPort->map(fn (Device $other) => ['name' => $other->displayName, 'url' => route('devices', ['selectedDeviceId' => $other->id])])->values()->all(),
+                    'link_name' => __('Not a port now'),
+                    'heading' => __(':switch: port :port', ['switch' => $device->displayName, 'port' => $number]),
+                    'title' => __('Port :port', ['port' => $number]).' · '.__('Not a port of this device now: click to take the device off it').' · '.$onPort->map(fn (Device $other) => $other->displayName)->implode(', '),
+                ];
+            }
+        }
+
         return [
             'id' => $device->id, 'ports' => $ports, 'empty' => __('Ports not read yet'),
             // The texts of the dropdown of a port (network-map.js).
