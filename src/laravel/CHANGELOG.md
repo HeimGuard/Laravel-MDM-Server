@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.42.1] - 2026-11-26
+
 ### Added
 - Agent 1.42.0: the software of the running Docker containers is part of the security inventory (`Source` docker): one item per image with a version, the name of the image (`nginx`) and the version from its tag, or from the `NAME_VERSION` variable the image sets (`NGINX_VERSION`), so the CVE rules judge it like any other software. Nothing is run inside a container.
 - Security tab, **Open ports**: the ports a scan from another host reached are marked *Confirmed from outside* (ports only the scan saw are added as *Outside only*; a host without an agent shows them too). The observations under the Open ports card of the overview are gone, they are security findings.
@@ -15,6 +17,7 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 - Network map: a router (gateway) of another network of the site can be plugged into a port (Turris port 9 → the modem), and its cable is drawn from the port to its card. A router plugged into a port of another router (the modem that is its WAN) hangs under it on the map, not under the public address.
 
 ### Fixed
+- The icon of the installed app (PWA) did not change on the devices after it was replaced: the `apple-touch-icon` (iPhone, iPad) and the manifest link were printed by the `@pwa` directive without a version, so only the icons inside `manifest.json` had one. The pages link them with a hash of the file now (`partials/pwa.blade.php`); replacing the icon is enough. A device that already has the app on the home screen keeps the icon it took when it was added: remove it and add it again once.
 - Agent 1.42.1: the software of the containers and of the host together are at most the 5000 items the server takes (more and it refuses the whole collection): the containers are read first, the limit cuts the host's own packages.
 - Security: the severity of a CVE finding is the one of its worst CVE whatever can be done about it (a 9.8 nobody has fixed yet was shown as *Medium*, one Ubuntu had not assessed as *Low*); the status says what to do. The CVE is as severe as its CVSS band says if the feed's priority is lower (Debian said *medium* to CVEs the NVD scores 9.8), and at least *High* when it is on the CISA list of the exploited ones. The finding shows the highest CVSS score and the exploited CVEs.
 - The dialog of a port: the optional port of a ticked device is chosen by clicking the ports it really has (the boxes of its card: WAN, 0, 1…; a second click takes it back), not by a number; a device without ports (an agent, a printer) has no such choice.
