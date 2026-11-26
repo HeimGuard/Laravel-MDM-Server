@@ -7,7 +7,12 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Added
+- Agent 1.43.0: the updates of Node.js and Python installed directly (not by apt, snap, the Store or winget) and of their global modules: the outdated global npm modules (`npm install --global`) and the modules of the Python of the machine (`pip` without `--user`, not where the distribution manages that Python) are listed in the sections *Node.js* and *Python* and updated by *Update* and Install updates. A Node.js / Python installed for all users on Windows is updated within its major version / series from nodejs.org / python.org (the installer is checked against the published SHA-256 and the signature of its publisher); on Linux a Node.js or Python in `/usr/local` is only listed.
+
 ### Fixed
+- The security feed may be up to 16 MB (was 8 MB): with the history of the watched products the CVE rules of `detection-policy` are larger than the old limit, and a feed over the limit is refused as a whole.
+- Security: the versions of software are compared as programs number them, not by their leading numbers only: `2.0-rc1` is older than `2.0`, `1.1.1k` older than `1.1.1w`, `9.8` older than `9.8p1` (`App\Services\VersionService`, shared test vectors with the feed). The CVE rules of the feed get the bounds that could not be written before (OpenSSL `1.1.1w`, ProFTPD `1.3.9b`, ...), so the CVEs of OpenSSL and the like are judged.
 - The icon of the installed app (PWA) on Android: the manifest link of 1.42.1 had a version in its URL, and Chrome knows an installed app by the URL of its manifest, so it could not refresh the icon. The URL is the old one again; the version stays on the `apple-touch-icon` and on the icons inside `manifest.json`.
 
 ## [1.42.1] - 2026-11-26

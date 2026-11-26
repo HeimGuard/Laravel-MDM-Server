@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\SecurityEvent;
+use App\Services\VersionService;
 
 /**
  * The rule language of the security scanner: a rule (JSON) says which list of the device's
@@ -548,15 +549,12 @@ class SecurityRules
     }
 
     /**
-     * Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045"): only the leading numbers count,
-     * a missing part is 0 ("8.5" is "8.5.0"), so "7.1.2-31" is "7.1.2" - write such a bound as "7.1.2.31".
+     * Versions as programs write them ("1.2.3", "2:1.2-3ubuntu1", "v10.0.19045", "1.1.1w", "2.0-rc1"), see VersionService: a missing
+     * part is 0 ("8.5" is "8.5.0"), a distribution's revision is not part of it ("7.1.2-31" is "7.1.2": write such a bound as "7.1.2.31").
      */
     public static function versionOrder(mixed $actual, mixed $expected): ?int
     {
-        $a = self::version($actual);
-        $b = self::version($expected);
-
-        return $a === null || $b === null ? null : self::compareNumbers(explode('.', $a), explode('.', $b));
+        return VersionService::compare($actual, $expected);
     }
 
     /** Debian package versions in the order of dpkg (see DpkgVersion), null when one of them is empty. */
@@ -567,20 +565,5 @@ class SecurityRules
         }
 
         return DpkgVersion::compare((string) $actual, (string) $expected);
-    }
-
-    /** @param  array<int, string>  $a @param  array<int, string>  $b */
-    private static function compareNumbers(array $a, array $b): int
-    {
-        return DpkgVersion::compareNumbers($a, $b);
-    }
-
-    private static function version(mixed $value): ?string
-    {
-        if (! is_scalar($value) || ! preg_match('/(\d+(?:\.\d+)*)/', preg_replace('/^\d+:/', '', (string) $value), $m)) {
-            return null;
-        }
-
-        return $m[1];
     }
 }

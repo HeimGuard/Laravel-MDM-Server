@@ -84,6 +84,12 @@ class DeviceCommand extends Model
         // A Python package (pip --user) or a pipx app, by its name.
         'pip' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
         'pipx' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
+        // Agents 1.43.0+: a global module of the Node.js of the machine (@scope/name too), a module of the Python of the machine (pip
+        // without --user), and the release a Node.js / Python installed directly is updated to (Windows).
+        'npm' => '/^(@[A-Za-z0-9][A-Za-z0-9._\-]*\/)?[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
+        'pipglobal' => '/^[A-Za-z0-9][A-Za-z0-9._\-]*$/D',
+        'node' => '/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$/D',
+        'python' => '/^3\.[0-9]{1,2}\.[0-9]{1,3}$/D',
     ];
 
     public const MODULE_EDITIONS = ['Windows PowerShell', 'PowerShell 7'];

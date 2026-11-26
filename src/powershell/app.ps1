@@ -147,7 +147,7 @@ $ReverbKey = "$($LegacyOptions['ReverbKey'])"
 # Not left for the functions (they would see them through dynamic scoping).
 Remove-Variable -Name i, name, value -ErrorAction SilentlyContinue
 # Reported to the server, which offers an update when it serves a newer agent.
-$AgentVersion = '1.42.1'
+$AgentVersion = '1.43.0'
 $AllowedCommands = @('turnOff', 'restart', 'doUpdates', 'installUpdate', 'updateAgent', 'runScripts', 'sync', 'wake', 'pingNow', 'scanNetwork', 'scanPorts')
 # What installUpdate may install on its own, with the pattern its id must match (as on the server).
 $UpdateKinds = @{
@@ -164,6 +164,12 @@ $UpdateKinds = @{
     # A Python package (pip --user) or pipx app, by its name.
     pip     = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
     pipx    = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
+    # Agents 1.43.0+: a global module of the Node.js of the machine (npm install --global, @scope/name too), a module of the Python of
+    # the machine (pip without --user), and a Node.js / Python installed directly (Windows, all users), by the release it is updated to.
+    npm       = '^(@[A-Za-z0-9][A-Za-z0-9._\-]*/)?[A-Za-z0-9][A-Za-z0-9._\-]*$'
+    pipglobal = '^[A-Za-z0-9][A-Za-z0-9._\-]*$'
+    node      = '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$'
+    python    = '^3\.[0-9]{1,2}\.[0-9]{1,3}$'
 }
 # The server's public key ("n:e", base64), filled in by the server when it serves this script.
 # The agent pins it on the first start and then trusts only what is signed with it.
@@ -3253,6 +3259,326 @@ function Get-PythonUpdates {
     }
 }
 
+function Test-PackageOwned {
+    # Whether a package manager owns a program (dpkg, rpm, snap; the Store on Windows). What it owns it updates itself; a copy
+    # that nobody owns was installed directly (an installer, a tarball, a build in /usr/local) and is the agent's to look at.
+    param ([string]$Path)
+
+    if (-not $Path) { return $false }
+    if (-not $OnLinux) { return [bool]($Path -like '*\WindowsApps\*') }
+    [string]$real = "$(readlink -f $Path 2>$null)"
+    if (-not $real) { $real = $Path }
+    # The directories of the system are the packages' (a usr-merged /bin is not told apart by dpkg -S).
+    if ($real -like '/snap/*' -or $real -like '/usr/bin/*' -or $real -like '/bin/*' -or $real -like '/usr/sbin/*' -or $real -like '/sbin/*') { return $true }
+    if (Get-Command -Name dpkg -CommandType Application -ErrorAction SilentlyContinue) {
+        dpkg -S $real 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return $true }
+    }
+    if (Get-Command -Name rpm -CommandType Application -ErrorAction SilentlyContinue) {
+        rpm -qf $real 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return $true }
+    }
+    return $false
+}
+
+function ConvertTo-ComparableVersion {
+    # The numbers at the start of a version as [version] ('v20.11.0' -> 20.11.0, '3.12' -> 3.12), $null when there are none.
+    param ([string]$Text)
+
+    if ("$Text" -notmatch '^[vV]?(\d+(?:\.\d+){0,3})') { return $null }
+    [string]$numbers = $Matches[1]
+    if ($numbers -notmatch '\.') { $numbers += '.0' }
+    [version]$parsed = $null
+    if ([version]::TryParse($numbers, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function Test-VersionNewer {
+    # Whether Candidate is a newer version than Current; when one of them has no numbers, whether they differ.
+    param ([string]$Candidate, [string]$Current)
+
+    $left = ConvertTo-ComparableVersion -Text $Candidate
+    $right = ConvertTo-ComparableVersion -Text $Current
+    if ($null -eq $left -or $null -eq $right) { return $Candidate -ne $Current }
+    return $left -gt $right
+}
+
+function Get-PythonCommand {
+    # The python of the PATH that is an interpreter (not the alias of the Microsoft Store, which opens the Store), $null when there is none.
+    foreach ($candidate in @('python3', 'python')) {
+        $command = Get-Command -Name $candidate -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+        if ($command) { return "$($command.Source)" }
+    }
+    return $null
+}
+
+function Get-NodeInstall {
+    # The node of the PATH of the machine: @{ Path; Version; Managed } (Managed: a package manager owns it), $null when there is none.
+    $command = Get-Command -Name node -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+    if (-not $command) { return $null }
+    [string]$path = "$($command.Source)"
+    [string]$text = "$(& $path --version 2>$null)".Trim()
+    if ($text -notmatch '^v(\d+\.\d+\.\d+)$') { return $null }
+    [string]$found = $Matches[1]
+    return @{ Path = $path; Version = $found; Managed = (Test-PackageOwned -Path $path) }
+}
+
+function Get-NodeUpdate {
+    # The update of a Node.js that was installed directly (the installer of nodejs.org, a tarball in /usr/local), within its major version:
+    # 20.x is offered 20.y, a new major version is the owner's decision. A Node.js of apt, snap or the Store is updated by them, and winget
+    # lists it where it manages it ($Known), so it is not reported twice. Agents 1.43.0+.
+    param ($Known)
+
+    $node = Get-NodeInstall
+    if (-not $node -or $node.Managed -or @($Known | Where-Object { "$($_.Id)" -like 'OpenJS.NodeJS*' })) { return }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    [string]$major = ($node.Version -split '\.')[0]
+    $index = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -TimeoutSec 60
+    $releases = @($index | ForEach-Object { "$($_.version)".TrimStart('v') } | Where-Object { $_ -match "^$major\.\d+\.\d+$" })
+    if (-not $releases) { return }
+    [string]$latest = "$(@($releases | Sort-Object -Property { [version]$_ } -Descending | Select-Object -First 1))"
+    if (Test-VersionNewer -Candidate $latest -Current $node.Version) {
+        [PSCustomObject]@{ Id = 'Node.js'; Version = $node.Version; Avaliable = $latest; Source = 'nodejs.org'; Provider = 'node' }
+    }
+}
+
+function Get-NpmUpdates {
+    # The outdated global modules of the Node.js of the machine (npm install --global): the rows of Source 'npm', by the name of the
+    # package (@scope/name too). npm and corepack come with Node.js and are updated with it. A module that is a user's own
+    # (a prefix in a home directory) is not seen from here. Agents 1.43.0+.
+    $npm = Get-Command -Name npm -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+    if (-not $npm) { return }
+    $env:npm_config_update_notifier = 'false'
+    $env:npm_config_fund = 'false'
+    $env:npm_config_audit = 'false'
+    # Exit code 1 means "something is outdated": the answer is the JSON on stdout.
+    [string]$raw = "$(& $npm.Source outdated --global --json 2>$null)".Trim()
+    if (-not $raw.StartsWith('{')) { return }
+    $outdated = try { $raw | ConvertFrom-Json } catch { $null }
+    foreach ($property in @($outdated.PSObject.Properties)) {
+        [string]$moduleName = "$($property.Name)"
+        [string]$installed = "$($property.Value.current)"
+        [string]$latest = "$($property.Value.latest)"
+        if (($moduleName -in 'npm', 'corepack') -or $installed -notmatch '^\d' -or $latest -notmatch '^\d' -or -not (Test-VersionNewer -Candidate $latest -Current $installed)) { continue }
+        [PSCustomObject]@{ Id = $moduleName; Version = $installed; Avaliable = $latest; Source = 'npm'; Provider = 'node' }
+    }
+}
+
+function Get-PythonInstall {
+    # The Pythons that were installed directly: @{ Path; Version; Arch } of the all-users installer of python.org on Windows (the registry; one
+    # in a user's profile is theirs), the builds in /usr/local/bin on Linux. The Python of apt, snap or the Store is theirs to update.
+    $found = [System.Collections.Generic.List[hashtable]]::new()
+    if ($OnLinux) {
+        foreach ($file in @(Get-ChildItem -Path /usr/local/bin -Filter 'python3.*' -ErrorAction SilentlyContinue)) {
+            [string]$path = "$($file.FullName)"
+            if ($file.Name -notmatch '^python3\.\d+$' -or (Test-PackageOwned -Path $path)) { continue }
+            [string]$text = "$(& $path --version 2>$null)".Trim()
+            if ($text -match '^Python (\d+\.\d+\.\d+)$') { $found.Add(@{ Path = $path; Version = $Matches[1]; Arch = '' }) }
+        }
+        return @($found)
+    }
+    foreach ($key in @(Get-ChildItem -Path 'HKLM:\SOFTWARE\Python\PythonCore', 'HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore' -ErrorAction SilentlyContinue)) {
+        $registered = Get-ItemProperty -Path "$($key.PSPath)\InstallPath" -ErrorAction SilentlyContinue
+        [string]$path = "$($registered.ExecutablePath)"
+        [bool]$allUsers = $path -like "$env:ProgramFiles\*" -or $path -like "${env:ProgramFiles(x86)}\*"
+        if (-not $path -or -not $allUsers -or -not (Test-Path -Path $path) -or @($found | Where-Object { $_.Path -eq $path })) { continue }
+        [string]$text = "$(& $path --version 2>$null)".Trim()
+        if ($text -notmatch '^Python (\d+\.\d+\.\d+)$') { continue }
+        [string]$foundVersion = $Matches[1]
+        [string]$arch = if ("$($key.PSChildName)" -match '-arm64$') { 'arm64' } elseif ("$($key.PSChildName)" -match '-32$' -or "$($key.PSPath)" -match 'WOW6432Node') { 'x86' } else { 'x64' }
+        $found.Add(@{ Path = $path; Version = $foundVersion; Arch = $arch })
+    }
+    return @($found)
+}
+
+function Get-PythonRuntimeUpdate {
+    # The update of a Python that was installed directly, within its series (3.12.1 is offered 3.12.x; 3.13 is the owner's decision). On
+    # Windows only a release that python.org has an installer for (the last releases of a series are source only), on Linux a build
+    # is reported and not installed. winget lists the Python it manages ($Known). Agents 1.43.0+.
+    param ($Known)
+
+    $installs = @(Get-PythonInstall)
+    if (-not $installs -or @($Known | Where-Object { "$($_.Id)" -like 'Python.Python.*' })) { return }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $page = Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/' -UseBasicParsing -TimeoutSec 60
+    $releases = @([regex]::Matches("$($page.Content)", 'href="(3\.\d+\.\d+)/"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Property { [version]$_ } -Descending -Unique)
+    foreach ($install in $installs) {
+        [hashtable]$python = $install
+        [string]$series = ($python.Version -split '\.')[0..1] -join '.'
+        $candidates = @($releases | Where-Object { $_ -like "$series.*" } | Select-Object -First 30)
+        [string]$latest = ''
+        foreach ($release in $candidates) {
+            [string]$candidate = "$release"
+            if (-not (Test-VersionNewer -Candidate $candidate -Current $python.Version)) { break }
+            if ($OnLinux) { $latest = $candidate; break }
+            $asset = switch ($python.Arch) { 'x86' { "python-$candidate.exe" } 'arm64' { "python-$candidate-arm64.exe" } default { "python-$candidate-amd64.exe" } }
+            try {
+                $head = Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$candidate/$asset" -Method Head -UseBasicParsing -TimeoutSec 30
+                if ($head.StatusCode -eq 200) { $latest = $candidate; break }
+            } catch { }
+        }
+        if ($latest) {
+            [PSCustomObject]@{ Id = "Python $series"; Version = $python.Version; Avaliable = $latest; Source = 'python.org'; Provider = 'python' }
+        }
+    }
+}
+
+function Get-PythonGlobalUpdates {
+    # The outdated modules of the Python of the PATH that are installed for the whole machine (pip install without --user): the rows of
+    # Source 'pip-global'. Not when the distribution manages that Python (PEP 668: apt updates its modules), and not the user's own
+    # packages of the account the agent runs as (Get-PythonUpdates has them). Agents 1.43.0+.
+    $python = Get-PythonCommand
+    if (-not $python -or ($OnLinux -and (Test-PythonExternallyManaged $python))) { return }
+    $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+    $ownPackages = @{}
+    [string]$ownRaw = "$(& $python -m pip list --user --format=json 2>$null)".Trim()
+    if ($ownRaw.StartsWith('[')) {
+        foreach ($package in @(try { $ownRaw | ConvertFrom-Json } catch { @() })) { $ownPackages["$($package.name)".ToLowerInvariant()] = $true }
+    }
+    [string]$raw = "$(& $python -m pip list --outdated --format=json 2>$null)".Trim()
+    if (-not $raw.StartsWith('[')) { return }
+    foreach ($package in @(try { $raw | ConvertFrom-Json } catch { @() })) {
+        [string]$moduleName = "$($package.name)"
+        if (-not $moduleName -or -not $package.latest_version -or $ownPackages.ContainsKey($moduleName.ToLowerInvariant())) { continue }
+        [PSCustomObject]@{ Id = $moduleName; Version = "$($package.version)"; Avaliable = "$($package.latest_version)"; Source = 'pip-global'; Provider = 'python' }
+    }
+}
+
+function Install-NodeRelease {
+    # Installs a release of Node.js over the one that was installed directly (Windows, all users: the MSI of nodejs.org), within its
+    # major version. The MSI is checked against the SHA-256 of SHASUMS256.txt of the same release and for the signature of
+    # the OpenJS Foundation before it runs. Returns log lines; failures go to $State.Failures. Agents 1.43.0+.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Version,
+        [hashtable]
+        $State = @{ Failures = [System.Collections.ArrayList]@() }
+    )
+
+    if ($Version -notmatch '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}$') {
+        [void]$State.Failures.Add("Node.js: invalid version '$Version'")
+        return
+    }
+    $node = Get-NodeInstall
+    if (-not $node -or $node.Managed -or $OnLinux -or "$($node.Path)" -notlike "*\Program Files*\nodejs\*") {
+        [void]$State.Failures.Add('Node.js is not installed for all users by its installer (nodejs.org MSI)')
+        return
+    }
+    if (($Version -split '\.')[0] -ne ($node.Version -split '\.')[0]) {
+        [void]$State.Failures.Add("Node.js ${Version}: another major version than the installed $($node.Version), it is not installed by an update")
+        return
+    }
+    [string]$arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } elseif ("$($node.Path)" -like '*Program Files (x86)*') { 'x86' } else { 'x64' }
+    [string]$asset = "node-v$Version-$arch.msi"
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) "mdm-node-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $temp -Force | Out-Null
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+        $file = Join-Path $temp $asset
+        Invoke-WebRequest -Uri "https://nodejs.org/dist/v$Version/$asset" -OutFile $file -UseBasicParsing -TimeoutSec 900
+        [string]$expected = ''
+        $sums = "$((Invoke-WebRequest -Uri "https://nodejs.org/dist/v$Version/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 60).Content)"
+        foreach ($line in ($sums -split "`n")) {
+            if ("$line".Trim() -match "^([0-9a-fA-F]{64})\s+$([regex]::Escape($asset))$") { $expected = $Matches[1].ToLowerInvariant() }
+        }
+        [string]$actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        if (-not $expected -or $actual -ne $expected) {
+            [void]$State.Failures.Add("Node.js ${Version}: $asset does not match the SHA-256 of nodejs.org$(if (-not $expected) { ' (it is not in SHASUMS256.txt)' })")
+            return
+        }
+        $signature = Get-AuthenticodeSignature -FilePath $file
+        if ($signature.Status -ne 'Valid' -or "$($signature.SignerCertificate.Subject)" -notmatch '(^|, )O=OpenJS Foundation(,|$)') {
+            [void]$State.Failures.Add("Node.js ${Version}: $asset is not signed by the OpenJS Foundation (signature: $($signature.Status), $($signature.SignerCertificate.Subject))")
+            return
+        }
+        "Node.js: $asset downloaded, SHA-256 checked, signed by the OpenJS Foundation"
+
+        $msiCode = Invoke-Msiexec -File $file -Display '/qn'
+        if ($msiCode -notin 0, 3010) {
+            [void]$State.Failures.Add("Node.js ${Version}: msiexec $(if ($msiCode -eq -1) { 'did not finish within 30 minutes and was ended' } else { "exit $msiCode" })")
+            return
+        }
+        $after = Get-NodeInstall
+        if (-not $after -or -not (Test-VersionNewer -Candidate $after.Version -Current $node.Version)) {
+            [void]$State.Failures.Add("Node.js: version $(if ($after) { $after.Version } else { 'unknown' }) after installing the MSI, it was $($node.Version)")
+            return
+        }
+        "Node.js: updated $($node.Version) -> $($after.Version)$(if ($msiCode -eq 3010) { ' (a restart completes it)' })"
+    }
+    catch {
+        [void]$State.Failures.Add("Node.js ${Version}: $($_.Exception.Message)")
+    }
+    finally {
+        Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-PythonRelease {
+    # Installs a release of Python over the one that was installed directly (Windows, all users: the installer of python.org), within its
+    # series. The installer is checked for the signature of the Python Software Foundation before it runs. Returns log lines; failures go
+    # to $State.Failures. Agents 1.43.0+.
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]
+        $Version,
+        [hashtable]
+        $State = @{ Failures = [System.Collections.ArrayList]@() }
+    )
+
+    if ($Version -notmatch '^3\.[0-9]{1,2}\.[0-9]{1,3}$') {
+        [void]$State.Failures.Add("Python: invalid version '$Version'")
+        return
+    }
+    [string]$series = ($Version -split '\.')[0..1] -join '.'
+    $python = @(Get-PythonInstall | Where-Object { "$($_.Version)" -like "$series.*" }) | Select-Object -First 1
+    if ($OnLinux -or -not $python) {
+        [void]$State.Failures.Add("Python $series is not installed for all users by its installer (python.org)")
+        return
+    }
+    [string]$asset = switch ($python.Arch) { 'x86' { "python-$Version.exe" } 'arm64' { "python-$Version-arm64.exe" } default { "python-$Version-amd64.exe" } }
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) "mdm-python-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $temp -Force | Out-Null
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $ProgressPreference = 'SilentlyContinue'
+        $file = Join-Path $temp $asset
+        Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$Version/$asset" -OutFile $file -UseBasicParsing -TimeoutSec 900
+        $signature = Get-AuthenticodeSignature -FilePath $file
+        if ($signature.Status -ne 'Valid' -or "$($signature.SignerCertificate.Subject)" -notmatch '(^|, )O=Python Software Foundation(,|$)') {
+            [void]$State.Failures.Add("Python ${Version}: $asset is not signed by the Python Software Foundation (signature: $($signature.Status), $($signature.SignerCertificate.Subject))")
+            return
+        }
+        "Python: $asset downloaded, signed by the Python Software Foundation"
+
+        # The installer over an installation of the same series upgrades it in place; InstallAllUsers must be the way it was installed.
+        $process = Start-Process -FilePath $file -ArgumentList @('/quiet', 'InstallAllUsers=1') -PassThru
+        $null = $process.Handle
+        if (-not $process.WaitForExit(30 * 60000)) {
+            & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null
+            [void]$State.Failures.Add("Python ${Version}: the installer did not finish within 30 minutes and was ended")
+            return
+        }
+        if ($process.ExitCode -notin 0, 3010) {
+            [void]$State.Failures.Add("Python ${Version}: the installer ended with exit $($process.ExitCode)")
+            return
+        }
+        $after = @(Get-PythonInstall | Where-Object { "$($_.Version)" -like "$series.*" }) | Select-Object -First 1
+        if (-not $after -or -not (Test-VersionNewer -Candidate $after.Version -Current $python.Version)) {
+            [void]$State.Failures.Add("Python: version $(if ($after) { $after.Version } else { 'unknown' }) after the installer, it was $($python.Version)")
+            return
+        }
+        "Python: updated $($python.Version) -> $($after.Version)$(if ($process.ExitCode -eq 3010) { ' (a restart completes it)' })"
+    }
+    catch {
+        [void]$State.Failures.Add("Python ${Version}: $($_.Exception.Message)")
+    }
+    finally {
+        Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-PowerShellManager {
     # Who updates this PowerShell 7 instead of a release from GitHub: 'snap' (read-only, snap
     # refreshes it) or 'store' (Microsoft Store); $null when it is a plain installation.
@@ -4855,7 +5181,7 @@ function Test-JobOverdue {
 
 function Start-InventoryCollection {
     # Windows Update search and winget are expensive, run them rarely in a separate idle-priority process.
-    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Get-PowerShellReleaseUpdate', 'Get-BadPowerShellVersions', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
+    return Start-AgentJob -Name 'inventory' -Functions 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Get-WingetSoftware', 'Get-WingetUpdates', 'Invoke-WingetInUserSession', 'Get-WindowsUpdate', 'Save-AptUpdateState', 'Get-AptUpdates', 'Get-UserCommand', 'Get-FlatpakUpdates', 'Get-SnapUpdates', 'Get-PythonUpdates', 'Test-PackageOwned', 'ConvertTo-ComparableVersion', 'Test-VersionNewer', 'Get-PythonCommand', 'Get-NodeInstall', 'Get-NodeUpdate', 'Get-NpmUpdates', 'Get-PythonInstall', 'Get-PythonRuntimeUpdate', 'Get-PythonGlobalUpdates', 'Test-PythonExternallyManaged', 'Get-PowerShellReleaseUpdate', 'Get-BadPowerShellVersions', 'Get-PowerShellManager', 'ConvertFrom-WingetTable', 'Get-WingetPath', 'Get-PowerShellHosts', 'Invoke-PowerShellModules' -ArgumentList $OnLinux, "$AgentDir/apt-update.json" -ScriptBlock {
         param ($OnLinux, $AptStatePath)
         try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle } catch { }
         $data = @{}
@@ -4871,6 +5197,11 @@ function Start-InventoryCollection {
             try { $packages += @(Get-ChromeUpdate -Known $packages) } catch { }
         }
         try { $packages += @(Get-PythonUpdates) } catch { }
+        # Node.js and Python installed directly, and the global modules of both (agents 1.43.0+).
+        try { $packages += @(Get-NodeUpdate -Known $packages) } catch { }
+        try { $packages += @(Get-NpmUpdates) } catch { }
+        try { $packages += @(Get-PythonRuntimeUpdate -Known $packages) } catch { }
+        try { $packages += @(Get-PythonGlobalUpdates) } catch { }
         try { $packages += @(Get-PowerShellReleaseUpdate -OnLinux $OnLinux -Known (@($data['os_updates']) + $packages) -BadVersionsPath (Join-Path (Split-Path -Parent $AptStatePath) 'powershell-bad.json')) } catch { }
         $data['packages_updates'] = $packages
         return $data
@@ -5909,7 +6240,7 @@ function Test-UpdateParams {
     if ($kind -eq 'module' -and ("$($Params.edition)" -notin 'Windows PowerShell', 'PowerShell 7' -or "$($Params.version)" -notmatch '^[0-9][0-9A-Za-z.\-]{0,49}$')) {
         throw "invalid module edition or version"
     }
-    if ((($kind -in 'windows', 'winget', 'chrome') -and $OnLinux) -or (($kind -in 'apt', 'flatpak', 'snap') -and -not $OnLinux)) {
+    if ((($kind -in 'windows', 'winget', 'chrome', 'node', 'python') -and $OnLinux) -or (($kind -in 'apt', 'flatpak', 'snap') -and -not $OnLinux)) {
         throw "'$kind' updates are not available on this platform"
     }
 
@@ -6671,7 +7002,7 @@ function Start-UpdateJob {
     $progressFile = "$AgentDir/update-progress.json"
     Remove-Item -Path $progressFile -Force -ErrorAction SilentlyContinue
     [void](Send-CommandStatus -Id $CommandId -Status running -Progress 0 -Message 'Starting')
-    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PendingReboot', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
+    $script:UpdateJob = Start-AgentJob -Name 'updates' -Functions 'Install-ChromeRelease', 'Invoke-Msiexec', 'Get-ChromeInstall', 'Get-ChromeUpdate', 'Install-WindowsUpdate', 'Invoke-WingetInUserSession', 'Get-WingetUpdates', 'Get-WingetStatus', 'Install-PowerShellRelease', 'Test-PendingFileRename', 'Test-PendingReboot', 'Test-PowerShellRuns', 'Get-BadPowerShellVersions', 'Add-BadPowerShellVersion', 'Get-PowerShellReleaseUpdate', 'Get-PowerShellManager', 'Get-WingetPath', 'Get-WingetSoftware', 'ConvertFrom-WingetTable', 'Get-PowerShellHosts', 'Invoke-PowerShellModules', 'Get-UserCommand', 'Test-PythonExternallyManaged', 'Get-PythonAptPackage', 'Get-PythonUpdates', 'Test-PackageOwned', 'ConvertTo-ComparableVersion', 'Test-VersionNewer', 'Get-PythonCommand', 'Get-NodeInstall', 'Get-NodeUpdate', 'Get-NpmUpdates', 'Get-PythonInstall', 'Get-PythonRuntimeUpdate', 'Get-PythonGlobalUpdates', 'Install-NodeRelease', 'Install-PythonRelease' -ArgumentList $OnLinux, "$AgentDir/updates.log", $progressFile, $Params, $CommandId, "$AgentDir/update-result.json" -ScriptBlock {
         param ($OnLinux, $OutputLog, $ProgressFile, $Params, $CommandId, $ResultFile)
 
         # When an update replaces the PowerShell the agent runs in (apt, a GitHub release, snap,
@@ -6762,6 +7093,28 @@ function Start-UpdateJob {
             }
             "$title$(if ($extra) { ' --break-system-packages' }): exit $code"
             Add-Result "pip install --upgrade $Id" $code $output
+        }
+        function Invoke-NpmUpgrade ([string]$Id) {
+            # A global module of the Node.js of the machine (agents 1.43.0+): the newest release of the module.
+            $npm = Get-Command -Name npm -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+            if (-not $npm) { [void]$state.Failures.Add('npm not found'); return }
+            $env:npm_config_update_notifier = 'false'
+            $title = "npm install --global $Id@latest"
+            $output = Invoke-Logged $title { & $npm.Source install --global "$Id@latest" --no-fund --no-audit }
+            "${title}: exit $LASTEXITCODE"
+            Add-Result $title $LASTEXITCODE $output
+        }
+        function Invoke-PipGlobalUpgrade ([string]$Id) {
+            # A module of the Python of the machine (agents 1.43.0+). Not where the distribution manages that Python (PEP 668): its
+            # modules are apt's, and pip would break what the package manager installed.
+            $python = Get-PythonCommand
+            if (-not $python) { [void]$state.Failures.Add('python not found'); return }
+            if ($OnLinux -and (Test-PythonExternallyManaged $python)) { [void]$state.Failures.Add("pip ${Id}: this Python is managed by the distribution (apt updates its modules)"); return }
+            $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+            $title = "pip install --upgrade $Id (all users)"
+            $output = Invoke-Logged $title { & $python -m pip install --upgrade $Id }
+            "${title}: exit $LASTEXITCODE"
+            Add-Result "pip install --upgrade $Id" $LASTEXITCODE $output
         }
         # apt progress (APT::Status-Fd=1): "dlstatus:..:percent:text" while downloading (first
         # third of the step), "pmstatus:..:percent:text" while installing.
@@ -6979,6 +7332,22 @@ function Start-UpdateJob {
                     "pipx upgrade ${id}: exit $LASTEXITCODE"
                     Add-Result "pipx upgrade $id" $LASTEXITCODE $output
                 }
+                'npm' {
+                    Set-Progress 10 "npm install --global $id"
+                    Invoke-NpmUpgrade -Id $id
+                }
+                'pipglobal' {
+                    Set-Progress 10 "pip install --upgrade $id"
+                    Invoke-PipGlobalUpgrade -Id $id
+                }
+                'node' {
+                    Set-Progress 10 "Node.js $id"
+                    Install-NodeRelease -Version $id -State $state
+                }
+                'python' {
+                    Set-Progress 10 "Python $id"
+                    Install-PythonRelease -Version $id -State $state
+                }
                 'pwsh' {
                     Set-Progress 10 "PowerShell $id"
                     Install-PowerShellRelease -Version $id -OnLinux $OnLinux -State $state -BadVersionsPath $badVersions
@@ -7126,6 +7495,41 @@ function Start-UpdateJob {
         }
 
         if (-not $Params) {
+            # Node.js and Python that were installed directly (Windows: the installers of nodejs.org and python.org; on Linux they are reported,
+            # not installed) and the global modules of both, after the package managers (agents 1.43.0+).
+            Set-Current 'group:nodert'
+            Enter-Step 84 85 'Node.js'
+            if (-not $OnLinux) {
+                try {
+                    $nodeUpdate = Get-NodeUpdate -Known @()
+                    if ($nodeUpdate) { Set-Current "node::$($nodeUpdate.Avaliable):"; Install-NodeRelease -Version $nodeUpdate.Avaliable -State $state }
+                } catch { "Node.js: $($_.Exception.Message)" }
+            }
+            Set-Current 'group:npm'
+            Enter-Step 85 86 'npm install --global'
+            foreach ($npmRow in @(try { Get-NpmUpdates } catch { })) {
+                [string]$npmId = "$($npmRow.Id)"
+                Set-Current "npm::${npmId}:"
+                Invoke-NpmUpgrade -Id $npmId
+            }
+            Set-Current 'group:pythonrt'
+            Enter-Step 86 87 'Python'
+            if (-not $OnLinux) {
+                try {
+                    foreach ($pythonRow in @(Get-PythonRuntimeUpdate -Known @())) {
+                        [string]$pythonTarget = "$($pythonRow.Avaliable)"
+                        Set-Current "python::${pythonTarget}:"
+                        Install-PythonRelease -Version $pythonTarget -State $state
+                    }
+                } catch { "Python: $($_.Exception.Message)" }
+            }
+            Set-Current 'group:pipglobal'
+            Enter-Step 87 88 'pip install --upgrade'
+            foreach ($pipRow in @(try { Get-PythonGlobalUpdates } catch { })) {
+                [string]$pipId = "$($pipRow.Id)"
+                Set-Current "pipglobal::${pipId}:"
+                Invoke-PipGlobalUpgrade -Id $pipId
+            }
             # A PowerShell 7 release no package manager updated (winget / apt do it themselves).
             Set-Current 'group:powershell'
             Enter-Step 88 90 'PowerShell 7'

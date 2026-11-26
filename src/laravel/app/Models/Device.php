@@ -68,6 +68,13 @@ class Device extends Model
     /** Agents from this version report and install pip --user and pipx package updates. */
     public const PYTHON_UPDATE_VERSION = '1.19.0';
 
+    /**
+     * Agents from this version report the updates of a Node.js and a Python that were installed directly (Windows: nodejs.org and
+     * python.org installers, installed by installUpdate `node` / `python`; Linux: reported only) and of the global modules of both
+     * (`npm`: npm install --global, `pipglobal`: pip without --user).
+     */
+    public const RUNTIME_UPDATE_VERSION = '1.43.0';
+
     /** Agents from this version look for portable programs on a Windows device when file_scan is on in their config.json (Linux: 1.35.0). */
     public const FILE_SCAN_VERSION = '1.34.0';
 
@@ -487,6 +494,7 @@ class Device extends Model
             $command === 'sync' && version_compare((string) $this->agent_version, self::SYNC_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::SYNC_VERSION]),
             $command === 'installUpdate' && ($params['kind'] ?? null) === 'pwsh' && version_compare((string) $this->agent_version, self::PWSH_UPDATE_VERSION, '<') => __('The agent is too old for this command'),
             $command === 'installUpdate' && ($params['kind'] ?? null) === 'chrome' && version_compare((string) $this->agent_version, self::CHROME_UPDATE_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::CHROME_UPDATE_VERSION]),
+            $command === 'installUpdate' && in_array($params['kind'] ?? null, ['npm', 'pipglobal', 'node', 'python'], true) && version_compare((string) $this->agent_version, self::RUNTIME_UPDATE_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::RUNTIME_UPDATE_VERSION]),
             $command === 'installUpdate' && in_array($params['kind'] ?? null, ['pip', 'pipx'], true) && version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') => __('Needs agent :version or newer', ['version' => self::PYTHON_UPDATE_VERSION]),
             default => null,
         };
@@ -1145,6 +1153,12 @@ class Device extends Model
                 ($row['Source'] ?? null) === 'github.com/PowerShell' => version_compare((string) $this->agent_version, self::PWSH_UPDATE_VERSION, '<') ? null : ['kind' => 'pwsh', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'PowerShell '.($row['Avaliable'] ?? '')],
                 // Google Chrome of all users, the agent installs the newer one from Google's MSI (where winget does not).
                 ($row['Source'] ?? null) === 'google.com/chrome' => version_compare((string) $this->agent_version, self::CHROME_UPDATE_VERSION, '<') ? null : ['kind' => 'chrome', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'Google Chrome '.($row['Avaliable'] ?? '')],
+                // Agents 1.43.0+: a global npm module, a module of the Python of the machine, and a Node.js / Python installed directly: Windows
+                // installs them from nodejs.org / python.org (all users), on Linux they are only reported (a tarball or a build is the owner's).
+                ($row['Source'] ?? null) === 'npm' => version_compare((string) $this->agent_version, self::RUNTIME_UPDATE_VERSION, '<') ? null : ['kind' => 'npm', 'id' => (string) ($row['Id'] ?? '')],
+                ($row['Source'] ?? null) === 'pip-global' => version_compare((string) $this->agent_version, self::RUNTIME_UPDATE_VERSION, '<') ? null : ['kind' => 'pipglobal', 'id' => (string) ($row['Id'] ?? '')],
+                ($row['Source'] ?? null) === 'nodejs.org' => $this->platform === 'windows' && version_compare((string) $this->agent_version, self::RUNTIME_UPDATE_VERSION, '>=') ? ['kind' => 'node', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'Node.js '.($row['Avaliable'] ?? '')] : null,
+                ($row['Source'] ?? null) === 'python.org' => $this->platform === 'windows' && version_compare((string) $this->agent_version, self::RUNTIME_UPDATE_VERSION, '>=') ? ['kind' => 'python', 'id' => (string) ($row['Avaliable'] ?? ''), 'title' => 'Python '.($row['Avaliable'] ?? '')] : null,
                 // Python: a pipx app or a user's pip --user package ("pipx"/"pip", with " (user)").
                 str_starts_with((string) ($row['Source'] ?? ''), 'pipx') => version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') ? null : ['kind' => 'pipx', 'id' => (string) ($row['Id'] ?? ''), 'user' => preg_match('/\((.+)\)$/', (string) $row['Source'], $m) ? $m[1] : null],
                 str_starts_with((string) ($row['Source'] ?? ''), 'pip') => version_compare((string) $this->agent_version, self::PYTHON_UPDATE_VERSION, '<') ? null : ['kind' => 'pip', 'id' => (string) ($row['Id'] ?? ''), 'user' => preg_match('/\((.+)\)$/', (string) $row['Source'], $m) ? $m[1] : null],
@@ -1167,11 +1181,11 @@ class Device extends Model
     }
 
     /** Sections of the application updates (the provider that updates them), in the order they are shown. */
-    public const UPDATE_SECTIONS = ['python' => 'Python', 'powershell' => 'PowerShell', 'chrome' => 'Google Chrome', 'flatpak' => 'Flatpak', 'snap' => 'Snap', 'winget' => 'Winget', 'other' => 'Other'];
+    public const UPDATE_SECTIONS = ['python' => 'Python', 'node' => 'Node.js', 'powershell' => 'PowerShell', 'chrome' => 'Google Chrome', 'flatpak' => 'Flatpak', 'snap' => 'Snap', 'winget' => 'Winget', 'other' => 'Other'];
 
     /**
      * What updates a row of the update lists ('os', 'app' or 'module'): apt, windows, pip, pipx,
-     * powershell, chrome, flatpak, snap, winget or other. The agent names these in "group:<key>" while it
+     * powershell, chrome, flatpak, snap, winget, npm, nodert (Node.js itself), pipglobal, pythonrt (Python itself) or other. The agent names these in "group:<key>" while it
      * installs a whole group at once (doUpdates).
      */
     public function updateGroupKey(string $section, array $row): string
@@ -1187,6 +1201,10 @@ class Device extends Model
         return match (true) {
             str_starts_with($source, 'flatpak') => 'flatpak',
             $source === 'snap' => 'snap',
+            $source === 'npm' => 'npm',
+            $source === 'nodejs.org' => 'nodert',
+            $source === 'pip-global' => 'pipglobal',
+            $source === 'python.org' => 'pythonrt',
             str_starts_with($source, 'pipx') => 'pipx',
             str_starts_with($source, 'pip') => 'pip',
             $source === 'github.com/PowerShell' => 'powershell',
@@ -1210,7 +1228,8 @@ class Device extends Model
             $row = (array) $row;
             $key = $this->updateGroupKey('app', $row);
             $section = match (true) {
-                in_array($key, ['pip', 'pipx'], true) => 'python',
+                in_array($key, ['pip', 'pipx', 'pipglobal', 'pythonrt'], true) => 'python',
+                in_array($key, ['npm', 'nodert'], true) => 'node',
                 isset(self::UPDATE_SECTIONS[$key]) => $key,
                 default => 'other',
             };

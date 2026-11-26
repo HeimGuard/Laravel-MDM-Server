@@ -233,6 +233,11 @@ class SecurityScannerTest extends TestCase
         $this->assertTrue($test('version_lt', '7.1.2.18', '7.1.2.31'));
         // Only the leading numbers count: "7.1.2-31" is "7.1.2", rules write it "7.1.2.31".
         $this->assertFalse($test('version_lt', '7.1.2.18', '7.1.2-31'));
+        // Letters and pre-releases count (see VersionService): OpenSSL 1.1.1k is older than 1.1.1w, 2.0-rc1 than 2.0.
+        $this->assertTrue($test('version_lt', '1.1.1k', '1.1.1w'));
+        $this->assertFalse($test('version_lt', '1.1.1w', '1.1.1w'));
+        $this->assertTrue($test('version_lt', '2.0-rc1', '2.0'));
+        $this->assertTrue($test('version_gt', '9.8p1', '9.8'));
 
         // The order of dpkg: the revision counts, "~" sorts before everything, the epoch first.
         $this->assertTrue($test('dpkg_gte', '8.2512.0-1ubuntu4.2', '8.2512.0-1ubuntu4.1'));

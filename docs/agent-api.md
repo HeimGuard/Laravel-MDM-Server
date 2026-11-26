@@ -16,6 +16,10 @@ side; the rules for changes are in [`CLAUDE.md`](../CLAUDE.md), the storage in [
 - **Units:** `cpu` percent 0-100 (one decimal), memory and drive sizes bytes, `uptime` seconds, `progress` percent 0-99 while running
   (100 only with `succeeded`), `rtt` milliseconds, `at` / `first` / `last` unix seconds. Timestamps inside the report are
   not used by the server (it stamps by arrival), except the backlogs (`at`).
+- **Update rows of applications** (`packages_updates`: `Id Version Avaliable Source Provider`): `Source` says who updates a row (`flatpak`, `snap`,
+  `winget` / `msstore`, `github.com/PowerShell`, `google.com/chrome`, `pip` / `pipx` with ` (user)`, agents 1.43.0+: `npm` a global module of Node.js,
+  `pip-global` a module of the Python of the machine, `nodejs.org` and `python.org` a Node.js / Python installed directly); the server maps it to an
+  `installUpdate` kind in `Device::updateTarget()`, to a section in `Device::updateGroupKey()` / `appUpdateGroups()`.
 - **Spelling that must not be "fixed" on one side only:** the update rows of applications (`packages_updates`) use
   `Avaliable` (sic), module updates use `Available`; `os` is lower case, the rest of `machine` is PascalCase.
 - **Errors the agent can see:** 401 (`clock_skew`, `invalid_signature`, `key_not_registered`, `replayed`, `signature_required`),
@@ -55,7 +59,7 @@ the agent treats as "given up, expected"). States of the web: `queued` (waiting 
 | `turnOff` | none | `running` "Shutting down", then `succeeded`, or `failed` with the reason | command bar, history |
 | `restart` | none | `running`; the agent that starts next reports `succeeded` "Restarted" (`pending-command.json`) | command bar until the device is back |
 | `doUpdates` | none | `running` with progress, `message`, `current` (`group:apt`, `winget::Id:` ...), `done`; `succeeded` "Done" or `failed` with the failures joined by `; ` (", restart required" appended) | progress and row states on the Updates tab; update list refreshed right after |
-| `installUpdate` | `kind` (`windows apt winget flatpak snap module pwsh chrome pip pipx`) + `id` matching `DeviceCommand::UPDATE_KINDS`, optional `user`, `edition`, `version`, `source`, `scope` | as `doUpdates` for one row | the row's button and state |
+| `installUpdate` | `kind` (`windows apt winget flatpak snap module pwsh chrome pip pipx npm pipglobal node python`; the last four agents 1.43.0+, `node` / `python` Windows only) + `id` matching `DeviceCommand::UPDATE_KINDS`, optional `user`, `edition`, `version`, `source`, `scope` | as `doUpdates` for one row | the row's button and state |
 | `updateAgent` | none (source is the install-time `-ServerUrl`) | `running` 10 / 80, the agent that starts next reports `succeeded` "Updated to X" or `failed` after a rollback | command bar, agent version badge |
 | `runScripts` | none (untracked: only a trigger) | nothing; runs report through `/device/scripts/runs/{id}` | Scripts pages |
 | `sync` | none | `running` 5 / 60 / 90, `succeeded` "Synced" | command bar, data refreshed |
