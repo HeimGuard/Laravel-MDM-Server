@@ -20,7 +20,7 @@
     <title>{{ config('app.name', 'HeimGuard') }}</title>
 
     {{-- Installable as an app (steelants/laravel-general): manifest, icons, service worker. --}}
-    @pwa('HeimGuard', 'HeimGuard', '#f9fbfc')
+    @include('partials.pwa')
     <link href="{{ asset('/favicon.ico') }}" rel="shortcut icon" type="image/x-icon">
     <link href="{{ asset('/favicon.svg') }}" rel="icon" type="image/svg+xml">
 
