@@ -7,6 +7,8 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+## [1.42.1] - 2026-11-26
+
 ### Added
 - Agent 1.42.0: the software of the running Docker containers is part of the security inventory (`Source` docker): one item per image with a version, the name of the image (`nginx`) and the version from its tag, or from the `NAME_VERSION` variable the image sets (`NGINX_VERSION`), so the CVE rules judge it like any other software. Nothing is run inside a container.
 - Security tab, **Open ports**: the ports a scan from another host reached are marked *Confirmed from outside* (ports only the scan saw are added as *Outside only*; a host without an agent shows them too). The observations under the Open ports card of the overview are gone, they are security findings.
