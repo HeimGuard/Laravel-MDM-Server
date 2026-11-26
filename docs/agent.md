@@ -132,6 +132,22 @@ marker next to the standard library) pip refuses to install, so a package that c
 (`python3-<name>`) is updated with `apt-get install --only-upgrade`, any other one with
 `pip install --user --upgrade --break-system-packages`. Without the marker it is plain pip.
 
+**Node.js, Python and their global modules (agents 1.43.0+).** Besides what a package manager updates, the agent looks at what was
+installed directly, and lists the updates in their own sections (*Node.js*, *Python*):
+
+- **Global npm modules** (`npm outdated --global`, the Node.js of the machine's PATH; `npm` and `corepack` come with Node.js and are left out): *Update*
+  and Install updates run `npm install --global <module>@latest`. A module in a user's own prefix (`~/.npm-global`) is not seen: the agent runs as root / SYSTEM.
+- **Modules of the Python of the PATH** (`pip list --outdated` without `--user`, source `pip-global`): `pip install --upgrade <module>`. Not where the distribution
+  manages that Python (PEP 668, the `EXTERNALLY-MANAGED` marker: apt owns those modules), and the packages of the account's own `--user` site are the *pip* rows.
+- **Node.js and Python themselves**, when nobody manages them (not apt, rpm, snap, the Store; winget lists it where it manages it, so it is not twice): the
+  newest release **of the installed major version / series** (Node.js 20.x is offered 20.y, Python 3.12.1 is offered 3.12.x; a new major version is the owner's
+  decision) from `nodejs.org/dist/index.json`, for Python the releases of `python.org/ftp/python` that have an installer for the architecture (the last releases of a
+  series are source only and are not offered on Windows). **Windows, installed for all users:** *Update* and Install updates download the installer
+  (`node-vX-x64.msi` checked against the SHA-256 of `SHASUMS256.txt` and the signature of the OpenJS Foundation, `python-X-amd64.exe` checked for the
+  signature of the Python Software Foundation) and run it quietly (`msiexec /qn`, `/quiet InstallAllUsers=1`); the version is checked after it. A copy in a user's
+  profile is not seen. **Linux:** a Node.js (`/usr/local/bin`, a tarball) or a Python (`/usr/local/bin/python3.N`, a build) is only listed, there is no *Update*:
+  replacing the files of a program is the owner's. The device needs to reach nodejs.org / python.org (proxies: the system proxy of SYSTEM).
+
 **Google Chrome on Windows (agents 1.26.0+):** Chrome installed for all users is updated by the agent
 itself, where winget is not there (Windows Server) or does not have the release yet (its manifest lags
 a day or more behind Chrome, and the CVE rules go by the release). The agent compares the version Google
@@ -148,7 +164,7 @@ runs as SYSTEM), and the device needs to reach Google (proxies: the system proxy
 package it is installing and which are finished (`current`, `done` of the command status). The
 Updates tab shows it on the row: installing, done or queued. Steps that update a whole group at once
 (apt, flatpak, snap, pipx, Windows Update, PowerShell) mark all rows of that group. The update
-lists are split into sections by provider: operating system (APT / Windows Update), Python,
+lists are split into sections by provider: operating system (APT / Windows Update), Python, Node.js,
 PowerShell (release and modules), Google Chrome, Flatpak, Snap, Winget and Other.
 
 On Linux the update list tells what apt would install now (a simulated `apt-get upgrade`, no
