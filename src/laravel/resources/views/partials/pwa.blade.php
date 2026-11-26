@@ -1,7 +1,8 @@
-{{-- Installable as an app: what the @pwa directive of steelants/laravel-general prints, with the icon and the manifest in a URL that
-     changes with the file. The directive's apple-touch-icon (/pwa/ios/180.png) and manifest had no version, so a phone that
+{{-- Installable as an app: what the @pwa directive of steelants/laravel-general prints, with the icon in a URL that
+     changes with the file. The directive's apple-touch-icon (/pwa/ios/180.png) had no version, so a phone that
      added the portal to the home screen kept the old icon for ever after the icon was replaced (the ?v= in manifest.json does not
-     reach them). The version is a hash of the file: replacing the icon is all it takes. --}}
+     reach it). The version is a hash of the file: replacing the icon is all it takes. The manifest is NOT versioned: Chrome on Android knows the
+     installed app (WebAPK) by the URL of its manifest, a different one is another app and the icon of the installed one is never updated. --}}
 @php
     $pwaVersion = fn (string $file): string => is_file($path = public_path($file)) ? substr(md5_file($path), 0, 8) : '0';
 @endphp
@@ -14,7 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="HeimGuard">
 <meta name="mobile-web-app-capable" content="yes">
 <meta property="og:image" content="{{ asset('/pwa/ios/180.png') }}?v={{ $pwaVersion('pwa/ios/180.png') }}">
-<link rel="manifest" href="{{ asset('/manifest.json') }}?v={{ $pwaVersion('manifest.json') }}">
+<link rel="manifest" href="{{ asset('/manifest.json') }}">
 <link rel="apple-touch-icon" href="{{ asset('/pwa/ios/180.png') }}?v={{ $pwaVersion('pwa/ios/180.png') }}">
 @if (is_file(public_path('sw.js')))
     <script>

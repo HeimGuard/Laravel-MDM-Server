@@ -244,8 +244,8 @@ Edge or Safari over HTTPS and choose *Install* / *Add to Home Screen*. The servi
 nothing but an offline page. Change the icon with
 `php artisan pwa:make-icons --icon=resources/images/icon.png` (the vector source is
 `resources/images/icon.svg`, also served as `favicon.svg`).
-The pages link the icon of iOS and the manifest with a hash of the file (`resources/views/partials/pwa.blade.php`), the icons inside `manifest.json` have a
-`?v=` that is raised by hand when they are replaced. A phone that already added the app keeps the icon from that moment (iOS never refreshes it, Android
+The pages link the icon of iOS with a hash of the file (`resources/views/partials/pwa.blade.php`), the icons inside `manifest.json` have a
+`?v=` that is raised by hand when they are replaced. The URL of the manifest itself must stay `/manifest.json`: Chrome on Android knows the installed app by it. A phone that already added the app keeps the icon from that moment (iOS never refreshes it, Android
 does after Chrome re-reads the manifest): remove the app and add it again.
 
 ## Measured values

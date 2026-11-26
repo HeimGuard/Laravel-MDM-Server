@@ -7,6 +7,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- The icon of the installed app (PWA) on Android: the manifest link of 1.42.1 had a version in its URL, and Chrome knows an installed app by the URL of its manifest, so it could not refresh the icon. The URL is the old one again; the version stays on the `apple-touch-icon` and on the icons inside `manifest.json`.
+
 ## [1.42.1] - 2026-11-26
 
 ### Added
