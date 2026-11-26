@@ -7109,7 +7109,7 @@ function Start-UpdateJob {
             # modules are apt's, and pip would break what the package manager installed.
             $python = Get-PythonCommand
             if (-not $python) { [void]$state.Failures.Add('python not found'); return }
-            if ($OnLinux -and (Test-PythonExternallyManaged $python)) { [void]$state.Failures.Add("pip $Id: this Python is managed by the distribution (apt updates its modules)"); return }
+            if ($OnLinux -and (Test-PythonExternallyManaged $python)) { [void]$state.Failures.Add("pip ${Id}: this Python is managed by the distribution (apt updates its modules)"); return }
             $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
             $title = "pip install --upgrade $Id (all users)"
             $output = Invoke-Logged $title { & $python -m pip install --upgrade $Id }
