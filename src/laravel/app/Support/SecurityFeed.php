@@ -35,7 +35,7 @@ class SecurityFeed
 
     private const MAX_FILE_BYTES = 1048576;
 
-    private const MAX_TOTAL_BYTES = 8388608;
+    private const MAX_TOTAL_BYTES = 16777216;
 
     public static function enabled(): bool
     {

@@ -7,6 +7,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- The security feed may be up to 16 MB (was 8 MB): with the history of the watched products the CVE rules of `detection-policy` are larger than the old limit, and a feed over the limit is refused as a whole.
+
 ### Added
 - Agent 1.43.0: the updates of Node.js and Python installed directly (not by apt, snap, the Store or winget) and of their global modules: the outdated global npm modules (`npm install --global`) and the modules of the Python of the machine (`pip` without `--user`, not where the distribution manages that Python) are listed in the sections *Node.js* and *Python* and updated by *Update* and Install updates. A Node.js / Python installed for all users on Windows is updated within its major version / series from nodejs.org / python.org (the installer is checked against the published SHA-256 and the signature of its publisher); on Linux a Node.js or Python in `/usr/local` is only listed.
 
