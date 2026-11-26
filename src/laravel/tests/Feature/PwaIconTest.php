@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use Tests\TestCase;
 
 /**
- * The icon of the installed app (PWA): the apple-touch-icon and the manifest the pages link to carry a version of the file, so a
+ * The icon of the installed app (PWA): the apple-touch-icon the pages link to carries a version of the file, so a
  * replaced icon reaches the phones that added the portal to the home screen (the @pwa directive printed them without one).
  */
 class PwaIconTest extends TestCase
@@ -15,10 +15,9 @@ class PwaIconTest extends TestCase
         $html = view('partials.pwa')->render();
 
         $icon = substr(md5_file(public_path('pwa/ios/180.png')), 0, 8);
-        $manifest = substr(md5_file(public_path('manifest.json')), 0, 8);
 
         $this->assertStringContainsString('rel="apple-touch-icon" href="'.asset('/pwa/ios/180.png').'?v='.$icon.'"', $html);
-        $this->assertStringContainsString('rel="manifest" href="'.asset('/manifest.json').'?v='.$manifest.'"', $html);
+        $this->assertStringContainsString('rel="manifest" href="'.asset('/manifest.json').'">', $html, 'the URL of the manifest is stable: Chrome on Android knows the installed app by it');
         $this->assertStringContainsString('content="'.asset('/pwa/ios/180.png').'?v='.$icon.'"', $html, 'the og:image too');
         $this->assertStringContainsString("serviceWorker.register('".asset('/sw.js')."')", $html);
     }
