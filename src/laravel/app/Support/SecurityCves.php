@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Services\VersionService;
+
 /**
  * The vulnerabilities of a package, one CVE at a time. A CVE rule of the feed lists its CVEs
  * ("cves": [{id, severity, ranges, ubuntu}]) and a package is affected only by the CVEs it is below the fix of
@@ -242,12 +244,14 @@ class SecurityCves
 
         // No word of the distribution: the project's own versions (NVD), without the epoch and Debian revision.
         $upstream = DpkgVersion::upstream($version);
-        if ($upstream === '' || ! self::inRanges($cve['ranges'] ?? [], $upstream, fn ($a, $b) => DpkgVersion::compare($a, $b))) {
+        // The ranges are versions of the project (the NVD), so the upstream part is compared as a project version (1.1.1w, 2.0~rc1), not as a package.
+        $project = fn ($a, $b) => VersionService::compare($a, $b) ?? 0;
+        if ($upstream === '' || ! self::inRanges($cve['ranges'] ?? [], $upstream, $project)) {
             return null;
         }
-        $fixed = self::fixedIn($cve['ranges'] ?? [], $upstream, fn ($a, $b) => DpkgVersion::compare($a, $b));
+        $fixed = self::fixedIn($cve['ranges'] ?? [], $upstream, $project);
         if ($candidate !== '' && DpkgVersion::compare($candidate, $version) > 0
-            && ! self::inRanges($cve['ranges'] ?? [], DpkgVersion::upstream($candidate), fn ($a, $b) => DpkgVersion::compare($a, $b))) {
+            && ! self::inRanges($cve['ranges'] ?? [], DpkgVersion::upstream($candidate), $project)) {
             return ['status' => 'update_available', 'fixed' => $fixed];
         }
 

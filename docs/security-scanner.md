@@ -267,9 +267,15 @@ over feed over bundled), and a bundled rule the feed replaced comes back when it
   `in`, `not_in` (a list), `gt`, `gte`, `lt`, `lte`, `version_lt`, `version_lte`, `version_gt`,
   `version_gte` (`1.2.3`, `2:1.2-3ubuntu1`), `dpkg_lt`, `dpkg_lte`, `dpkg_gt`, `dpkg_gte`, `exists`,
   `empty`, `true`, `false`. Texts are compared without case; an unknown value is neither `true` nor `false`.
-- `version_*` compare the leading numbers only (the epoch and everything after the first character that is
-  not a digit or a dot are ignored) and a missing part is 0, so `8.5` is `8.5.0`. A bound such as
-  `7.1.2-31` is therefore read as `7.1.2`; write it as `7.1.2.31`, the way distributions number it.
+- `version_*` compare the versions of a project the way programs write them (`App\Services\VersionService`): the first run of numbers is the
+  release and a missing part is 0 (`8.5` is `8.5.0`); the epoch and what a distribution adds after a dash (`2:1.2-3ubuntu1` is `1.2`,
+  `7.1.2-31` is `7.1.2`: write such a bound as `7.1.2.31`) or a build (`+build5`) are not read. `alpha`, `beta`, `pre`, `rc`, `dev`, `snapshot` and `~`
+  make a version older than its release (`2.0-rc1` < `2.0`, `1.2.3~rc1` < `1.2.3`); letters right behind the numbers and `sp`, `patch`, `hotfix`,
+  `post` with a number make it newer (`1.1.1k` < `1.1.1w`, `1.0.2z` < `1.0.2zk`, `9.8` < `9.8p1`, `2.0` < `2.0-sp1`). A text without a number
+  is neither smaller nor greater. The cases are in `tests/fixtures/version-vectors.json`, the same file as in `detection-policy` (which builds the
+  bounds of the CVE rules with the same algorithm: change both). Before this a bound such as `1.1.1w` or `2.0-rc1` was read as `1.1.1` / `2.0`, so
+  OpenSSL 1.1.1a to 1.1.1w were the same version and the feed left such CVEs out (servers before this read the new bounds that way: a package is
+  missed, not wrongly reported).
 - `dpkg_*` compare Debian / Ubuntu package versions the way dpkg does (`epoch:upstream-revision`, `~` sorts
   first): `8.2512.0-1ubuntu4.2` is after `8.2512.0-1ubuntu4.1`. Use them with a version an Ubuntu or
   Debian security tracker names as the fix, e.g. to skip a package that is at or after it.

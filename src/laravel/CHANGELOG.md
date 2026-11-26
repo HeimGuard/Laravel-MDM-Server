@@ -7,6 +7,9 @@ Every user-visible change adds a line under **Unreleased**; how a release is mad
 
 ## [Unreleased]
 
+### Fixed
+- Security: the versions of software are compared as programs number them, not by their leading numbers only: `2.0-rc1` is older than `2.0`, `1.1.1k` older than `1.1.1w`, `9.8` older than `9.8p1` (`App\Services\VersionService`, shared test vectors with the feed). The CVE rules of the feed get the bounds that could not be written before (OpenSSL `1.1.1w`, ProFTPD `1.3.9b`, ...), so the CVEs of OpenSSL and the like are judged.
+
 ## [1.42.1] - 2026-11-26
 
 ### Added
